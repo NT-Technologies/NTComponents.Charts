@@ -12,7 +12,7 @@
 	
     <ItemGroup>
 		<PackageReference Include="AspNetCore.SassCompiler" Version="1.97.1" />
-		<PackageReference Include="NTComponents" Version="1.9.0" />
+		<PackageReference Include="NTComponents" Version="1.10.0" />
 		<PackageReference Include="SkiaSharp.Views.Blazor" Version="3.119.2-preview.1" />
     </ItemGroup>
 	
