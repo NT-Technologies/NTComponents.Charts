@@ -195,14 +195,13 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
-            _density = await JSRuntime.InvokeAsync<float>("NTCharts.getDevicePixelRatio");
+            _density = await JSRuntime.InvokeAsync<float>("eval", "window.devicePixelRatio || 1");
             _objRef = DotNetObjectReference.Create(this);
-            _themeListener = await JSRuntime.InvokeAsync<IJSObjectReference>("NTCharts.onThemeChanged", _objRef);
+            _themeListener = await JSRuntime.InvokeAsync<IJSObjectReference>("NTComponents.onThemeChanged", _objRef);
             await ResolveColorsAsync();
             StateHasChanged();
         }
     }
-
 
     [JSInvokable]
     public async Task OnThemeChanged() {
