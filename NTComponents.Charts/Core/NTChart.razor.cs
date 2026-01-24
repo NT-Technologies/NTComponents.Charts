@@ -14,7 +14,7 @@ namespace NTComponents.Charts.Core;
 ///     The base class for all charts in the NTComponents.Charts library.
 /// </summary>
 [CascadingTypeParameter(nameof(TData))]
-public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where TData : class {
+public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposable where TData : class {
 
     [Parameter]
     public TnTColor BackgroundColor { get; set; } = TnTColor.Surface;
@@ -125,11 +125,7 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
                 return "cursor: move;";
             }
 
-            if (_isPanning) {
-                return "cursor: grabbing;";
-            }
-
-            return (IsXPanEnabled || IsYPanEnabled) ? "cursor: grab;" : "cursor: default;";
+            return _isPanning ? "cursor: grabbing;" : (IsXPanEnabled || IsYPanEnabled) ? "cursor: grab;" : "cursor: default;";
         }
     }
 
@@ -147,7 +143,9 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
         get {
             foreach (var s in Series) {
                 var first = s.Data?.Cast<TData>().FirstOrDefault();
-                if (first != null && s.XValue(first) is DateTime) return true;
+                if (first != null && s.XValue(first) is DateTime) {
+                    return true;
+                }
             }
             return false;
         }
@@ -284,7 +282,7 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
         return luminance > 128 ? SKColors.Black : SKColors.White;
     }
 
-    internal SKColor GetThemeColor(TnTColor color) => _resolvedColors.TryGetValue(color, out var skColor) ? skColor : SKColors.Gray;
+    internal SKColor GetThemeColor(TnTColor color) => _resolvedColors.TryGetValue(color, out var skColor) ? skColor : SKColors.Black;
 
     public async ValueTask DisposeAsync() {
         _objRef?.Dispose();
@@ -420,9 +418,9 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
         // Use ScaleXInverse/ScaleYInverse
         var primaryX = GetUniqueXAxes().FirstOrDefault();
         var primaryY = GetUniqueYAxes().FirstOrDefault();
-        
+
         var xVal = ScaleXInverse(mousePoint.X, LastPlotArea);
-        var yVal = ScaleYInverse(mousePoint.Y, primaryY, LastPlotArea);
+        var yVal = ScaleYInverse(mousePoint.Y, primaryY!, LastPlotArea);
 
         var (xMin, xMax) = GetXRange(primaryX, true);
         var (yMin, yMax) = GetYRange(primaryY, true);
@@ -476,19 +474,19 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
         _cachedYRanges.Clear();
         _cachedXRanges.Clear();
 
-
         canvas.Clear(GetThemeColor(BackgroundColor));
 
         if (!string.IsNullOrEmpty(Title)) {
             RenderTitle(canvas, info);
         }
 
-        var totalArea = new SKRect(Margin.Left, Margin.Top, info.Width - Margin.Right, info.Height - Margin.Bottom);
+        var renderArea = new SKRect(Margin.Left, Margin.Top, info.Width - Margin.Right, info.Height - Margin.Bottom);
         if (!string.IsNullOrEmpty(Title)) {
-            totalArea = new SKRect(totalArea.Left, totalArea.Top + 30, totalArea.Right, totalArea.Bottom);
+            // TODO Implement Title options
+            renderArea = new SKRect(renderArea.Left, renderArea.Top + 30, renderArea.Right, renderArea.Bottom);
         }
-        var plotArea = totalArea;
-        var accessibleArea = totalArea; // Area available for axes and legend
+        var plotArea = renderArea;
+        var accessibleArea = renderArea; // Area available for axes and legend
 
         // Pass 1: Measure legend and update plotArea/accessibleArea
         SKRect legendDrawArea = default;
@@ -551,7 +549,7 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
             // Check series/points if legend wasn't hit
             if (HoveredSeries == null && plotArea.Contains(mousePoint)) {
                 foreach (var series in Series.AsEnumerable().Reverse().Where(s => s.Visible)) {
-                    var seriesRenderArea = GetSeriesRenderArea(series, plotArea, totalArea);
+                    var seriesRenderArea = GetSeriesRenderArea(series, plotArea, renderArea);
                     var hit = series.HitTest(mousePoint, seriesRenderArea);
                     if (hit != null) {
                         HoveredSeries = series;
@@ -573,12 +571,12 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
 
         // Render inactive series first
         foreach (var series in Series.Where(s => s != HoveredSeries && s.IsEffectivelyVisible)) {
-            var seriesRenderArea = GetSeriesRenderArea(series, plotArea, totalArea);
+            var seriesRenderArea = GetSeriesRenderArea(series, plotArea, renderArea);
             series.Render(canvas, seriesRenderArea);
         }
         // Render active series last (on top)
         if (HoveredSeries != null && HoveredSeries.IsEffectivelyVisible) {
-            var seriesRenderArea = GetSeriesRenderArea(HoveredSeries, plotArea, totalArea);
+            var seriesRenderArea = GetSeriesRenderArea(HoveredSeries, plotArea, renderArea);
             HoveredSeries.Render(canvas, seriesRenderArea);
         }
         canvas.Restore();
@@ -594,7 +592,7 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
         // Pass 8: Render legend (Now after hit testing so it can react to hovered series)
         if (Legend != null && Legend.Visible && Legend.Position != LegendPosition.None) {
             if (Legend.Position == LegendPosition.Floating) {
-                Legend.Render(canvas, plotArea, totalArea);
+                Legend.Render(canvas, plotArea, renderArea);
             }
             else {
                 Legend.Render(canvas, plotArea, legendDrawArea);
@@ -868,19 +866,19 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
         }
 
         var cartesianSeries = Series.OfType<NTCartesianSeries<TData>>();
-        if(cartesianSeries?.Any() == true) {
+        if (cartesianSeries?.Any() == true) {
             var xAxis = cartesianSeries.First().XAxis;
             var yAxis1 = cartesianSeries.First().YAxis;
             NTYAxisOptions? yAxis2 = null;
-            foreach(var s in cartesianSeries.Skip(1)) {
-                if(!ReferenceEquals(s.XAxis, xAxis)) {
+            foreach (var s in cartesianSeries.Skip(1)) {
+                if (!ReferenceEquals(s.XAxis, xAxis)) {
                     throw new InvalidOperationException("All cartesian series must share the same X axis.");
                 }
                 if (!ReferenceEquals(s.YAxis, yAxis1)) {
-                    if(yAxis2 is null) {
+                    if (yAxis2 is null) {
                         yAxis2 = s.YAxis;
                     }
-                    else if(!ReferenceEquals(s.YAxis, yAxis2)) {
+                    else if (!ReferenceEquals(s.YAxis, yAxis2)) {
                         throw new InvalidOperationException("Cartesian series can only use up to two different Y axes.");
                     }
                 }
@@ -940,7 +938,6 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
             .ToList();
     }
 
-
     internal float GetBarSeriesTotalWeight(NTYAxisOptions axis) => Series.OfType<NTBarSeries<TData>>().Where(s => s.YAxis == axis).Sum(s => s.VisibilityFactor);
 
     internal float GetBarSeriesOffsetWeight(NTBarSeries<TData> series) {
@@ -966,7 +963,6 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
     ///    Gets whether to use a categorical scale for the Y axis.
     /// </summary>
     public bool IsCategoricalY => Series.OfType<NTBarSeries<TData>>().Any(s => s.Orientation == NTChartOrientation.Horizontal && s.IsEffectivelyVisible);
-
 
     /// <summary>
     ///     Returns a list of all unique X values across all cartesian series, sorted.
@@ -1003,7 +999,10 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
     }
 
     public double GetScaledXValue(object? originalX) {
-        if (originalX == null) return 0;
+        if (originalX == null) {
+            return 0;
+        }
+
         if (IsCategoricalX) {
             var allX = GetAllXValues();
             var index = allX.IndexOf(originalX);
@@ -1013,15 +1012,14 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
         if (originalX is DateTime dt) {
             return dt.Ticks;
         }
-        if (originalX is IConvertible convertible) {
-            return convertible.ToDouble(null);
-        }
-
-        return 0;
+        return originalX is IConvertible convertible ? convertible.ToDouble(null) : 0;
     }
 
     public decimal GetScaledYValue(object? originalY) {
-        if (originalY == null) return 0;
+        if (originalY == null) {
+            return 0;
+        }
+
         if (IsCategoricalY) {
             var allY = GetAllYValues();
             var index = allY.IndexOf(originalY);
@@ -1031,11 +1029,7 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
         if (originalY is DateTime dt) {
             return dt.Ticks;
         }
-        if (originalY is IConvertible convertible) {
-            return convertible.ToDecimal(null);
-        }
-
-        return 0;
+        return originalY is IConvertible convertible ? convertible.ToDecimal(null) : 0;
     }
 
     /// <summary>
@@ -1228,7 +1222,7 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
         }
 
         foreach (var s in seriesToConsider) {
-            var seriesRange = (IsXZoomEnabled && _viewXMin.HasValue && _viewXMax.HasValue) 
+            var seriesRange = (IsXZoomEnabled && _viewXMin.HasValue && _viewXMax.HasValue)
                 ? s.GetYRange(_viewXMin, _viewXMax)
                 : s.GetYRange();
 
@@ -1279,20 +1273,10 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
         double niceFraction;
 
         if (round) {
-            if (fraction < 1.5) {
-                niceFraction = 1;
-            }
-            else {
-                niceFraction = fraction < 3 ? 2 : fraction < 7 ? 5 : 10;
-            }
+            niceFraction = fraction < 1.5 ? 1 : fraction < 3 ? 2 : fraction < 7 ? 5 : 10;
         }
         else {
-            if (fraction <= 1) {
-                niceFraction = 1;
-            }
-            else {
-                niceFraction = fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
-            }
+            niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
         }
 
         return niceFraction * Math.Pow(10, exponent);
@@ -1325,4 +1309,9 @@ public partial class NTChart<TData> : TnTComponentBase, IAsyncDisposable where T
         using var stream = data.AsStream();
         await JSRuntime.DownloadFileFromStreamAsync(stream, fileName ?? $"{Title ?? "chart"}.png");
     }
+
+    protected override void Dispose(bool disposing) {
+        base.Dispose(disposing);
+    }
+    protected override ValueTask DisposeAsyncCore() => base.DisposeAsyncCore();
 }
