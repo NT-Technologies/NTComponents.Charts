@@ -14,37 +14,16 @@ namespace NTComponents.Charts.Core;
 ///     The base class for all charts in the NTComponents.Charts library.
 /// </summary>
 [CascadingTypeParameter(nameof(TData))]
-public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposable where TData : class {
-
-    [Parameter]
-    public TnTColor BackgroundColor { get; set; } = TnTColor.Surface;
+public partial class NTChart<TData> : TnTDisposableComponentBase where TData : class {
 
     /// <summary>
-    ///     Gets or sets the default text color for the chart (titles, labels).
-    /// </summary>
-    [Parameter]
-    public TnTColor TextColor { get; set; } = TnTColor.OnSurface;
-
-    /// <summary>
-    ///    Gets or sets the background color of the tooltip.
-    /// </summary>
-    [Parameter]
-    public TnTColor TooltipBackgroundColor { get; set; } = TnTColor.SurfaceVariant;
-
-    /// <summary>
-    ///    Gets or sets the text color of the tooltip.
-    /// </summary>
-    [Parameter]
-    public TnTColor TooltipTextColor { get; set; } = TnTColor.OnSurfaceVariant;
-
-    [Parameter]
-    public bool EnableHardwareAcceleration { get; set; } = true;
-
-    /// <summary>
-    ///    Gets or sets whether to allow exporting the chart as a PNG.
+    ///     Gets or sets whether to allow exporting the chart as a PNG.
     /// </summary>
     [Parameter]
     public bool AllowExport { get; set; } = true;
+
+    [Parameter]
+    public TnTColor BackgroundColor { get; set; } = TnTColor.Surface;
 
     /// <summary>
     ///     Gets or sets the child content.
@@ -62,23 +41,30 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         .AddFromAdditionalAttributes(AdditionalAttributes)
         .Build();
 
+    [Parameter]
+    public bool EnableHardwareAcceleration { get; set; } = true;
+
+    /// <summary>
+    ///     Gets or sets the duration of the hover animation.
+    /// </summary>
+    [Parameter]
+    public TimeSpan HoverAnimationDuration { get; set; } = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    ///     Gets whether to use a categorical scale for the X axis.
+    /// </summary>
+    public bool IsCategoricalX => Series.OfType<NTBarSeries<TData>>().Any(s => s.Orientation == NTChartOrientation.Vertical && s.IsEffectivelyVisible);
+
+    /// <summary>
+    ///     Gets whether to use a categorical scale for the Y axis.
+    /// </summary>
+    public bool IsCategoricalY => Series.OfType<NTBarSeries<TData>>().Any(s => s.Orientation == NTChartOrientation.Horizontal && s.IsEffectivelyVisible);
+
     /// <summary>
     ///     Gets or sets the margin around the chart.
     /// </summary>
     [Parameter]
     public ChartMargin Margin { get; set; } = ChartMargin.All(5);
-
-    /// <summary>
-    ///     Gets or sets the title of the chart.
-    /// </summary>
-    [Parameter]
-    public string? Title { get; set; }
-
-    /// <summary>
-    ///    Gets or sets the padding percentage for the axis ranges (0 to 1).
-    /// </summary>
-    [Parameter]
-    public double RangePadding { get; set; } = 0.05;
 
     /// <summary>
     ///     Gets or sets the default color palette for the chart.
@@ -94,26 +80,60 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         (TnTColor.Tertiary, TnTColor.OnTertiary)
     ];
 
-    private static readonly SKTypeface _defaultTypeface = SKTypeface.FromFamilyName("Roboto", SKFontStyleWeight.Bold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright);
-    private static readonly SKTypeface _regularTypeface = SKTypeface.FromFamilyName("Roboto", SKFontStyleWeight.Medium, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright);
-
-    internal SKTypeface DefaultTypeface => _defaultTypeface;
-    internal SKTypeface RegularTypeface => _regularTypeface;
-
     /// <summary>
-    ///    Gets or sets the duration of the hover animation.
+    ///     Gets or sets the padding percentage for the axis ranges (0 to 1).
     /// </summary>
     [Parameter]
-    public TimeSpan HoverAnimationDuration { get; set; } = TimeSpan.FromMilliseconds(250);
+    public double RangePadding { get; set; } = 0.05;
 
-    [Inject]
-    protected IJSRuntime JSRuntime { get; set; } = default!;
+    /// <summary>
+    ///     Gets or sets the default text color for the chart (titles, labels).
+    /// </summary>
+    [Parameter]
+    public TnTColor TextColor { get; set; } = TnTColor.OnSurface;
 
-    protected SKPoint? LastMousePosition { get; private set; }
+    /// <summary>
+    ///     Gets or sets the title of the chart.
+    /// </summary>
+    [Parameter]
+    public string? Title { get; set; }
 
-    protected SKRect LastPlotArea { get; private set; }
+    /// <summary>
+    ///     Gets or sets the background color of the tooltip.
+    /// </summary>
+    [Parameter]
+    public TnTColor TooltipBackgroundColor { get; set; } = TnTColor.SurfaceVariant;
 
-    protected SKRect LastLegendDrawArea { get; private set; }
+    /// <summary>
+    ///     Gets or sets the text color of the tooltip.
+    /// </summary>
+    [Parameter]
+    public TnTColor TooltipTextColor { get; set; } = TnTColor.OnSurfaceVariant;
+
+    internal SKTypeface DefaultTypeface => _defaultTypeface;
+    internal TData? HoveredDataPoint { get; private set; }
+    internal int? HoveredPointIndex { get; private set; }
+    internal NTBaseSeries<TData>? HoveredSeries { get; private set; }
+
+    internal bool IsXAxisDateTime {
+        get {
+            foreach (var s in Series) {
+                var first = s.Data?.Cast<TData>().FirstOrDefault();
+                if (first != null && s.XValue(first) is DateTime) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    internal bool IsXPanEnabled => Series.OfType<NTLineSeries<TData>>().Any(s => s.EnableXPan);
+    internal bool IsXZoomEnabled => Series.OfType<NTLineSeries<TData>>().Any(s => s.EnableXZoom);
+    internal bool IsYPanEnabled => Series.OfType<NTLineSeries<TData>>().Any(s => s.EnableYPan);
+    internal bool IsYZoomEnabled => Series.OfType<NTLineSeries<TData>>().Any(s => s.EnableYZoom);
+    internal NTLegend<TData>? Legend { get; private set; }
+    internal SKTypeface RegularTypeface => _regularTypeface;
+    internal List<NTBaseSeries<TData>> Series { get; } = [];
 
     protected string CanvasStyle {
         get {
@@ -129,76 +149,278 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         }
     }
 
+    [Inject]
+    protected IJSRuntime JSRuntime { get; set; } = default!;
+
+    protected SKRect LastLegendDrawArea { get; private set; }
+    protected SKPoint? LastMousePosition { get; private set; }
+    protected SKRect LastPlotArea { get; private set; }
+    private static readonly SKTypeface _defaultTypeface = SKTypeface.FromFamilyName("Roboto", SKFontStyleWeight.Bold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright);
+    private static readonly SKTypeface _regularTypeface = SKTypeface.FromFamilyName("Roboto", SKFontStyleWeight.Medium, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright);
+    private readonly Dictionary<(NTXAxisOptions?, bool), (double Min, double Max)> _cachedXRanges = [];
+    private readonly Dictionary<(NTYAxisOptions?, bool), (decimal Min, decimal Max)> _cachedYRanges = [];
+    private readonly Dictionary<TnTColor, SKColor> _resolvedColors = [];
+    private readonly Dictionary<NTBaseSeries<TData>, SKRect> _treeMapAreas = [];
+    private List<object>? _cachedAllX;
+    private List<object>? _cachedAllY;
+    private float _density = 1.0f;
+    private bool _hasDraggedLegend;
+    private bool _isDraggingLegend;
     private bool _isHovering;
     private bool _isHoveringLegend;
-
-    internal NTBaseSeries<TData>? HoveredSeries { get; private set; }
-
-    internal bool IsXPanEnabled => Series.OfType<NTLineSeries<TData>>().Any(s => s.EnableXPan);
-    internal bool IsYPanEnabled => Series.OfType<NTLineSeries<TData>>().Any(s => s.EnableYPan);
-    internal bool IsXZoomEnabled => Series.OfType<NTLineSeries<TData>>().Any(s => s.EnableXZoom);
-    internal bool IsYZoomEnabled => Series.OfType<NTLineSeries<TData>>().Any(s => s.EnableYZoom);
-
-    internal bool IsXAxisDateTime {
-        get {
-            foreach (var s in Series) {
-                var first = s.Data?.Cast<TData>().FirstOrDefault();
-                if (first != null && s.XValue(first) is DateTime) {
-                    return true;
-                }
-            }
-            return false;
-        }
-    }
-
-    internal int? HoveredPointIndex { get; private set; }
-
-    internal TData? HoveredDataPoint { get; private set; }
-
-    private double? _viewXMin;
-    private double? _viewXMax;
-    private decimal? _viewYMin;
-    private decimal? _viewYMax;
-
     private bool _isPanning;
+    private float _lastHeight;
+    private float _lastWidth;
+    private SKPoint _legendDragStartMousePos;
+    private SKPoint _legendMouseOffset;
+    private DotNetObjectReference<NTChart<TData>>? _objRef;
     private SKPoint _panStartPoint;
     private (double Min, double Max)? _panStartXRange;
     private (decimal Min, decimal Max)? _panStartYRange;
-
-    private bool _isDraggingLegend;
-    private bool _hasDraggedLegend;
-    private SKPoint _legendMouseOffset;
-    private SKPoint _legendDragStartMousePos;
-
-    internal List<NTBaseSeries<TData>> Series { get; } = [];
-
-    internal NTLegend<TData>? Legend { get; private set; }
-
-    private readonly Dictionary<TnTColor, SKColor> _resolvedColors = [];
-
-    private readonly Dictionary<NTBaseSeries<TData>, SKRect> _treeMapAreas = [];
-
-    private List<object>? _cachedAllX;
-
-    private List<object>? _cachedAllY;
-
-    private readonly Dictionary<(NTYAxisOptions?, bool), (decimal Min, decimal Max)> _cachedYRanges = [];
-
-    private readonly Dictionary<(NTXAxisOptions?, bool), (double Min, double Max)> _cachedXRanges = [];
-
     private IJSObjectReference? _themeListener;
-    private DotNetObjectReference<NTChart<TData>>? _objRef;
+    private double? _viewXMax;
+    private double? _viewXMin;
+    private decimal? _viewYMax;
+    private decimal? _viewYMin;
 
-    private float _density = 1.0f;
-
-    protected override async Task OnAfterRenderAsync(bool firstRender) {
-        if (firstRender) {
-            _density = await JSRuntime.InvokeAsync<float>("eval", "window.devicePixelRatio || 1");
-            _objRef = DotNetObjectReference.Create(this);
-            _themeListener = await JSRuntime.InvokeAsync<IJSObjectReference>("NTComponents.onThemeChanged", _objRef);
-            await ResolveColorsAsync();
-            StateHasChanged();
+    public (double Min, double Max, double Spacing) CalculateNiceScaling(double min, double max, int maxTicks = 5) {
+        if (min == max) {
+            max = min + 1;
         }
+
+        var range = CalculateNiceNumber(max - min, false);
+        var tickSpacing = CalculateNiceNumber(range / (maxTicks - 1), true);
+
+        var niceMin = Math.Floor(min / tickSpacing) * tickSpacing;
+        var niceMax = Math.Ceiling(max / tickSpacing) * tickSpacing;
+
+        return (niceMin, niceMax, tickSpacing);
+    }
+
+    /// <summary>
+    ///     Exports the current chart as a PNG image.
+    /// </summary>
+    /// <param name="fileName">The name of the file to download. Defaults to "[Title].png" or "chart.png".</param>
+    /// <returns>A <see cref="Task" /> representing the export operation.</returns>
+    public async Task ExportAsPngAsync(string? fileName = null) {
+        if (_lastWidth <= 0 || _lastHeight <= 0) {
+            return;
+        }
+
+        var info = new SKImageInfo((int)_lastWidth, (int)_lastHeight);
+        using var surface = SKSurface.Create(info);
+        if (surface == null) {
+            return;
+        }
+
+        OnPaintSurface(surface.Canvas, info);
+
+        using var image = surface.Snapshot();
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        if (data == null) {
+            return;
+        }
+
+        await using var stream = data.AsStream();
+        await JSRuntime.DownloadFileFromStreamAsync(stream, fileName ?? $"{Title ?? "chart"}.png");
+    }
+
+    /// <summary>
+    ///     Returns a list of all unique X values across all cartesian series, sorted.
+    /// </summary>
+    public List<object> GetAllXValues() {
+        if (_cachedAllX != null) {
+            return _cachedAllX;
+        }
+
+        var allX = new HashSet<object>();
+        foreach (var s in Series.Where(s => s.IsEffectivelyVisible)) {
+            s.RegisterXValues(allX);
+        }
+
+        _cachedAllX = [.. allX.OrderBy(x => x)];
+        return _cachedAllX;
+    }
+
+    /// <summary>
+    ///     Returns a list of all unique Y values across all cartesian series, sorted.
+    /// </summary>
+    public List<object> GetAllYValues() {
+        if (_cachedAllY != null) {
+            return _cachedAllY;
+        }
+
+        var allY = new HashSet<object>();
+        foreach (var s in Series.Where(s => s.IsEffectivelyVisible)) {
+            s.RegisterYValues(allY);
+        }
+
+        _cachedAllY = allY.OrderBy(y => y).ToList();
+        return _cachedAllY;
+    }
+
+    public double GetScaledXValue(object? originalX) {
+        if (originalX == null) {
+            return 0;
+        }
+
+        if (IsCategoricalX) {
+            var allX = GetAllXValues();
+            var index = allX.IndexOf(originalX);
+            return index >= 0 ? index : 0;
+        }
+
+        if (originalX is DateTime dt) {
+            return dt.Ticks;
+        }
+        return originalX is IConvertible convertible ? convertible.ToDouble(null) : 0;
+    }
+
+    public decimal GetScaledYValue(object? originalY) {
+        if (originalY == null) {
+            return 0;
+        }
+
+        if (IsCategoricalY) {
+            var allY = GetAllYValues();
+            var index = allY.IndexOf(originalY);
+            return index >= 0 ? index : 0;
+        }
+
+        if (originalY is DateTime dt) {
+            return dt.Ticks;
+        }
+        return originalY is IConvertible convertible ? convertible.ToDecimal(null) : 0;
+    }
+
+    public (double Min, double Max) GetXRange(NTXAxisOptions? axis, bool padded = false) {
+        if (_cachedXRanges.TryGetValue((axis, padded), out var cached)) {
+            return cached;
+        }
+
+        if (_viewXMin.HasValue && _viewXMax.HasValue) {
+            var range = (_viewXMin.Value, _viewXMax.Value);
+            _cachedXRanges[(axis, padded)] = range;
+            return range;
+        }
+
+        if (IsCategoricalX) {
+            var allX = GetAllXValues();
+            if (!allX.Any()) {
+                return (0, 1);
+            }
+
+            if (!padded) {
+                return (0, Math.Max(1, allX.Count - 1));
+            }
+
+            var catRange = Math.Max(1, allX.Count - 1);
+            var range = (-catRange * RangePadding, catRange + (catRange * RangePadding));
+            _cachedXRanges[(axis, padded)] = range;
+            return range;
+        }
+
+        var min = double.MaxValue;
+        var max = double.MinValue;
+
+        var seriesToConsider = Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible);
+        if (axis != null) {
+            seriesToConsider = seriesToConsider.Where(s => s.XAxis == axis);
+        }
+
+        foreach (var s in seriesToConsider) {
+            var seriesRange = s.GetXRange();
+            if (seriesRange.HasValue) {
+                min = Math.Min(min, seriesRange.Value.Min);
+                max = Math.Max(max, seriesRange.Value.Max);
+            }
+        }
+
+        if (min == double.MaxValue) {
+            return (0, 1);
+        }
+
+        if (!padded) {
+            return (min, max);
+        }
+
+        var (niceMin, niceMax, _) = CalculateNiceScaling(min, max);
+        var result = (niceMin, niceMax);
+        _cachedXRanges[(axis, padded)] = result;
+        return result;
+    }
+
+    /// <summary>
+    ///     Gets the scale used for the X axis.
+    /// </summary>
+    public NTAxisScale GetXScale() => GetUniqueXAxes().FirstOrDefault()?.Scale ?? NTAxisScale.Linear;
+
+    public (decimal Min, decimal Max) GetYRange(NTYAxisOptions? axis, bool padded = false) {
+        if (_cachedYRanges.TryGetValue((axis, padded), out var cached)) {
+            return cached;
+        }
+
+        if (_viewYMin.HasValue && _viewYMax.HasValue) {
+            var range = (_viewYMin.Value, _viewYMax.Value);
+            _cachedYRanges[(axis, padded)] = range;
+            return range;
+        }
+
+        if (IsCategoricalY) {
+            var allY = GetAllYValues();
+            if (!allY.Any()) {
+                return (0, 1);
+            }
+
+            if (!padded) {
+                return (0, Math.Max(1, allY.Count - 1));
+            }
+
+            var catRange = (decimal)Math.Max(1, allY.Count - 1);
+            var rp = (decimal)RangePadding;
+            var range = (-catRange * rp, catRange + (catRange * rp));
+            _cachedYRanges[(axis, padded)] = range;
+            return range;
+        }
+
+        var min = decimal.MaxValue;
+        var max = decimal.MinValue;
+
+        var seriesToConsider = Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible);
+        if (axis != null) {
+            seriesToConsider = seriesToConsider.Where(s => s.YAxis == axis);
+        }
+
+        foreach (var s in seriesToConsider) {
+            var seriesRange = (IsXZoomEnabled && _viewXMin.HasValue && _viewXMax.HasValue)
+                ? s.GetYRange(_viewXMin, _viewXMax)
+                : s.GetYRange();
+
+            if (seriesRange.HasValue) {
+                min = Math.Min(min, seriesRange.Value.Min);
+                max = Math.Max(max, seriesRange.Value.Max);
+            }
+        }
+
+        if (min == decimal.MaxValue) {
+            return (0, 1);
+        }
+
+        // Bar charts should generally start at 0
+        if (seriesToConsider.Any(s => s is NTBarSeries<TData>)) {
+            min = Math.Min(0, min);
+        }
+
+        if (!padded) {
+            var range = (min, max);
+            _cachedYRanges[(axis, padded)] = range;
+            return range;
+        }
+
+        var (niceMinY, niceMaxY, _) = CalculateNiceScaling((double)min, (double)max);
+        var result = ((decimal)niceMinY, (decimal)niceMaxY);
+        _cachedYRanges[(axis, padded)] = result;
+        return result;
     }
 
     [JSInvokable]
@@ -207,35 +429,183 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         StateHasChanged();
     }
 
-    private async Task ResolveColorsAsync() {
-        var colorsToResolve = Enum.GetValues<TnTColor>().ToList();
-        foreach (var color in colorsToResolve) {
-            if (color is TnTColor.None or TnTColor.Transparent) {
-                _resolvedColors[color] = SKColors.Transparent;
-                continue;
-            }
-            if (color == TnTColor.Black) {
-                _resolvedColors[color] = SKColors.Black;
-                continue;
-            }
-            if (color == TnTColor.White) {
-                _resolvedColors[color] = SKColors.White;
-                continue;
-            }
+    /// <summary>
+    ///     Resets the view to the default range.
+    /// </summary>
+    public void ResetView() {
+        _viewXMin = null;
+        _viewXMax = null;
+        _viewYMin = null;
+        _viewYMax = null;
+        StateHasChanged();
+    }
 
-            var hex = await JSRuntime.InvokeAsync<string>("NTComponents.getColorValueFromEnumName", color.ToString());
-            if (!string.IsNullOrEmpty(hex) && SKColor.TryParse(hex, out var skColor)) {
-                _resolvedColors[color] = skColor;
+    public float ScaleX(double x, SKRect plotArea) {
+        var axis = GetUniqueXAxes().FirstOrDefault();
+        var (min, max) = GetXRange(axis, true);
+        var scale = axis?.Scale ?? NTAxisScale.Linear;
+
+        double t;
+        if (scale == NTAxisScale.Logarithmic) {
+            min = Math.Max(0.000001, min);
+            max = Math.Max(min * 1.1, max);
+            x = Math.Max(min, x);
+            t = (Math.Log10(x) - Math.Log10(min)) / (Math.Log10(max) - Math.Log10(min));
+        }
+        else {
+            var range = max - min;
+            if (range <= 0) {
+                return plotArea.Left;
             }
-            else {
-                // Fallback for primary/secondary etc if not found in CSS
-                _resolvedColors[color] = color switch {
-                    TnTColor.Primary => SKColors.RoyalBlue,
-                    TnTColor.Secondary => SKColors.Gray,
-                    _ => SKColors.Gray
-                };
+            t = (x - min) / range;
+        }
+
+        const float p = 3f; // 3 pixels of air
+        var left = plotArea.Left + p;
+        var width = plotArea.Width - (p * 2);
+        return (float)(left + (t * width));
+    }
+
+    public double ScaleXInverse(float coord, SKRect plotArea) {
+        var axis = GetUniqueXAxes().FirstOrDefault();
+        var (min, max) = GetXRange(axis, true);
+        var scale = axis?.Scale ?? NTAxisScale.Linear;
+
+        const float p = 3f;
+        double t;
+        var left = plotArea.Left + p;
+        var width = plotArea.Width - (p * 2);
+        t = width <= 0 ? 0 : (coord - left) / width;
+
+        if (scale == NTAxisScale.Logarithmic) {
+            min = Math.Max(0.000001, min);
+            max = Math.Max(min * 1.1, max);
+            return Math.Pow(10, Math.Log10(min) + (t * (Math.Log10(max) - Math.Log10(min))));
+        }
+        return min + (t * (max - min));
+    }
+
+    public float ScaleY(decimal y, NTYAxisOptions axis, SKRect plotArea) {
+        var (min, max) = GetYRange(axis, true);
+        var scale = axis.Scale;
+
+        double t;
+        if (scale == NTAxisScale.Logarithmic) {
+            var dMin = Math.Max(0.000001, (double)min);
+            var dMax = Math.Max(dMin * 1.1, (double)max);
+            var dy = Math.Max(dMin, (double)y);
+            t = (Math.Log10(dy) - Math.Log10(dMin)) / (Math.Log10(dMax) - Math.Log10(dMin));
+        }
+        else {
+            var range = max - min;
+            if (range <= 0) {
+                return plotArea.Bottom;
+            }
+            t = (double)((y - min) / range);
+        }
+
+        const float p = 3f; // 3 pixels of air
+        var bottom = plotArea.Bottom - p;
+        var height = plotArea.Height - (p * 2);
+        return (float)(bottom - (t * height));
+    }
+
+    /// <summary>
+    ///     Converts a screen coordinate back to a data Y value.
+    /// </summary>
+    public decimal ScaleYInverse(float coord, NTYAxisOptions axis, SKRect plotArea) {
+        var (min, max) = GetYRange(axis, true);
+        var scale = axis.Scale;
+
+        const float p = 3f;
+        double t;
+        var bottom = plotArea.Bottom - p;
+        var height = plotArea.Height - (p * 2);
+        t = height <= 0 ? 0 : (bottom - coord) / height;
+
+        if (scale == NTAxisScale.Logarithmic) {
+            var dMin = Math.Max(0.000001, (double)min);
+            var dMax = Math.Max(dMin * 1.1, (double)max);
+            return (decimal)Math.Pow(10, Math.Log10(dMin) + (t * (Math.Log10(dMax) - Math.Log10(dMin))));
+        }
+        return min + ((decimal)t * (max - min));
+    }
+
+    internal void AddSeries(NTBaseSeries<TData> series) {
+        if (Series.Count > 0 && Series[0].CoordinateSystem != series.CoordinateSystem) {
+            throw new InvalidOperationException($"Cannot combine series with different coordinate systems. Currently using {Series[0].CoordinateSystem}, but tried to add {series.CoordinateSystem}.");
+        }
+
+        if (!Series.Contains(series)) {
+            Series.Add(series);
+        }
+
+        var cartesianSeries = Series.OfType<NTCartesianSeries<TData>>();
+        if (cartesianSeries?.Any() == true) {
+            var xAxis = cartesianSeries.First().XAxis;
+            var yAxis1 = cartesianSeries.First().YAxis;
+            NTYAxisOptions? yAxis2 = null;
+            foreach (var s in cartesianSeries.Skip(1)) {
+                if (!ReferenceEquals(s.XAxis, xAxis)) {
+                    throw new InvalidOperationException("All cartesian series must share the same X axis.");
+                }
+                if (!ReferenceEquals(s.YAxis, yAxis1)) {
+                    if (yAxis2 is null) {
+                        yAxis2 = s.YAxis;
+                    }
+                    else if (!ReferenceEquals(s.YAxis, yAxis2)) {
+                        throw new InvalidOperationException("Cartesian series can only use up to two different Y axes.");
+                    }
+                }
             }
         }
+
+        // Panning/Zooming validation
+        var lineSeries = Series.OfType<NTLineSeries<TData>>().ToList();
+        var anyInteractivity = lineSeries.Any(s => s.EnableXPan || s.EnableYPan || s.EnableXZoom || s.EnableYZoom);
+
+        if (anyInteractivity) {
+            if (Series.Count != lineSeries.Count) {
+                throw new InvalidOperationException("Interactive panning and zooming is only supported when all series in the chart are line series.");
+            }
+
+            var first = lineSeries[0];
+            foreach (var s in lineSeries.Skip(1)) {
+                if (s.EnableXPan != first.EnableXPan || s.EnableYPan != first.EnableYPan ||
+                    s.EnableXZoom != first.EnableXZoom || s.EnableYZoom != first.EnableYZoom) {
+                    throw new InvalidOperationException("All line series in the chart must have the same panning and zooming configurations.");
+                }
+            }
+        }
+    }
+
+    internal float GetBarSeriesOffsetWeight(NTBarSeries<TData> series) {
+        float weight = 0;
+        foreach (var s in Series.OfType<NTBarSeries<TData>>()) {
+            if (s == series) {
+                return weight;
+            }
+
+            if (s.YAxis == series.YAxis) {
+                weight += s.VisibilityFactor;
+            }
+        }
+        return weight;
+    }
+
+    internal float GetBarSeriesTotalWeight(NTYAxisOptions axis) => Series.OfType<NTBarSeries<TData>>().Where(s => s.YAxis == axis).Sum(s => s.VisibilityFactor);
+
+    internal SKColor GetPaletteColor(int index) => _resolvedColors.TryGetValue(Palette[index % Palette.Count].Background, out var skColor) ? skColor : SKColors.Gray;
+
+    internal SKColor GetPaletteTextColor(int index) {
+        var color = Palette[index % Palette.Count].Text;
+        if (_resolvedColors.TryGetValue(color, out var skColor)) {
+            return skColor;
+        }
+
+        var bgColor = GetPaletteColor(index);
+        var luminance = (0.2126f * bgColor.Red) + (0.7152f * bgColor.Green) + (0.0722f * bgColor.Blue);
+        return luminance > 128 ? SKColors.Black : SKColors.White;
     }
 
     internal SKColor GetSeriesColor(NTBaseSeries<TData> series) {
@@ -249,6 +619,8 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
 
         return _resolvedColors.TryGetValue(color, out var skColor) ? skColor : SKColors.Gray;
     }
+
+    internal int GetSeriesIndex(NTBaseSeries<TData> series) => Series.IndexOf(series);
 
     internal SKColor GetSeriesTextColor(NTBaseSeries<TData> series) {
         if (series.TextColor.HasValue && series.TextColor != TnTColor.None) {
@@ -269,22 +641,45 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         return luminance > 128 ? SKColors.Black : SKColors.White;
     }
 
-    internal SKColor GetPaletteColor(int index) => _resolvedColors.TryGetValue(Palette[index % Palette.Count].Background, out var skColor) ? skColor : SKColors.Gray;
-
-    internal SKColor GetPaletteTextColor(int index) {
-        var color = Palette[index % Palette.Count].Text;
-        if (_resolvedColors.TryGetValue(color, out var skColor)) {
-            return skColor;
-        }
-
-        var bgColor = GetPaletteColor(index);
-        var luminance = (0.2126f * bgColor.Red) + (0.7152f * bgColor.Green) + (0.0722f * bgColor.Blue);
-        return luminance > 128 ? SKColors.Black : SKColors.White;
-    }
-
     internal SKColor GetThemeColor(TnTColor color) => _resolvedColors.TryGetValue(color, out var skColor) ? skColor : SKColors.Black;
 
-    public async ValueTask DisposeAsync() {
+    internal List<NTXAxisOptions> GetUniqueXAxes() {
+        return Series.OfType<NTCartesianSeries<TData>>()
+            .Where(s => s.IsEffectivelyVisible)
+            .Select(s => s.XAxis)
+            .Where(a => a != null)
+            .Distinct()
+            .ToList();
+    }
+
+    internal List<NTYAxisOptions> GetUniqueYAxes() {
+        return Series.OfType<NTCartesianSeries<TData>>()
+            .Where(s => s.IsEffectivelyVisible)
+            .Select(s => s.YAxis)
+            .Where(a => a != null)
+            .Distinct()
+            .ToList();
+    }
+
+    internal void RemoveLegend(NTLegend<TData> legend) {
+        if (Legend == legend) {
+            Legend = null;
+        }
+    }
+
+    internal void RemoveSeries(NTBaseSeries<TData> series) {
+        if (Series.Contains(series)) {
+            Series.Remove(series);
+        }
+    }
+
+    internal void SetLegend(NTLegend<TData> legend) => Legend = legend;
+
+    protected override void Dispose(bool disposing) {
+        base.Dispose(disposing);
+    }
+
+    protected override async ValueTask DisposeAsyncCore() {
         _objRef?.Dispose();
         if (_themeListener != null) {
             await _themeListener.InvokeVoidAsync("dispose");
@@ -292,15 +687,14 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         }
     }
 
-    /// <summary>
-    ///     Resets the view to the default range.
-    /// </summary>
-    public void ResetView() {
-        _viewXMin = null;
-        _viewXMax = null;
-        _viewYMin = null;
-        _viewYMax = null;
-        StateHasChanged();
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) {
+            _density = await JSRuntime.InvokeAsync<float>("eval", "window.devicePixelRatio || 1");
+            _objRef = DotNetObjectReference.Create(this);
+            _themeListener = await JSRuntime.InvokeAsync<IJSObjectReference>("NTComponents.onThemeChanged", _objRef);
+            await ResolveColorsAsync();
+            StateHasChanged();
+        }
     }
 
     protected virtual void OnClick(MouseEventArgs e) {
@@ -324,8 +718,29 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         }
     }
 
-    private float _lastWidth;
-    private float _lastHeight;
+    protected virtual void OnMouseDown(MouseEventArgs e) {
+        var point = new SKPoint((float)e.OffsetX * _density, (float)e.OffsetY * _density);
+
+        if (Legend != null && Legend.Visible && Legend.Position == LegendPosition.Floating) {
+            var rect = Legend.GetFloatingRect(LastPlotArea);
+            if (rect.Contains(point)) {
+                _isDraggingLegend = true;
+                _hasDraggedLegend = false;
+                _legendDragStartMousePos = point;
+                _legendMouseOffset = new SKPoint(point.X - rect.Left, point.Y - rect.Top);
+                return;
+            }
+        }
+
+        if (IsXPanEnabled || IsYPanEnabled) {
+            _isPanning = true;
+            _panStartPoint = point;
+            var primaryX = GetUniqueXAxes().FirstOrDefault();
+            var primaryY = GetUniqueYAxes().FirstOrDefault();
+            _panStartXRange = GetXRange(primaryX, true);
+            _panStartYRange = GetYRange(primaryY, true);
+        }
+    }
 
     protected virtual void OnMouseMove(MouseEventArgs e) {
         LastMousePosition = new SKPoint((float)e.OffsetX * _density, (float)e.OffsetY * _density);
@@ -374,74 +789,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         StateHasChanged();
     }
 
-    protected virtual void OnMouseDown(MouseEventArgs e) {
-        var point = new SKPoint((float)e.OffsetX * _density, (float)e.OffsetY * _density);
-
-        if (Legend != null && Legend.Visible && Legend.Position == LegendPosition.Floating) {
-            var rect = Legend.GetFloatingRect(LastPlotArea);
-            if (rect.Contains(point)) {
-                _isDraggingLegend = true;
-                _hasDraggedLegend = false;
-                _legendDragStartMousePos = point;
-                _legendMouseOffset = new SKPoint(point.X - rect.Left, point.Y - rect.Top);
-                return;
-            }
-        }
-
-        if (IsXPanEnabled || IsYPanEnabled) {
-            _isPanning = true;
-            _panStartPoint = point;
-            var primaryX = GetUniqueXAxes().FirstOrDefault();
-            var primaryY = GetUniqueYAxes().FirstOrDefault();
-            _panStartXRange = GetXRange(primaryX, true);
-            _panStartYRange = GetYRange(primaryY, true);
-        }
-    }
-
-    protected virtual void OnMouseUp(MouseEventArgs e) {
-        _isPanning = false;
-        _isDraggingLegend = false;
-    }
-
-    protected virtual void OnWheel(WheelEventArgs e) {
-        if ((!IsXZoomEnabled && !IsYZoomEnabled) || LastPlotArea == default) {
-            return;
-        }
-
-        var mousePoint = new SKPoint((float)e.OffsetX * _density, (float)e.OffsetY * _density);
-        if (!LastPlotArea.Contains(mousePoint)) {
-            return;
-        }
-
-        var zoomFactor = e.DeltaY > 0 ? 1.1 : 0.9;
-
-        // Use ScaleXInverse/ScaleYInverse
-        var primaryX = GetUniqueXAxes().FirstOrDefault();
-        var primaryY = GetUniqueYAxes().FirstOrDefault();
-
-        var xVal = ScaleXInverse(mousePoint.X, LastPlotArea);
-        var yVal = ScaleYInverse(mousePoint.Y, primaryY!, LastPlotArea);
-
-        var (xMin, xMax) = GetXRange(primaryX, true);
-        var (yMin, yMax) = GetYRange(primaryY, true);
-
-        if (IsXZoomEnabled) {
-            var newXRange = (xMax - xMin) * zoomFactor;
-            var xPct = (xVal - xMin) / (xMax - xMin);
-            _viewXMin = xVal - (newXRange * xPct);
-            _viewXMax = xVal + (newXRange * (1 - xPct));
-        }
-
-        if (IsYZoomEnabled) {
-            var newYRange = (yMax - yMin) * (decimal)zoomFactor;
-            var yPct = (decimal)((double)(yVal - yMin) / (double)(yMax - yMin));
-            _viewYMin = yVal - (newYRange * yPct);
-            _viewYMax = yVal + (newYRange * (1 - yPct));
-        }
-
-        StateHasChanged();
-    }
-
     protected virtual void OnMouseOut(MouseEventArgs e) {
         LastMousePosition = null;
         HoveredSeries = null;
@@ -450,6 +797,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         _isHovering = false;
         _isHoveringLegend = false;
         StateHasChanged();
+    }
+
+    protected virtual void OnMouseUp(MouseEventArgs e) {
+        _isPanning = false;
+        _isDraggingLegend = false;
     }
 
     protected void OnPaintSurface(SKPaintGLSurfaceEventArgs e) => OnPaintSurface(e.Surface.Canvas, e.Info);
@@ -490,7 +842,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
 
         // Pass 1: Measure legend and update plotArea/accessibleArea
         SKRect legendDrawArea = default;
-        if (Legend != null && Legend.Visible && Legend.Position != LegendPosition.None && Legend.Position != LegendPosition.Floating) {
+        if (Legend?.Visible == true && Legend.Position != LegendPosition.None && Legend.Position != LegendPosition.Floating) {
             var (newPlotArea, legendArea) = Legend.Measure(plotArea);
             plotArea = newPlotArea;
             legendDrawArea = legendArea;
@@ -607,6 +959,164 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         }
     }
 
+    protected virtual void OnWheel(WheelEventArgs e) {
+        if ((!IsXZoomEnabled && !IsYZoomEnabled) || LastPlotArea == default) {
+            return;
+        }
+
+        var mousePoint = new SKPoint((float)e.OffsetX * _density, (float)e.OffsetY * _density);
+        if (!LastPlotArea.Contains(mousePoint)) {
+            return;
+        }
+
+        var zoomFactor = e.DeltaY > 0 ? 1.1 : 0.9;
+
+        // Use ScaleXInverse/ScaleYInverse
+        var primaryX = GetUniqueXAxes().FirstOrDefault();
+        var primaryY = GetUniqueYAxes().FirstOrDefault();
+
+        var xVal = ScaleXInverse(mousePoint.X, LastPlotArea);
+        var yVal = ScaleYInverse(mousePoint.Y, primaryY!, LastPlotArea);
+
+        var (xMin, xMax) = GetXRange(primaryX, true);
+        var (yMin, yMax) = GetYRange(primaryY, true);
+
+        if (IsXZoomEnabled) {
+            var newXRange = (xMax - xMin) * zoomFactor;
+            var xPct = (xVal - xMin) / (xMax - xMin);
+            _viewXMin = xVal - (newXRange * xPct);
+            _viewXMax = xVal + (newXRange * (1 - xPct));
+        }
+
+        if (IsYZoomEnabled) {
+            var newYRange = (yMax - yMin) * (decimal)zoomFactor;
+            var yPct = (decimal)((double)(yVal - yMin) / (double)(yMax - yMin));
+            _viewYMin = yVal - (newYRange * yPct);
+            _viewYMax = yVal + (newYRange * (1 - yPct));
+        }
+
+        StateHasChanged();
+    }
+
+    private double CalculateNiceNumber(double range, bool round) {
+        var exponent = Math.Floor(Math.Log10(range));
+        var fraction = range / Math.Pow(10, exponent);
+        double niceFraction;
+
+        if (round) {
+            niceFraction = fraction < 1.5 ? 1 : fraction < 3 ? 2 : fraction < 7 ? 5 : 10;
+        }
+        else {
+            niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+        }
+
+        return niceFraction * Math.Pow(10, exponent);
+    }
+
+    private void CalculateTreeMapAreas(SKRect plotArea) {
+        _treeMapAreas.Clear();
+        var treeMapSeries = Series.Where(s => s.CoordinateSystem == ChartCoordinateSystem.TreeMap && s.IsEffectivelyVisible).ToList();
+        if (!treeMapSeries.Any()) {
+            return;
+        }
+
+        if (treeMapSeries.Count == 1) {
+            _treeMapAreas[treeMapSeries[0]] = plotArea;
+            return;
+        }
+
+        var seriesData = treeMapSeries.Select(s => new SeriesLayoutItem(s, s.GetTotalValue())).ToList();
+        var totalValue = seriesData.Sum(s => s.Value);
+        if (totalValue <= 0) {
+            totalValue = seriesData.Count;
+            seriesData = treeMapSeries.Select(s => new SeriesLayoutItem(s, 1.0m)).ToList();
+        }
+
+        PartitionArea(seriesData, plotArea, totalValue, true);
+    }
+
+    private SKRect GetSeriesRenderArea(NTBaseSeries<TData> series, SKRect plotArea, SKRect totalArea) {
+        if (series.CoordinateSystem == ChartCoordinateSystem.TreeMap) {
+            if (_treeMapAreas.TryGetValue(series, out var area)) {
+                var treeMapSeries = Series.Where(s => s.CoordinateSystem == ChartCoordinateSystem.TreeMap && s.IsEffectivelyVisible).ToList();
+                if (treeMapSeries.Count > 1) {
+                    // Shave off top for series title
+                    return new SKRect(area.Left, area.Top + 20, area.Right, area.Bottom);
+                }
+                return area;
+            }
+        }
+
+        if (series.CoordinateSystem == ChartCoordinateSystem.Circular &&
+            Legend != null && Legend.Visible && (Legend.Position == LegendPosition.Left || Legend.Position == LegendPosition.Right)) {
+            var centerX = totalArea.MidX;
+            var centerY = totalArea.MidY;
+
+            var dx = Math.Min(centerX - plotArea.Left, plotArea.Right - centerX);
+            var dy = Math.Min(centerY - plotArea.Top, plotArea.Bottom - centerY);
+
+            return new SKRect(centerX - dx, centerY - dy, centerX + dx, centerY + dy);
+        }
+        return plotArea;
+    }
+
+    private void PartitionArea(List<SeriesLayoutItem> items, SKRect area, decimal totalValue, bool horizontal) {
+        if (!items.Any()) {
+            return;
+        }
+
+        if (items.Count == 1) {
+            _treeMapAreas[items[0].Series] = area;
+            return;
+        }
+
+        var mid = items.Count / 2;
+        var leftItems = items.Take(mid).ToList();
+        var rightItems = items.Skip(mid).ToList();
+
+        var leftValue = leftItems.Sum(x => x.Value);
+        var rightValue = rightItems.Sum(x => x.Value);
+        var total = leftValue + rightValue;
+
+        if (total <= 0) {
+            return;
+        }
+
+        if (horizontal) {
+            var leftWidth = (float)(area.Width * (float)(leftValue / total));
+            var leftArea = new SKRect(area.Left, area.Top, area.Left + leftWidth, area.Bottom);
+            var rightArea = new SKRect(area.Left + leftWidth, area.Top, area.Right, area.Bottom);
+            PartitionArea(leftItems, leftArea, leftValue, !horizontal);
+            PartitionArea(rightItems, rightArea, rightValue, !horizontal);
+        }
+        else {
+            var topHeight = (float)(area.Height * (float)(leftValue / total));
+            var topArea = new SKRect(area.Left, area.Top, area.Right, area.Top + topHeight);
+            var bottomArea = new SKRect(area.Left, area.Top + topHeight, area.Right, area.Bottom);
+            PartitionArea(leftItems, topArea, leftValue, !horizontal);
+            PartitionArea(rightItems, bottomArea, rightValue, !horizontal);
+        }
+    }
+
+    private void RenderTitle(SKCanvas canvas, SKImageInfo info) {
+        using var paint = new SKPaint {
+            Color = GetThemeColor(TextColor),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill
+        };
+
+        using var font = new SKFont {
+            Size = 20,
+            Embolden = true,
+            Typeface = DefaultTypeface
+        };
+
+        var x = Margin.Left + ((info.Width - Margin.Left - Margin.Right) / 2);
+        var y = Margin.Top + 20;
+
+        canvas.DrawText(Title!, x, y, SKTextAlign.Center, font, paint);
+    }
+
     private void RenderTooltip(SKCanvas canvas, SKRect plotArea) {
         if (HoveredSeries == null || HoveredDataPoint == null || !LastMousePosition.HasValue) {
             return;
@@ -714,94 +1224,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         }
     }
 
-    private SKRect GetSeriesRenderArea(NTBaseSeries<TData> series, SKRect plotArea, SKRect totalArea) {
-        if (series.CoordinateSystem == ChartCoordinateSystem.TreeMap) {
-            if (_treeMapAreas.TryGetValue(series, out var area)) {
-                var treeMapSeries = Series.Where(s => s.CoordinateSystem == ChartCoordinateSystem.TreeMap && s.IsEffectivelyVisible).ToList();
-                if (treeMapSeries.Count > 1) {
-                    // Shave off top for series title
-                    return new SKRect(area.Left, area.Top + 20, area.Right, area.Bottom);
-                }
-                return area;
-            }
-        }
-
-        if (series.CoordinateSystem == ChartCoordinateSystem.Circular &&
-            Legend != null && Legend.Visible && (Legend.Position == LegendPosition.Left || Legend.Position == LegendPosition.Right)) {
-
-            var centerX = totalArea.MidX;
-            var centerY = totalArea.MidY;
-
-            var dx = Math.Min(centerX - plotArea.Left, plotArea.Right - centerX);
-            var dy = Math.Min(centerY - plotArea.Top, plotArea.Bottom - centerY);
-
-            return new SKRect(centerX - dx, centerY - dy, centerX + dx, centerY + dy);
-        }
-        return plotArea;
-    }
-
-    private record SeriesLayoutItem(NTBaseSeries<TData> Series, decimal Value);
-
-    private void CalculateTreeMapAreas(SKRect plotArea) {
-        _treeMapAreas.Clear();
-        var treeMapSeries = Series.Where(s => s.CoordinateSystem == ChartCoordinateSystem.TreeMap && s.IsEffectivelyVisible).ToList();
-        if (!treeMapSeries.Any()) {
-            return;
-        }
-
-        if (treeMapSeries.Count == 1) {
-            _treeMapAreas[treeMapSeries[0]] = plotArea;
-            return;
-        }
-
-        var seriesData = treeMapSeries.Select(s => new SeriesLayoutItem(s, s.GetTotalValue())).ToList();
-        var totalValue = seriesData.Sum(s => s.Value);
-        if (totalValue <= 0) {
-            totalValue = seriesData.Count;
-            seriesData = treeMapSeries.Select(s => new SeriesLayoutItem(s, 1.0m)).ToList();
-        }
-
-        PartitionArea(seriesData, plotArea, totalValue, true);
-    }
-
-    private void PartitionArea(List<SeriesLayoutItem> items, SKRect area, decimal totalValue, bool horizontal) {
-        if (!items.Any()) {
-            return;
-        }
-
-        if (items.Count == 1) {
-            _treeMapAreas[items[0].Series] = area;
-            return;
-        }
-
-        var mid = items.Count / 2;
-        var leftItems = items.Take(mid).ToList();
-        var rightItems = items.Skip(mid).ToList();
-
-        var leftValue = leftItems.Sum(x => x.Value);
-        var rightValue = rightItems.Sum(x => x.Value);
-        var total = leftValue + rightValue;
-
-        if (total <= 0) {
-            return;
-        }
-
-        if (horizontal) {
-            var leftWidth = (float)(area.Width * (float)(leftValue / total));
-            var leftArea = new SKRect(area.Left, area.Top, area.Left + leftWidth, area.Bottom);
-            var rightArea = new SKRect(area.Left + leftWidth, area.Top, area.Right, area.Bottom);
-            PartitionArea(leftItems, leftArea, leftValue, !horizontal);
-            PartitionArea(rightItems, rightArea, rightValue, !horizontal);
-        }
-        else {
-            var topHeight = (float)(area.Height * (float)(leftValue / total));
-            var topArea = new SKRect(area.Left, area.Top, area.Right, area.Top + topHeight);
-            var bottomArea = new SKRect(area.Left, area.Top + topHeight, area.Right, area.Bottom);
-            PartitionArea(leftItems, topArea, leftValue, !horizontal);
-            PartitionArea(rightItems, bottomArea, rightValue, !horizontal);
-        }
-    }
-
     private void RenderTreeMapGroupLabels(SKCanvas canvas) {
         var treeMapSeries = Series.Where(s => s.CoordinateSystem == ChartCoordinateSystem.TreeMap && s.IsEffectivelyVisible).ToList();
         if (treeMapSeries.Count <= 1) {
@@ -837,481 +1259,36 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAsyncDisposab
         }
     }
 
-    private void RenderTitle(SKCanvas canvas, SKImageInfo info) {
-        using var paint = new SKPaint {
-            Color = GetThemeColor(TextColor),
-            IsAntialias = true,
-            Style = SKPaintStyle.Fill
-        };
-
-        using var font = new SKFont {
-            Size = 20,
-            Embolden = true,
-            Typeface = DefaultTypeface
-        };
-
-        var x = Margin.Left + ((info.Width - Margin.Left - Margin.Right) / 2);
-        var y = Margin.Top + 20;
-
-        canvas.DrawText(Title!, x, y, SKTextAlign.Center, font, paint);
-    }
-
-    internal void AddSeries(NTBaseSeries<TData> series) {
-        if (Series.Count > 0 && Series[0].CoordinateSystem != series.CoordinateSystem) {
-            throw new InvalidOperationException($"Cannot combine series with different coordinate systems. Currently using {Series[0].CoordinateSystem}, but tried to add {series.CoordinateSystem}.");
-        }
-
-        if (!Series.Contains(series)) {
-            Series.Add(series);
-        }
-
-        var cartesianSeries = Series.OfType<NTCartesianSeries<TData>>();
-        if (cartesianSeries?.Any() == true) {
-            var xAxis = cartesianSeries.First().XAxis;
-            var yAxis1 = cartesianSeries.First().YAxis;
-            NTYAxisOptions? yAxis2 = null;
-            foreach (var s in cartesianSeries.Skip(1)) {
-                if (!ReferenceEquals(s.XAxis, xAxis)) {
-                    throw new InvalidOperationException("All cartesian series must share the same X axis.");
-                }
-                if (!ReferenceEquals(s.YAxis, yAxis1)) {
-                    if (yAxis2 is null) {
-                        yAxis2 = s.YAxis;
-                    }
-                    else if (!ReferenceEquals(s.YAxis, yAxis2)) {
-                        throw new InvalidOperationException("Cartesian series can only use up to two different Y axes.");
-                    }
-                }
+    private async Task ResolveColorsAsync() {
+        var colorsToResolve = Enum.GetValues<TnTColor>().ToList();
+        foreach (var color in colorsToResolve) {
+            if (color is TnTColor.None or TnTColor.Transparent) {
+                _resolvedColors[color] = SKColors.Transparent;
+                continue;
             }
-        }
-
-        // Panning/Zooming validation
-        var lineSeries = Series.OfType<NTLineSeries<TData>>().ToList();
-        var anyInteractivity = lineSeries.Any(s => s.EnableXPan || s.EnableYPan || s.EnableXZoom || s.EnableYZoom);
-
-        if (anyInteractivity) {
-            if (Series.Count != lineSeries.Count) {
-                throw new InvalidOperationException("Interactive panning and zooming is only supported when all series in the chart are line series.");
+            if (color == TnTColor.Black) {
+                _resolvedColors[color] = SKColors.Black;
+                continue;
+            }
+            if (color == TnTColor.White) {
+                _resolvedColors[color] = SKColors.White;
+                continue;
             }
 
-            var first = lineSeries[0];
-            foreach (var s in lineSeries.Skip(1)) {
-                if (s.EnableXPan != first.EnableXPan || s.EnableYPan != first.EnableYPan ||
-                    s.EnableXZoom != first.EnableXZoom || s.EnableYZoom != first.EnableYZoom) {
-                    throw new InvalidOperationException("All line series in the chart must have the same panning and zooming configurations.");
-                }
+            var hex = await JSRuntime.InvokeAsync<string>("NTComponents.getColorValueFromEnumName", color.ToString());
+            if (!string.IsNullOrEmpty(hex) && SKColor.TryParse(hex, out var skColor)) {
+                _resolvedColors[color] = skColor;
+            }
+            else {
+                // Fallback for primary/secondary etc if not found in CSS
+                _resolvedColors[color] = color switch {
+                    TnTColor.Primary => SKColors.RoyalBlue,
+                    TnTColor.Secondary => SKColors.Gray,
+                    _ => SKColors.Gray
+                };
             }
         }
     }
 
-    internal void RemoveSeries(NTBaseSeries<TData> series) {
-        if (Series.Contains(series)) {
-            Series.Remove(series);
-        }
-    }
-
-    internal void SetLegend(NTLegend<TData> legend) => Legend = legend;
-
-    internal void RemoveLegend(NTLegend<TData> legend) {
-        if (Legend == legend) {
-            Legend = null;
-        }
-    }
-
-    internal int GetSeriesIndex(NTBaseSeries<TData> series) => Series.IndexOf(series);
-
-    internal List<NTYAxisOptions> GetUniqueYAxes() {
-        return Series.OfType<NTCartesianSeries<TData>>()
-            .Where(s => s.IsEffectivelyVisible)
-            .Select(s => s.YAxis)
-            .Where(a => a != null)
-            .Distinct()
-            .ToList();
-    }
-
-    internal List<NTXAxisOptions> GetUniqueXAxes() {
-        return Series.OfType<NTCartesianSeries<TData>>()
-            .Where(s => s.IsEffectivelyVisible)
-            .Select(s => s.XAxis)
-            .Where(a => a != null)
-            .Distinct()
-            .ToList();
-    }
-
-    internal float GetBarSeriesTotalWeight(NTYAxisOptions axis) => Series.OfType<NTBarSeries<TData>>().Where(s => s.YAxis == axis).Sum(s => s.VisibilityFactor);
-
-    internal float GetBarSeriesOffsetWeight(NTBarSeries<TData> series) {
-        float weight = 0;
-        foreach (var s in Series.OfType<NTBarSeries<TData>>()) {
-            if (s == series) {
-                return weight;
-            }
-
-            if (s.YAxis == series.YAxis) {
-                weight += s.VisibilityFactor;
-            }
-        }
-        return weight;
-    }
-
-    /// <summary>
-    ///    Gets whether to use a categorical scale for the X axis.
-    /// </summary>
-    public bool IsCategoricalX => Series.OfType<NTBarSeries<TData>>().Any(s => s.Orientation == NTChartOrientation.Vertical && s.IsEffectivelyVisible);
-
-    /// <summary>
-    ///    Gets whether to use a categorical scale for the Y axis.
-    /// </summary>
-    public bool IsCategoricalY => Series.OfType<NTBarSeries<TData>>().Any(s => s.Orientation == NTChartOrientation.Horizontal && s.IsEffectivelyVisible);
-
-    /// <summary>
-    ///     Returns a list of all unique X values across all cartesian series, sorted.
-    /// </summary>
-    public List<object> GetAllXValues() {
-        if (_cachedAllX != null) {
-            return _cachedAllX;
-        }
-
-        var allX = new HashSet<object>();
-        foreach (var s in Series.Where(s => s.IsEffectivelyVisible)) {
-            s.RegisterXValues(allX);
-        }
-
-        _cachedAllX = [.. allX.OrderBy(x => x)];
-        return _cachedAllX;
-    }
-
-    /// <summary>
-    ///     Returns a list of all unique Y values across all cartesian series, sorted.
-    /// </summary>
-    public List<object> GetAllYValues() {
-        if (_cachedAllY != null) {
-            return _cachedAllY;
-        }
-
-        var allY = new HashSet<object>();
-        foreach (var s in Series.Where(s => s.IsEffectivelyVisible)) {
-            s.RegisterYValues(allY);
-        }
-
-        _cachedAllY = allY.OrderBy(y => y).ToList();
-        return _cachedAllY;
-    }
-
-    public double GetScaledXValue(object? originalX) {
-        if (originalX == null) {
-            return 0;
-        }
-
-        if (IsCategoricalX) {
-            var allX = GetAllXValues();
-            var index = allX.IndexOf(originalX);
-            return index >= 0 ? index : 0;
-        }
-
-        if (originalX is DateTime dt) {
-            return dt.Ticks;
-        }
-        return originalX is IConvertible convertible ? convertible.ToDouble(null) : 0;
-    }
-
-    public decimal GetScaledYValue(object? originalY) {
-        if (originalY == null) {
-            return 0;
-        }
-
-        if (IsCategoricalY) {
-            var allY = GetAllYValues();
-            var index = allY.IndexOf(originalY);
-            return index >= 0 ? index : 0;
-        }
-
-        if (originalY is DateTime dt) {
-            return dt.Ticks;
-        }
-        return originalY is IConvertible convertible ? convertible.ToDecimal(null) : 0;
-    }
-
-    /// <summary>
-    ///    Gets the scale used for the X axis.
-    /// </summary>
-    public NTAxisScale GetXScale() => GetUniqueXAxes().FirstOrDefault()?.Scale ?? NTAxisScale.Linear;
-
-    public float ScaleX(double x, SKRect plotArea) {
-        var axis = GetUniqueXAxes().FirstOrDefault();
-        var (min, max) = GetXRange(axis, true);
-        var scale = axis?.Scale ?? NTAxisScale.Linear;
-
-        double t;
-        if (scale == NTAxisScale.Logarithmic) {
-            min = Math.Max(0.000001, min);
-            max = Math.Max(min * 1.1, max);
-            x = Math.Max(min, x);
-            t = (Math.Log10(x) - Math.Log10(min)) / (Math.Log10(max) - Math.Log10(min));
-        }
-        else {
-            var range = max - min;
-            if (range <= 0) {
-                return plotArea.Left;
-            }
-            t = (x - min) / range;
-        }
-
-        const float p = 3f; // 3 pixels of air
-        var left = plotArea.Left + p;
-        var width = plotArea.Width - (p * 2);
-        return (float)(left + (t * width));
-    }
-
-    public double ScaleXInverse(float coord, SKRect plotArea) {
-        var axis = GetUniqueXAxes().FirstOrDefault();
-        var (min, max) = GetXRange(axis, true);
-        var scale = axis?.Scale ?? NTAxisScale.Linear;
-
-        const float p = 3f;
-        double t;
-        var left = plotArea.Left + p;
-        var width = plotArea.Width - (p * 2);
-        t = width <= 0 ? 0 : (coord - left) / width;
-
-        if (scale == NTAxisScale.Logarithmic) {
-            min = Math.Max(0.000001, min);
-            max = Math.Max(min * 1.1, max);
-            return Math.Pow(10, Math.Log10(min) + (t * (Math.Log10(max) - Math.Log10(min))));
-        }
-        return min + (t * (max - min));
-    }
-
-    public float ScaleY(decimal y, NTYAxisOptions axis, SKRect plotArea) {
-        var (min, max) = GetYRange(axis, true);
-        var scale = axis.Scale;
-
-        double t;
-        if (scale == NTAxisScale.Logarithmic) {
-            var dMin = Math.Max(0.000001, (double)min);
-            var dMax = Math.Max(dMin * 1.1, (double)max);
-            var dy = Math.Max(dMin, (double)y);
-            t = (Math.Log10(dy) - Math.Log10(dMin)) / (Math.Log10(dMax) - Math.Log10(dMin));
-        }
-        else {
-            var range = max - min;
-            if (range <= 0) {
-                return plotArea.Bottom;
-            }
-            t = (double)((y - min) / range);
-        }
-
-        const float p = 3f; // 3 pixels of air
-        var bottom = plotArea.Bottom - p;
-        var height = plotArea.Height - (p * 2);
-        return (float)(bottom - (t * height));
-    }
-
-    /// <summary>
-    ///     Converts a screen coordinate back to a data Y value.
-    /// </summary>
-    public decimal ScaleYInverse(float coord, NTYAxisOptions axis, SKRect plotArea) {
-        var (min, max) = GetYRange(axis, true);
-        var scale = axis.Scale;
-
-        const float p = 3f;
-        double t;
-        var bottom = plotArea.Bottom - p;
-        var height = plotArea.Height - (p * 2);
-        t = height <= 0 ? 0 : (bottom - coord) / height;
-
-        if (scale == NTAxisScale.Logarithmic) {
-            var dMin = Math.Max(0.000001, (double)min);
-            var dMax = Math.Max(dMin * 1.1, (double)max);
-            return (decimal)Math.Pow(10, Math.Log10(dMin) + (t * (Math.Log10(dMax) - Math.Log10(dMin))));
-        }
-        return min + ((decimal)t * (max - min));
-    }
-
-    public (double Min, double Max) GetXRange(NTXAxisOptions? axis, bool padded = false) {
-        if (_cachedXRanges.TryGetValue((axis, padded), out var cached)) {
-            return cached;
-        }
-
-        if (_viewXMin.HasValue && _viewXMax.HasValue) {
-            var range = (_viewXMin.Value, _viewXMax.Value);
-            _cachedXRanges[(axis, padded)] = range;
-            return range;
-        }
-
-        if (IsCategoricalX) {
-            var allX = GetAllXValues();
-            if (!allX.Any()) {
-                return (0, 1);
-            }
-
-            if (!padded) {
-                return (0, Math.Max(1, allX.Count - 1));
-            }
-
-            var catRange = Math.Max(1, allX.Count - 1);
-            var range = (-catRange * RangePadding, catRange + (catRange * RangePadding));
-            _cachedXRanges[(axis, padded)] = range;
-            return range;
-        }
-
-        var min = double.MaxValue;
-        var max = double.MinValue;
-
-        var seriesToConsider = Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible);
-        if (axis != null) {
-            seriesToConsider = seriesToConsider.Where(s => s.XAxis == axis);
-        }
-
-        foreach (var s in seriesToConsider) {
-            var seriesRange = s.GetXRange();
-            if (seriesRange.HasValue) {
-                min = Math.Min(min, seriesRange.Value.Min);
-                max = Math.Max(max, seriesRange.Value.Max);
-            }
-        }
-
-        if (min == double.MaxValue) {
-            return (0, 1);
-        }
-
-        if (!padded) {
-            return (min, max);
-        }
-
-        var (niceMin, niceMax, _) = CalculateNiceScaling(min, max);
-        var result = (niceMin, niceMax);
-        _cachedXRanges[(axis, padded)] = result;
-        return result;
-    }
-
-    public (decimal Min, decimal Max) GetYRange(NTYAxisOptions? axis, bool padded = false) {
-        if (_cachedYRanges.TryGetValue((axis, padded), out var cached)) {
-            return cached;
-        }
-
-        if (_viewYMin.HasValue && _viewYMax.HasValue) {
-            var range = (_viewYMin.Value, _viewYMax.Value);
-            _cachedYRanges[(axis, padded)] = range;
-            return range;
-        }
-
-        if (IsCategoricalY) {
-            var allY = GetAllYValues();
-            if (!allY.Any()) {
-                return (0, 1);
-            }
-
-            if (!padded) {
-                return (0, Math.Max(1, allY.Count - 1));
-            }
-
-            var catRange = (decimal)Math.Max(1, allY.Count - 1);
-            var rp = (decimal)RangePadding;
-            var range = (-catRange * rp, catRange + (catRange * rp));
-            _cachedYRanges[(axis, padded)] = range;
-            return range;
-        }
-
-        var min = decimal.MaxValue;
-        var max = decimal.MinValue;
-
-        var seriesToConsider = Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible);
-        if (axis != null) {
-            seriesToConsider = seriesToConsider.Where(s => s.YAxis == axis);
-        }
-
-        foreach (var s in seriesToConsider) {
-            var seriesRange = (IsXZoomEnabled && _viewXMin.HasValue && _viewXMax.HasValue)
-                ? s.GetYRange(_viewXMin, _viewXMax)
-                : s.GetYRange();
-
-            if (seriesRange.HasValue) {
-                min = Math.Min(min, seriesRange.Value.Min);
-                max = Math.Max(max, seriesRange.Value.Max);
-            }
-        }
-
-        if (min == decimal.MaxValue) {
-            return (0, 1);
-        }
-
-        // Bar charts should generally start at 0
-        if (seriesToConsider.Any(s => s is NTBarSeries<TData>)) {
-            min = Math.Min(0, min);
-        }
-
-        if (!padded) {
-            var range = (min, max);
-            _cachedYRanges[(axis, padded)] = range;
-            return range;
-        }
-
-        var (niceMinY, niceMaxY, _) = CalculateNiceScaling((double)min, (double)max);
-        var result = ((decimal)niceMinY, (decimal)niceMaxY);
-        _cachedYRanges[(axis, padded)] = result;
-        return result;
-    }
-
-    public (double Min, double Max, double Spacing) CalculateNiceScaling(double min, double max, int maxTicks = 5) {
-        if (min == max) {
-            max = min + 1;
-        }
-
-        var range = CalculateNiceNumber(max - min, false);
-        var tickSpacing = CalculateNiceNumber(range / (maxTicks - 1), true);
-
-        var niceMin = Math.Floor(min / tickSpacing) * tickSpacing;
-        var niceMax = Math.Ceiling(max / tickSpacing) * tickSpacing;
-
-        return (niceMin, niceMax, tickSpacing);
-    }
-
-    private double CalculateNiceNumber(double range, bool round) {
-        var exponent = Math.Floor(Math.Log10(range));
-        var fraction = range / Math.Pow(10, exponent);
-        double niceFraction;
-
-        if (round) {
-            niceFraction = fraction < 1.5 ? 1 : fraction < 3 ? 2 : fraction < 7 ? 5 : 10;
-        }
-        else {
-            niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
-        }
-
-        return niceFraction * Math.Pow(10, exponent);
-    }
-
-    /// <summary>
-    ///     Exports the current chart as a PNG image.
-    /// </summary>
-    /// <param name="fileName">The name of the file to download. Defaults to "[Title].png" or "chart.png".</param>
-    /// <returns>A <see cref="Task" /> representing the export operation.</returns>
-    public async Task ExportAsPngAsync(string? fileName = null) {
-        if (_lastWidth <= 0 || _lastHeight <= 0) {
-            return;
-        }
-
-        var info = new SKImageInfo((int)_lastWidth, (int)_lastHeight);
-        using var surface = SKSurface.Create(info);
-        if (surface == null) {
-            return;
-        }
-
-        OnPaintSurface(surface.Canvas, info);
-
-        using var image = surface.Snapshot();
-        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-        if (data == null) {
-            return;
-        }
-
-        using var stream = data.AsStream();
-        await JSRuntime.DownloadFileFromStreamAsync(stream, fileName ?? $"{Title ?? "chart"}.png");
-    }
-
-    protected override void Dispose(bool disposing) {
-        base.Dispose(disposing);
-    }
-    protected override ValueTask DisposeAsyncCore() => base.DisposeAsyncCore();
+    private record SeriesLayoutItem(NTBaseSeries<TData> Series, decimal Value);
 }
