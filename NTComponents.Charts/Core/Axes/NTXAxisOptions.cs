@@ -10,49 +10,67 @@ namespace NTComponents.Charts.Core.Axes;
 /// </summary>
 public class NTXAxisOptions : NTAxisOptions {
 
-/// <inheritdoc />
-internal override SKRect Measure<TData>(SKRect renderArea, NTChart<TData> chart) {
+   private static readonly NTXAxisOptions _default = new();
+   public static NTXAxisOptions Default => _default;
+
+   protected override void OnInitialized() {
+      base.OnInitialized();
+      Chart?.SetXAxisOptions(this);
+   }
+
+   /// <inheritdoc />
+   internal override SKRect Measure(SKRect renderArea, NTRenderContext context, IAxisChart chart) {
       float labelHeight = 16;
       float titleHeight = string.IsNullOrEmpty(Title) ? 0 : 20;
-      var totalAxisHeight = labelHeight + titleHeight + 4;
+      var totalAxisHeight = (labelHeight + titleHeight + 4) * context.Density;
 
       // Add a 10px margin on the right to prevent data points from being cut off,
       // but only if there isn't a secondary Y-axis providing its own space.
       var yAxes = chart.GetUniqueYAxes();
-      float rightMargin = yAxes.Count > 1 ? 0 : 10;
+      float rightMargin = (yAxes.Count > 1 ? 0 : 10) * context.Density;
+
+      // Determine nice range once during measurement based on available space
+      if (!chart.IsCategoricalX && Scale == NTAxisScale.Linear) {
+         var (min, max) = chart.GetXRange(this, false);
+         var maxTicks = Math.Min(MaxTicks, Math.Max(2, (int)(renderArea.Width / (100 * context.Density))));
+         var (niceMin, niceMax, _) = CalculateNiceScaling(min, max, maxTicks);
+         CachedXRange = (niceMin, niceMax);
+      }
 
       return new SKRect(renderArea.Left, renderArea.Top, renderArea.Right - rightMargin, renderArea.Bottom - totalAxisHeight);
    }
 
    /// <inheritdoc />
-   internal override void Render<TData>(SKCanvas canvas, SKRect plotArea, SKRect totalArea, NTChart<TData> chart) {
+   internal override void Render(NTRenderContext context, IAxisChart chart) {
+      var plotArea = context.PlotArea;
+      var canvas = context.Canvas;
       var (xMinReal, xMaxReal) = chart.GetXRange(this, false);
 
       using var textPaint = new SKPaint {
-         Color = chart.GetThemeColor(chart.TextColor),
+         Color = context.TextColor,
          IsAntialias = true
       };
 
       using var textFont = new SKFont {
-         Size = 12,
+         Size = 12 * context.Density,
          Embolden = true,
-         Typeface = chart.DefaultTypeface
+         Typeface = context.DefaultFont.Typeface
       };
 
       using var titlePaint = new SKPaint {
-         Color = chart.GetThemeColor(chart.TextColor),
+         Color = context.TextColor,
          IsAntialias = true
       };
 
       using var titleFont = new SKFont {
-         Size = 16,
+         Size = 16 * context.Density,
          Embolden = true,
-         Typeface = chart.DefaultTypeface
+         Typeface = context.DefaultFont.Typeface
       };
 
       using var linePaint = new SKPaint {
          Color = chart.GetThemeColor(TnTColor.Outline),
-         StrokeWidth = 1,
+         StrokeWidth = context.Density,
          Style = SKPaintStyle.Stroke,
          IsAntialias = true
       };
@@ -70,7 +88,7 @@ internal override SKRect Measure<TData>(SKRect renderArea, NTChart<TData> chart)
                var scaledVal = chart.GetScaledXValue(val);
                var screenCoord = chart.ScaleX(scaledVal, plotArea);
 
-               if (screenCoord < plotArea.Left - 1 || screenCoord > plotArea.Right + 1) continue;
+               if (screenCoord < plotArea.Left - (1 * context.Density) || screenCoord > plotArea.Right + (1 * context.Density)) continue;
 
                string label;
                if (!string.IsNullOrEmpty(LabelFormat)) {
@@ -99,10 +117,10 @@ internal override SKRect Measure<TData>(SKRect renderArea, NTChart<TData> chart)
                   }
                }
 
-               canvas.DrawText(label, screenCoord, yLine + 12, textAlign, textFont, textPaint);
+               canvas.DrawText(label, screenCoord, yLine + (12 * context.Density), textAlign, textFont, textPaint);
             }
          }
-         }
+      }
       else if (Scale == NTAxisScale.Logarithmic) {
          var (min, max) = chart.GetXRange(this, true);
          min = Math.Max(0.000001, min);
@@ -116,20 +134,20 @@ internal override SKRect Measure<TData>(SKRect renderArea, NTChart<TData> chart)
             if (val < min || val > max) continue;
 
             var screenCoord = chart.ScaleX(val, plotArea);
-            if (screenCoord < plotArea.Left - 1 || screenCoord > plotArea.Right + 1) continue;
+            if (screenCoord < plotArea.Left - (1 * context.Density) || screenCoord > plotArea.Right + (1 * context.Density)) continue;
 
-            canvas.DrawText(val.ToString("G"), screenCoord, yLine + 12, SKTextAlign.Center, textFont, textPaint);
+            canvas.DrawText(val.ToString("G"), screenCoord, yLine + (12 * context.Density), SKTextAlign.Center, textFont, textPaint);
          }
       }
       else {
-         var maxTicks = Math.Max(2, (int)(plotArea.Width / 100));
-         var (niceMin, niceMax, spacing) = chart.CalculateNiceScaling(xMinReal, xMaxReal, maxTicks);
+         var maxTicks = Math.Min(MaxTicks, Math.Max(2, (int)(plotArea.Width / (100 * context.Density))));
+         var (niceMin, niceMax, spacing) = CalculateNiceScaling(xMinReal, xMaxReal, maxTicks);
          int totalLabels = (int)Math.Round((niceMax - niceMin) / spacing) + 1;
          for (int i = 0; i < totalLabels; i++) {
             double val = niceMin + i * spacing;
             var screenCoord = chart.ScaleX(val, plotArea);
 
-            if (screenCoord < plotArea.Left - 1 || screenCoord > plotArea.Right + 1) continue;
+            if (screenCoord < plotArea.Left - (1 * context.Density) || screenCoord > plotArea.Right + (1 * context.Density)) continue;
 
             SKTextAlign textAlign = SKTextAlign.Center;
             if (i == 0) {
@@ -158,13 +176,13 @@ internal override SKRect Measure<TData>(SKRect renderArea, NTChart<TData> chart)
                label = val.ToString("0.##");
             }
 
-            canvas.DrawText(label, screenCoord, yLine + 12, textAlign, textFont, textPaint);
+            canvas.DrawText(label, screenCoord, yLine + (12 * context.Density), textAlign, textFont, textPaint);
 
          }
       }
 
       if (!string.IsNullOrEmpty(Title)) {
-         canvas.DrawText(Title, plotArea.Left + (plotArea.Width / 2), plotArea.Bottom + 30, SKTextAlign.Center, titleFont, titlePaint);
+         canvas.DrawText(Title, plotArea.Left + (plotArea.Width / 2), plotArea.Bottom + (30 * context.Density), SKTextAlign.Center, titleFont, titlePaint);
       }
    }
 }

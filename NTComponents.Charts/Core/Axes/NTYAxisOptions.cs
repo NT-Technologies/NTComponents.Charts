@@ -10,17 +10,33 @@ namespace NTComponents.Charts.Core.Axes;
 /// </summary>
 public class NTYAxisOptions : NTAxisOptions {
 
-   private bool IsSecondary<TData>(NTChart<TData> chart) where TData : class {
+   private static readonly NTYAxisOptions _default = new();
+   public static NTYAxisOptions Default => _default;
+
+   protected override void OnInitialized() {
+      base.OnInitialized();
+      Chart?.SetYAxisOptions(this);
+   }
+
+   private bool IsSecondary(IAxisChart chart) {
       var yAxes = chart.GetUniqueYAxes();
       return yAxes.Count > 1 && yAxes.IndexOf(this) == 1;
    }
 
    /// <inheritdoc />
-   internal override SKRect Measure<TData>(SKRect renderArea, NTChart<TData> chart) {
-      float labelWidth = 50;
-      float titleWidth = string.IsNullOrEmpty(Title) ? 0 : 20;
-      var totalAxisWidth = labelWidth + titleWidth + 5;
-      
+   internal override SKRect Measure(SKRect renderArea, NTRenderContext context, IAxisChart chart) {
+      float labelWidth = 50 * context.Density;
+      float titleWidth = (string.IsNullOrEmpty(Title) ? 0 : 20) * context.Density;
+      var totalAxisWidth = labelWidth + titleWidth + (5 * context.Density);
+
+      // Determine nice range once during measurement based on available space
+      if (!chart.IsCategoricalY && Scale == NTAxisScale.Linear) {
+         var (min, max) = chart.GetYRange(this, false);
+         var maxTicks = Math.Min(MaxTicks, Math.Max(2, (int)(renderArea.Height / (40 * context.Density))));
+         var (niceMin, niceMax, _) = CalculateNiceScaling(min, max, maxTicks);
+         CachedYRange = (niceMin, niceMax);
+      }
+
       if (IsSecondary(chart)) {
          return new SKRect(renderArea.Left, renderArea.Top, renderArea.Right - totalAxisWidth, renderArea.Bottom);
       }
@@ -28,34 +44,36 @@ public class NTYAxisOptions : NTAxisOptions {
    }
 
    /// <inheritdoc />
-   internal override void Render<TData>(SKCanvas canvas, SKRect plotArea, SKRect totalArea, NTChart<TData> chart) {
+   internal override void Render(NTRenderContext context, IAxisChart chart) {
+      var plotArea = context.PlotArea;
+      var canvas = context.Canvas;
       var (yMinReal, yMaxReal) = chart.GetYRange(this, false);
 
       using var textPaint = new SKPaint {
-         Color = chart.GetThemeColor(chart.TextColor),
+         Color = context.TextColor,
          IsAntialias = true
       };
 
       using var textFont = new SKFont {
-         Size = 12,
+         Size = 12 * context.Density,
          Embolden = true,
-         Typeface = chart.DefaultTypeface
+         Typeface = context.DefaultFont.Typeface
       };
 
       using var titlePaint = new SKPaint {
-         Color = chart.GetThemeColor(chart.TextColor),
+         Color = context.TextColor,
          IsAntialias = true
       };
 
       using var titleFont = new SKFont {
-         Size = 16,
+         Size = 16 * context.Density,
          Embolden = true,
-         Typeface = chart.DefaultTypeface
+         Typeface = context.DefaultFont.Typeface
       };
 
       using var linePaint = new SKPaint {
          Color = chart.GetThemeColor(TnTColor.Outline),
-         StrokeWidth = 1,
+         StrokeWidth = context.Density,
          Style = SKPaintStyle.Stroke,
          IsAntialias = true
       };
@@ -66,50 +84,50 @@ public class NTYAxisOptions : NTAxisOptions {
 
       var isCategorical = chart.IsCategoricalY;
 
-       if (isCategorical) {
-          var allValues = chart.GetAllYValues().Cast<object>().ToList();
-          if (allValues.Any()) {
-             for (var i = 0; i < allValues.Count; i++) {
-                var val = allValues[i];
-                var scaledVal = chart.GetScaledYValue(val);
-                var screenCoord = chart.ScaleY(scaledVal, this, plotArea);
+      if (isCategorical) {
+         var allValues = chart.GetAllYValues().Cast<object>().ToList();
+         if (allValues.Any()) {
+            for (var i = 0; i < allValues.Count; i++) {
+               var val = allValues[i];
+               var scaledVal = chart.GetScaledYValue(val);
+               var screenCoord = chart.ScaleY(scaledVal, this, plotArea);
 
-                if (screenCoord < plotArea.Top - 1 || screenCoord > plotArea.Bottom + 1) continue;
+               if (screenCoord < plotArea.Top - (1 * context.Density) || screenCoord > plotArea.Bottom + (1 * context.Density)) continue;
 
-                float yOffset = 5;
-                if (i == 0 && !isCategorical) {
-                   yOffset = 0;
-                }
-                else if (i == allValues.Count - 1 && !isCategorical) {
-                   yOffset = 10;
-                }
+               float yOffset = 5 * context.Density;
+               if (i == 0 && !isCategorical) {
+                  yOffset = 0;
+               }
+               else if (i == allValues.Count - 1 && !isCategorical) {
+                  yOffset = 10 * context.Density;
+               }
 
-                 string label;
-                 if (!string.IsNullOrEmpty(LabelFormat)) {
-                    if (LabelFormat.Contains("{0")) {
-                       label = string.Format(LabelFormat, val);
-                    }
-                    else if (val is IFormattable formattable) {
-                       label = formattable.ToString(LabelFormat, null);
-                    }
-                    else {
-                       label = val?.ToString() ?? "";
-                    }
-                 }
-                 else {
-                    label = val is IFormattable f ? f.ToString("N2", null) : val?.ToString() ?? "";
-                 }
+               string label;
+               if (!string.IsNullOrEmpty(LabelFormat)) {
+                  if (LabelFormat.Contains("{0")) {
+                     label = string.Format(LabelFormat, val);
+                  }
+                  else if (val is IFormattable formattable) {
+                     label = formattable.ToString(LabelFormat, null);
+                  }
+                  else {
+                     label = val?.ToString() ?? "";
+                  }
+               }
+               else {
+                  label = val is IFormattable f ? f.ToString("N2", null) : val?.ToString() ?? "";
+               }
 
-                 if (isSecondary) {
+               if (isSecondary) {
 
-                     canvas.DrawText(label, xLine + 4, screenCoord + yOffset, SKTextAlign.Left, textFont, textPaint);
-                 }
-                 else {
-                     canvas.DrawText(label, xLine - 4, screenCoord + yOffset, SKTextAlign.Right, textFont, textPaint);
-                 }
-             }
-          }
-       }
+                  canvas.DrawText(label, xLine + (4 * context.Density), screenCoord + yOffset, SKTextAlign.Left, textFont, textPaint);
+               }
+               else {
+                  canvas.DrawText(label, xLine - (4 * context.Density), screenCoord + yOffset, SKTextAlign.Right, textFont, textPaint);
+               }
+            }
+         }
+      }
       else if (Scale == NTAxisScale.Logarithmic) {
          var (min, max) = chart.GetYRange(this, true);
          var dMin = Math.Max(0.000001, (double)min);
@@ -123,32 +141,32 @@ public class NTYAxisOptions : NTAxisOptions {
             if ((decimal)val < min || (decimal)val > max) continue;
 
             var screenCoord = chart.ScaleY((decimal)val, this, plotArea);
-            if (screenCoord < plotArea.Top - 1 || screenCoord > plotArea.Bottom + 1) continue;
+            if (screenCoord < plotArea.Top - (1 * context.Density) || screenCoord > plotArea.Bottom + (1 * context.Density)) continue;
 
             if (isSecondary) {
-                canvas.DrawText(val.ToString("G"), xLine + 4, screenCoord + 5, SKTextAlign.Left, textFont, textPaint);
+               canvas.DrawText(val.ToString("G"), xLine + (4 * context.Density), screenCoord + (5 * context.Density), SKTextAlign.Left, textFont, textPaint);
             }
             else {
-                canvas.DrawText(val.ToString("G"), xLine - 4, screenCoord + 5, SKTextAlign.Right, textFont, textPaint);
+               canvas.DrawText(val.ToString("G"), xLine - (4 * context.Density), screenCoord + (5 * context.Density), SKTextAlign.Right, textFont, textPaint);
             }
          }
       }
       else {
-         var maxTicks = Math.Max(2, (int)(plotArea.Height / 40));
-         var (niceMin, niceMax, spacing) = chart.CalculateNiceScaling((double)yMinReal, (double)yMaxReal, maxTicks);
-         int totalLabels = (int)Math.Round((niceMax - niceMin) / spacing) + 1;
+         var maxTicks = Math.Min(MaxTicks, Math.Max(2, (int)(plotArea.Height / (40 * context.Density))));
+         var (niceMin, niceMax, spacing) = CalculateNiceScaling(yMinReal, yMaxReal, maxTicks);
+         int totalLabels = (int)Math.Round((double)((niceMax - niceMin) / spacing)) + 1;
          for (int i = 0; i < totalLabels; i++) {
-            double val = niceMin + i * spacing;
-            var screenCoord = chart.ScaleY((decimal)val, this, plotArea);
+            decimal val = niceMin + i * spacing;
+            var screenCoord = chart.ScaleY(val, this, plotArea);
 
-            if (screenCoord < plotArea.Top - 1 || screenCoord > plotArea.Bottom + 1) continue;
+            if (screenCoord < plotArea.Top - (1 * context.Density) || screenCoord > plotArea.Bottom + (1 * context.Density)) continue;
 
-            float yOffset = 5;
+            float yOffset = 5 * context.Density;
             if (i == 0) {
                yOffset = 0;
             }
             else if (i == totalLabels - 1) {
-               yOffset = 10;
+               yOffset = 10 * context.Density;
             }
 
             string label;
@@ -165,26 +183,26 @@ public class NTYAxisOptions : NTAxisOptions {
             }
 
             if (isSecondary) {
-               canvas.DrawText(label, xLine + 4, screenCoord + yOffset, SKTextAlign.Left, textFont, textPaint);
+               canvas.DrawText(label, xLine + (4 * context.Density), screenCoord + yOffset, SKTextAlign.Left, textFont, textPaint);
             }
             else {
-               canvas.DrawText(label, xLine - 4, screenCoord + yOffset, SKTextAlign.Right, textFont, textPaint);
+               canvas.DrawText(label, xLine - (4 * context.Density), screenCoord + yOffset, SKTextAlign.Right, textFont, textPaint);
             }
          }
       }
 
 
-   if (!string.IsNullOrEmpty(Title)) {
-      canvas.Save();
-      if (isSecondary) {
-         canvas.RotateDegrees(90, xLine + 45, plotArea.Top + (plotArea.Height / 2));
-         canvas.DrawText(Title, xLine + 45, plotArea.Top + (plotArea.Height / 2), SKTextAlign.Center, titleFont, titlePaint);
+      if (!string.IsNullOrEmpty(Title)) {
+         canvas.Save();
+         if (isSecondary) {
+            canvas.RotateDegrees(90, xLine + (45 * context.Density), plotArea.Top + (plotArea.Height / 2));
+            canvas.DrawText(Title, xLine + (45 * context.Density), plotArea.Top + (plotArea.Height / 2), SKTextAlign.Center, titleFont, titlePaint);
+         }
+         else {
+            canvas.RotateDegrees(-90, xLine - (45 * context.Density), plotArea.Top + (plotArea.Height / 2));
+            canvas.DrawText(Title, xLine - (45 * context.Density), plotArea.Top + (plotArea.Height / 2), SKTextAlign.Center, titleFont, titlePaint);
+         }
+         canvas.Restore();
       }
-      else {
-         canvas.RotateDegrees(-90, xLine - 45, plotArea.Top + (plotArea.Height / 2));
-         canvas.DrawText(Title, xLine - 45, plotArea.Top + (plotArea.Height / 2), SKTextAlign.Center, titleFont, titlePaint);
-      }
-      canvas.Restore();
-   }
    }
 }

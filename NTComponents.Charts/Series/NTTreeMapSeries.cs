@@ -54,8 +54,9 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData> where TData : class
 
    private record TreeMapRect(TData Data, SKRect Rect, SKColor Color, int Index);
 
-   public override void Render(SKCanvas canvas, SKRect renderArea)
+   public override void Render(NTRenderContext context, SKRect renderArea)
    {
+      var canvas = context.Canvas;
       if (Data == null || !Data.Any()) return;
 
       var dataList = Data.ToList();
@@ -67,7 +68,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData> where TData : class
       var visibilityFactor = VisibilityFactor;
 
       // Simple Squarified Treemap Layout (simplified version)
-      _lastRects = LayoutTreeMap(dataList, renderArea);
+      _lastRects = LayoutTreeMap(context, dataList, renderArea);
 
       foreach (var item in _lastRects)
       {
@@ -107,22 +108,23 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData> where TData : class
 
          canvas.DrawRect(rect, paint);
 
-         if (ShowLabels && rect.Width > 40 && rect.Height > 20)
+         if (ShowLabels && rect.Width > 40 * context.Density && rect.Height > 20 * context.Density)
          {
-            RenderLabel(canvas, rect, item.Data, color, args);
+            RenderLabel(context, rect, item.Data, color, args);
          }
       }
    }
 
-   private void RenderLabel(SKCanvas canvas, SKRect rect, TData data, SKColor bgColor, NTDataPointRenderArgs<TData>? args)
+   private void RenderLabel(NTRenderContext context, SKRect rect, TData data, SKColor bgColor, NTDataPointRenderArgs<TData>? args)
    {
+      var canvas = context.Canvas;
       var label = XValue?.Invoke(data)?.ToString() ?? string.Empty;
       var value = ValueSelector(data);
       var valueText = string.Format(DataLabelFormat, value);
 
       // Default to series text color from palette
       var textColor = args?.DataLabelColor ?? Chart.GetSeriesTextColor(this);
-      var fontSize = args?.DataLabelSize ?? 12;
+      var fontSize = (args?.DataLabelSize ?? 12) * context.Density;
 
       using var paint = new SKPaint
       {
@@ -134,25 +136,25 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData> where TData : class
       {
          Size = fontSize,
          Embolden = true,
-         Typeface = Chart.DefaultTypeface
+         Typeface = context.DefaultFont.Typeface
       };
 
       // Clip text to rect
       canvas.Save();
       canvas.ClipRect(rect);
 
-      float x = rect.Left + 5;
-      float y = rect.Top + 15;
+      float x = rect.Left + 5 * context.Density;
+      float y = rect.Top + 15 * context.Density;
 
       canvas.DrawText(label, x, y, SKTextAlign.Left, font, paint);
 
-      font.Size = 10;
-      canvas.DrawText(valueText, x, y + 15, SKTextAlign.Left, font, paint);
+      font.Size = 10 * context.Density;
+      canvas.DrawText(valueText, x, y + 15 * context.Density, SKTextAlign.Left, font, paint);
 
       canvas.Restore();
    }
 
-   private List<TreeMapRect> LayoutTreeMap(List<TData> data, SKRect area)
+   private List<TreeMapRect> LayoutTreeMap(NTRenderContext context, List<TData> data, SKRect area)
    {
       var result = new List<TreeMapRect>();
       var sortedData = data.Select((d, i) => new { Data = d, Value = ValueSelector(d), OriginalIndex = i })
@@ -163,21 +165,22 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData> where TData : class
 
       // Use a simple Slice-and-Dice for now as it's more stable for animations
       // but we can refine it if needed.
-      SliceAndDice(sortedData.Select(x => (object)x).ToList(), area, totalValue, result, true);
+      SliceAndDice(context, sortedData.Select(x => (object)x).ToList(), area, totalValue, result, true);
 
       return result;
    }
 
-   private void SliceAndDice(List<object> items, SKRect area, decimal totalValue, List<TreeMapRect> result, bool horizontal)
+   private void SliceAndDice(NTRenderContext context, List<object> items, SKRect area, decimal totalValue, List<TreeMapRect> result, bool horizontal)
    {
       if (!items.Any()) return;
       if (items.Count == 1)
       {
          dynamic item = items[0];
          var rect = area;
-         if (rect.Width > ItemPadding * 2 && rect.Height > ItemPadding * 2)
+         var padding = ItemPadding * context.Density;
+         if (rect.Width > padding * 2 && rect.Height > padding * 2)
          {
-            rect.Inflate(-ItemPadding, -ItemPadding);
+            rect.Inflate(-padding, -padding);
          }
          result.Add(new TreeMapRect(item.Data, rect, Chart.GetSeriesColor(this).WithAlpha((byte)(255 * (0.4 + 0.6 * (double)(item.Value / (totalValue == 0 ? 1 : totalValue))))), item.OriginalIndex));
          return;
@@ -199,16 +202,16 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData> where TData : class
          float leftWidth = (float)(area.Width * (float)(leftValue / total));
          var leftArea = new SKRect(area.Left, area.Top, area.Left + leftWidth, area.Bottom);
          var rightArea = new SKRect(area.Left + leftWidth, area.Top, area.Right, area.Bottom);
-         SliceAndDice(leftItems, leftArea, leftValue, result, !horizontal);
-         SliceAndDice(rightItems, rightArea, rightValue, result, !horizontal);
+         SliceAndDice(context, leftItems, leftArea, leftValue, result, !horizontal);
+         SliceAndDice(context, rightItems, rightArea, rightValue, result, !horizontal);
       }
       else
       {
          float topHeight = (float)(area.Height * (float)(leftValue / total));
          var topArea = new SKRect(area.Left, area.Top, area.Right, area.Top + topHeight);
          var bottomArea = new SKRect(area.Left, area.Top + topHeight, area.Right, area.Bottom);
-         SliceAndDice(leftItems, topArea, leftValue, result, !horizontal);
-         SliceAndDice(rightItems, bottomArea, rightValue, result, !horizontal);
+         SliceAndDice(context, leftItems, topArea, leftValue, result, !horizontal);
+         SliceAndDice(context, rightItems, bottomArea, rightValue, result, !horizontal);
       }
    }
 

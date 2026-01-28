@@ -9,8 +9,7 @@ namespace NTComponents.Charts;
 ///     Represents a heatmap series in a cartesian chart.
 /// </summary>
 /// <typeparam name="TData">The type of the data.</typeparam>
-public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : class
-{
+public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : class {
    [Parameter, EditorRequired]
    public Func<TData, decimal> WeightSelector { get; set; } = default!;
 
@@ -26,8 +25,8 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
    [Parameter]
    public float CellPadding { get; set; } = 0.05f;
 
-   public override void Render(SKCanvas canvas, SKRect renderArea)
-   {
+   public override void Render(NTRenderContext context, SKRect renderArea) {
+      var canvas = context.Canvas;
       if (Data == null || !Data.Any()) return;
 
       var dataList = Data.ToList();
@@ -49,8 +48,7 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
       var visibilityFactor = VisibilityFactor;
       var hoverFactor = HoverFactor;
 
-      for (int i = 0; i < dataList.Count; i++)
-      {
+      for (int i = 0; i < dataList.Count; i++) {
          var item = dataList[i];
          var xVal = Chart.GetScaledXValue(XValue.Invoke(item));
          var yVal = Chart.GetScaledYValue(YValueSelector(item));
@@ -59,9 +57,8 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
 
          float t = weightRange > 0 ? (float)((weight - minWeight) / weightRange) : 1.0f;
          var baseColor = InterpolateColor(skMinColor, skMaxColor, t);
-         
-         var args = new NTDataPointRenderArgs<TData>
-         {
+
+         var args = new NTDataPointRenderArgs<TData> {
             Data = item,
             Index = i,
             Color = baseColor,
@@ -71,12 +68,12 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
 
          var color = args.Color ?? baseColor;
          var isPointHovered = Chart.HoveredSeries == this && Chart.HoveredPointIndex == i;
-         
+
          float currentHoverFactor = isPointHovered ? 1f : hoverFactor;
          color = color.WithAlpha((byte)(color.Alpha * visibilityFactor * currentHoverFactor));
 
-         float screenXCoord = Chart.ScaleX(xVal, renderArea);
-         float screenYCoord = Chart.ScaleY(yVal, YAxis, renderArea);
+         float screenXCoord = Chart.ScaleX(xVal, renderArea, EffectiveXAxis);
+         float screenYCoord = Chart.ScaleY(yVal, EffectiveYAxis, renderArea);
 
          float x = screenXCoord;
          float y = screenYCoord;
@@ -84,8 +81,7 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
          var cellRect = new SKRect(x - cellWidth / 2, y - cellHeight / 2, x + cellWidth / 2, y + cellHeight / 2);
          cellRect.Inflate(-cellWidth * CellPadding / 2, -cellHeight * CellPadding / 2);
 
-         using var paint = new SKPaint
-         {
+         using var paint = new SKPaint {
             Color = color,
             Style = SKPaintStyle.Fill,
             IsAntialias = true
@@ -93,17 +89,15 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
 
          canvas.DrawRect(cellRect, paint);
 
-         if (ShowDataLabels)
-         {
+         if (ShowDataLabels) {
             var labelColor = args.DataLabelColor;
             var labelSize = args.DataLabelSize ?? DataLabelSize;
-            RenderDataLabel(canvas, x, y + 5, weight, renderArea, labelColor, labelSize);
+            RenderDataLabel(context, x, y + (5 * context.Density), weight, renderArea, labelColor, labelSize);
          }
       }
    }
 
-   private SKColor InterpolateColor(SKColor c1, SKColor c2, float t)
-   {
+   private SKColor InterpolateColor(SKColor c1, SKColor c2, float t) {
       byte r = (byte)(c1.Red + (c2.Red - c1.Red) * t);
       byte g = (byte)(c1.Green + (c2.Green - c1.Green) * t);
       byte b = (byte)(c1.Blue + (c2.Blue - c1.Blue) * t);
@@ -111,8 +105,7 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
       return new SKColor(r, g, b, a);
    }
 
-   public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea)
-   {
+   public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
       if (Data == null || !Data.Any()) return null;
       var dataList = Data.ToList();
       var allX = Chart.GetAllXValues();
@@ -122,14 +115,13 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
       float cellWidth = renderArea.Width / allX.Count;
       float cellHeight = renderArea.Height / allY.Count;
 
-      for (int i = 0; i < dataList.Count; i++)
-      {
+      for (int i = 0; i < dataList.Count; i++) {
          var item = dataList[i];
          var xVal = Chart.GetScaledXValue(XValue.Invoke(item));
          var yVal = Chart.GetScaledYValue(YValueSelector(item));
 
-         float screenXCoord = Chart.ScaleX(xVal, renderArea);
-         float screenYCoord = Chart.ScaleY(yVal, YAxis, renderArea);
+         float screenXCoord = Chart.ScaleX(xVal, renderArea, EffectiveXAxis);
+         float screenYCoord = Chart.ScaleY(yVal, EffectiveYAxis, renderArea);
 
 
          float x = screenXCoord;

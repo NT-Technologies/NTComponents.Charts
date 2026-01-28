@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using NTComponents.Charts.Core.Series;
+using NTComponents.Charts.Core;
 using SkiaSharp;
 
 namespace NTComponents.Charts;
@@ -22,7 +23,7 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class
    private readonly Dictionary<int, float> _explosionFactors = new();
    private DateTime _lastRenderTime = DateTime.Now;
 
-   public override void Render(SKCanvas canvas, SKRect renderArea)
+   public override void Render(NTRenderContext context, SKRect renderArea)
    {
       CalculateSlices(renderArea);
       if (!SliceInfos.Any()) return;
@@ -124,8 +125,9 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class
             // Explode the slice
             float midAngle = slice.StartAngle + slice.SweepAngle / 2f;
             float rad = midAngle * (float)Math.PI / 180f;
-            centerX += (float)Math.Cos(rad) * ExplosionDistance * totalExplosionFactor;
-            centerY += (float)Math.Sin(rad) * ExplosionDistance * totalExplosionFactor;
+            var explosionOffset = ExplosionDistance * context.Density * totalExplosionFactor;
+            centerX += (float)Math.Cos(rad) * explosionOffset;
+            centerY += (float)Math.Sin(rad) * explosionOffset;
 
             // Increase opacity for the exploded slice (only if hovered)
             if (currentFactor > 0)
@@ -150,16 +152,16 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class
          }
          path.Close();
 
-         canvas.DrawPath(path, paint);
+         context.Canvas.DrawPath(path, paint);
 
          if (ShowDataLabels && progress >= 1.0f)
          {
-            RenderSliceLabel(canvas, slice, centerX, centerY, currentRadius, currentInnerRadius, color, args);
+            RenderSliceLabel(context, slice, centerX, centerY, currentRadius, currentInnerRadius, color, args);
          }
       }
    }
 
-   private void RenderSliceLabel(SKCanvas canvas, PieSliceInfo slice, float centerX, float centerY, float radius, float innerRadius, SKColor color, NTDataPointRenderArgs<TData>? args)
+   private void RenderSliceLabel(NTRenderContext context, PieSliceInfo slice, float centerX, float centerY, float radius, float innerRadius, SKColor color, NTDataPointRenderArgs<TData>? args)
    {
       float midAngle = slice.StartAngle + slice.SweepAngle / 2f;
       float rad = midAngle * (float)Math.PI / 180f;
@@ -173,16 +175,16 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class
       var text = string.Format(DataLabelFormat, slice.Value);
 
       var labelColor = args?.DataLabelColor ?? (DataLabelColor.HasValue ? Chart.GetThemeColor(DataLabelColor.Value) : Chart.GetPaletteTextColor(slice.Index));
-      var labelSize = args?.DataLabelSize ?? DataLabelSize;
+      var labelSize = (args?.DataLabelSize ?? DataLabelSize) * context.Density;
 
       using var paint = new SKPaint
       {
          Color = labelColor,
          IsAntialias = true
       };
-      using var font = new SKFont { Size = labelSize, Typeface = Chart.DefaultTypeface };
+      using var font = new SKFont { Size = labelSize, Typeface = context.DefaultFont.Typeface };
 
-      canvas.DrawText(text, lx, ly, SKTextAlign.Center, font, paint);
+      context.Canvas.DrawText(text, lx, ly, SKTextAlign.Center, font, paint);
    }
 
    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea)
@@ -221,8 +223,9 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class
             {
                float midAngle = slice.StartAngle + slice.SweepAngle / 2f;
                float rad = midAngle * (float)Math.PI / 180f;
-               float exX = centerX + (float)Math.Cos(rad) * ExplosionDistance * factor;
-               float exY = centerY + (float)Math.Sin(rad) * ExplosionDistance * factor;
+               float explosionOffset = ExplosionDistance * Chart.Density * factor;
+               float exX = centerX + (float)Math.Cos(rad) * explosionOffset;
+               float exY = centerY + (float)Math.Sin(rad) * explosionOffset;
 
                float edx = point.X - exX;
                float edy = point.Y - exY;

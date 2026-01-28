@@ -9,8 +9,7 @@ namespace NTComponents.Charts;
 /// <summary>
 ///     Represents a line series in a cartesian chart.
 /// </summary>
-public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
-{
+public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
     /// <summary>
     ///     Gets or sets the width of the line.
@@ -31,30 +30,6 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
     public LineInterpolation Interpolation { get; set; } = LineInterpolation.Straight;
 
     /// <summary>
-    ///    Gets or sets whether panning is enabled on the X axis.
-    /// </summary>
-    [Parameter]
-    public bool EnableXPan { get; set; }
-
-    /// <summary>
-    ///    Gets or sets whether panning is enabled on the Y axis.
-    /// </summary>
-    [Parameter]
-    public bool EnableYPan { get; set; }
-
-    /// <summary>
-    ///    Gets or sets whether zooming is enabled on the X axis.
-    /// </summary>
-    [Parameter]
-    public bool EnableXZoom { get; set; }
-
-    /// <summary>
-    ///    Gets or sets whether zooming is enabled on the Y axis.
-    /// </summary>
-    [Parameter]
-    public bool EnableYZoom { get; set; }
-
-    /// <summary>
     ///    Gets or sets whether data aggregation is enabled when zoomed out.
     /// </summary>
     [Parameter]
@@ -73,15 +48,14 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
     public AggregationMode AggregationMode { get; set; } = AggregationMode.Average;
 
     /// <inheritdoc />
-    public override void Render(SKCanvas canvas, SKRect renderArea)
-    {
-        if (Data == null || !Data.Any())
-        {
+    public override void Render(NTRenderContext context, SKRect renderArea) {
+        var canvas = context.Canvas;
+        if (Data == null || !Data.Any()) {
             return;
         }
 
-        var (xMin, xMax) = Chart.GetXRange(XAxis, true);
-        var (yMin, yMax) = Chart.GetYRange(YAxis, true);
+        var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
+        var (yMin, yMax) = Chart.GetYRange(EffectiveYAxis, true);
 
         var points = GetPoints(renderArea, xMin, xMax, yMin, yMax);
 
@@ -92,8 +66,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
 
         color = color.WithAlpha((byte)(color.Alpha * hoverFactor * visibilityFactor));
 
-        using var paint = new SKPaint
-        {
+        using var paint = new SKPaint {
             Style = SKPaintStyle.Stroke,
             Color = color,
             StrokeWidth = StrokeWidth,
@@ -102,26 +75,20 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
             StrokeJoin = SKStrokeJoin.Round
         };
 
-        if (LineStyle == LineStyle.Dashed)
-        {
+        if (LineStyle == LineStyle.Dashed) {
             paint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
         }
 
-        if (LineStyle != LineStyle.None && points.Count > 1)
-        {
-            if (OnDataPointRender == null)
-            {
+        if (LineStyle != LineStyle.None && points.Count > 1) {
+            if (OnDataPointRender == null) {
                 using var path = BuildPath(points);
                 canvas.DrawPath(path, paint);
             }
-            else
-            {
+            else {
                 // Draw segment by segment to allow for per-point line styling
                 var dataList = Data.ToList();
-                for (var i = 1; i < points.Count; i++)
-                {
-                    var args = new NTDataPointRenderArgs<TData>
-                    {
+                for (var i = 1; i < points.Count; i++) {
+                    var args = new NTDataPointRenderArgs<TData> {
                         Data = dataList[i],
                         Index = i,
                         Color = color,
@@ -137,8 +104,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
 
                     if (segmentStyle == LineStyle.None) continue;
 
-                    using var segmentPaint = new SKPaint
-                    {
+                    using var segmentPaint = new SKPaint {
                         Style = SKPaintStyle.Stroke,
                         Color = segmentColor,
                         StrokeWidth = segmentWidth,
@@ -147,8 +113,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
                         StrokeJoin = SKStrokeJoin.Round
                     };
 
-                    if (segmentStyle == LineStyle.Dashed)
-                    {
+                    if (segmentStyle == LineStyle.Dashed) {
                         segmentPaint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
                     }
 
@@ -158,14 +123,11 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
             }
         }
 
-        if (PointStyle != PointStyle.None || ShowDataLabels)
-        {
+        if (PointStyle != PointStyle.None || ShowDataLabels) {
             var dataList = Data.ToList();
-            for (var i = 0; i < points.Count; i++)
-            {
+            for (var i = 0; i < points.Count; i++) {
                 var item = dataList[i];
-                var args = new NTDataPointRenderArgs<TData>
-                {
+                var args = new NTDataPointRenderArgs<TData> {
                     Data = item,
                     Index = i,
                     Color = color,
@@ -177,71 +139,60 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
 
                 var point = points[i];
                 var isPointHovered = Chart.HoveredSeries == this && Chart.HoveredPointIndex == i;
-                
+
                 var pointColor = args.Color ?? color;
                 var pointStrokeColor = args.StrokeColor ?? pointColor;
                 var currentPointSize = args.PointSize ?? PointSize;
                 var currentPointShape = args.PointShape ?? PointShape;
 
-                if (isPointHovered)
-                {
+                if (isPointHovered) {
                     pointColor = pointColor.WithAlpha(255);
                     pointStrokeColor = pointStrokeColor.WithAlpha(255);
                     currentPointSize *= 1.5f;
                 }
 
-                if (PointStyle != PointStyle.None)
-                {
-                    RenderPoint(canvas, point.X, point.Y, pointColor, currentPointSize, currentPointShape, pointStrokeColor);
+                if (PointStyle != PointStyle.None) {
+                    RenderPoint(context, point.X, point.Y, pointColor, currentPointSize, currentPointShape, pointStrokeColor);
                 }
 
-                if (ShowDataLabels || isPointHovered)
-                {
+                if (ShowDataLabels || isPointHovered) {
                     var labelColor = args.DataLabelColor;
                     var labelSize = args.DataLabelSize ?? DataLabelSize;
-                    RenderDataLabel(canvas, point.X, point.Y, YValueSelector(dataList[i]), renderArea, labelColor, labelSize);
+                    RenderDataLabel(context, point.X, point.Y, YValueSelector(dataList[i]), renderArea, labelColor, labelSize);
                 }
             }
         }
     }
 
-    protected List<SKPoint> GetPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax)
-    {
+    protected List<SKPoint> GetPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {
         var dataList = Data.ToList();
         var points = new List<SKPoint>();
         var progress = GetAnimationProgress();
         var easedProgress = (decimal)BackEase(progress);
 
         // Filter and aggregate if needed
-        if (EnableAggregation && dataList.Count > AggregationThreshold)
-        {
+        if (EnableAggregation && dataList.Count > AggregationThreshold) {
             var visibleData = new List<(TData Data, int Index)>();
-            for (int i = 0; i < dataList.Count; i++)
-            {
+            for (int i = 0; i < dataList.Count; i++) {
                 var xVal = Chart.GetScaledXValue(XValue.Invoke(dataList[i]));
-                if (xVal >= xMin - (xMax - xMin) * 0.1 && xVal <= xMax + (xMax - xMin) * 0.1)
-
-                {
+                if (xVal >= xMin - (xMax - xMin) * 0.1 && xVal <= xMax + (xMax - xMin) * 0.1) {
                     visibleData.Add((dataList[i], i));
                 }
             }
 
-            if (visibleData.Count > AggregationThreshold)
-            {
+            if (visibleData.Count > AggregationThreshold) {
                 return GetAggregatedPoints(visibleData, renderArea, xMin, xMax, yMin, yMax);
             }
-            
+
             // If visible count is small, fall back to normal rendering for those points
             dataList = visibleData.Select(x => x.Data).ToList();
         }
 
-        if (AnimationCurrentValues == null || AnimationCurrentValues.Length != dataList.Count)
-        {
+        if (AnimationCurrentValues == null || AnimationCurrentValues.Length != dataList.Count) {
             AnimationCurrentValues = new decimal[dataList.Count];
         }
 
-        for (var i = 0; i < dataList.Count; i++)
-        {
+        for (var i = 0; i < dataList.Count; i++) {
             var originalX = XValue.Invoke(dataList[i]);
             var xValue = Chart.GetScaledXValue(originalX);
             var targetYValue = YValueSelector(dataList[i]);
@@ -259,16 +210,15 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
             currentYValue *= vFactor * vFactor;
             AnimationCurrentValues[i] = currentYValue;
 
-            var screenXCoord = Chart.ScaleX(xValue, renderArea);
-            var screenYCoord = Chart.ScaleY(currentYValue, YAxis, renderArea);
+            var screenXCoord = Chart.ScaleX(xValue, renderArea, EffectiveXAxis);
+            var screenYCoord = Chart.ScaleY(currentYValue, EffectiveYAxis, renderArea);
 
             points.Add(new SKPoint(screenXCoord, screenYCoord));
         }
         return points;
     }
 
-    private List<SKPoint> GetAggregatedPoints(List<(TData Data, int Index)> visibleData, SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax)
-    {
+    private List<SKPoint> GetAggregatedPoints(List<(TData Data, int Index)> visibleData, SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {
         var points = new List<SKPoint>();
         if (AggregationThreshold <= 0) return points;
 
@@ -278,8 +228,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
         double range = xMax - xMin;
         if (range <= 0) range = 1;
 
-        foreach (var item in visibleData)
-        {
+        foreach (var item in visibleData) {
             var xVal = Chart.GetScaledXValue(XValue?.Invoke(item.Data));
             int bucketIndex = (int)((xVal - xMin) / range * (AggregationThreshold - 1));
             bucketIndex = Math.Clamp(bucketIndex, 0, AggregationThreshold - 1);
@@ -288,86 +237,72 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
 
         var vFactor = (decimal)VisibilityFactor;
 
-        foreach (var bucket in buckets)
-        {
+        foreach (var bucket in buckets) {
             if (bucket.Count == 0) continue;
 
             decimal aggregatedY = 0;
             double aggregatedX = 0;
 
-            if (AggregationMode == AggregationMode.Average)
-            {
-                aggregatedY = bucket.Average(x => YValueSelector(x.Data));
-                aggregatedX = bucket.Average(x => Chart.GetScaledXValue(XValue.Invoke(x.Data)));
+            if (AggregationMode == AggregationMode.Average) {
+                aggregatedY = bucket.Average(x => YValueSelector!(x.Data));
+                aggregatedX = bucket.Average(x => Chart.GetScaledXValue(XValue?.Invoke(x.Data)));
             }
 
-            else if (AggregationMode == AggregationMode.Sum)
-            {
-                aggregatedY = bucket.Sum(x => YValueSelector(x.Data));
-                aggregatedX = bucket.Average(x => Chart.GetScaledXValue(XValue.Invoke(x.Data)));
+            else if (AggregationMode == AggregationMode.Sum) {
+                aggregatedY = bucket.Sum(x => YValueSelector!(x.Data));
+                aggregatedX = bucket.Average(x => Chart.GetScaledXValue(XValue?.Invoke(x.Data)));
             }
 
-            else if (AggregationMode == AggregationMode.Min)
-            {
-                aggregatedY = bucket.Min(x => YValueSelector(x.Data));
-                var best = bucket.First(x => YValueSelector(x.Data) == aggregatedY);
-                aggregatedX = Chart.GetScaledXValue(XValue.Invoke(best.Data));
+            else if (AggregationMode == AggregationMode.Min) {
+                aggregatedY = bucket.Min(x => YValueSelector!(x.Data));
+                var best = bucket.First(x => YValueSelector!(x.Data) == aggregatedY);
+                aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(best.Data));
             }
 
-            else if (AggregationMode == AggregationMode.Max)
-            {
-                aggregatedY = bucket.Max(x => YValueSelector(x.Data));
-                var best = bucket.First(x => YValueSelector(x.Data) == aggregatedY);
-                aggregatedX = Chart.GetScaledXValue(XValue.Invoke(best.Data));
+            else if (AggregationMode == AggregationMode.Max) {
+                aggregatedY = bucket.Max(x => YValueSelector!(x.Data));
+                var best = bucket.First(x => YValueSelector!(x.Data) == aggregatedY);
+                aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(best.Data));
             }
 
-            else
-            {
+            else {
                 var mid = bucket[bucket.Count / 2];
-                aggregatedY = YValueSelector(mid.Data);
-                aggregatedX = Chart.GetScaledXValue(XValue.Invoke(mid.Data));
+                aggregatedY = YValueSelector!(mid.Data);
+                aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(mid.Data));
             }
 
 
             aggregatedY *= vFactor * vFactor;
 
-            var screenX = Chart.ScaleX(aggregatedX, renderArea);
-            var screenY = Chart.ScaleY(aggregatedY, YAxis, renderArea);
+            var screenX = Chart.ScaleX(aggregatedX, renderArea, EffectiveXAxis);
+            var screenY = Chart.ScaleY(aggregatedY, EffectiveYAxis, renderArea);
             points.Add(new SKPoint(screenX, screenY));
         }
 
         return points;
     }
 
-    protected SKPath BuildPath(List<SKPoint> points)
-    {
+    protected SKPath BuildPath(List<SKPoint> points) {
         var path = new SKPath();
-        if (points.Count < 2)
-        {
+        if (points.Count < 2) {
             return path;
         }
 
         path.MoveTo(points[0]);
 
-        if (Interpolation == LineInterpolation.Straight)
-        {
-            for (var i = 1; i < points.Count; i++)
-            {
+        if (Interpolation == LineInterpolation.Straight) {
+            for (var i = 1; i < points.Count; i++) {
                 path.LineTo(points[i]);
             }
         }
-        else if (Interpolation == LineInterpolation.Step)
-        {
-            for (var i = 1; i < points.Count; i++)
-            {
+        else if (Interpolation == LineInterpolation.Step) {
+            for (var i = 1; i < points.Count; i++) {
                 path.LineTo(points[i - 1].X, points[i].Y);
                 path.LineTo(points[i]);
             }
         }
-        else if (Interpolation == LineInterpolation.Curved)
-        {
-            for (var i = 0; i < points.Count - 1; i++)
-            {
+        else if (Interpolation == LineInterpolation.Curved) {
+            for (var i = 0; i < points.Count - 1; i++) {
                 var p0 = points[Math.Max(i - 1, 0)];
                 var p1 = points[i];
                 var p2 = points[i + 1];
@@ -379,26 +314,20 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
                 path.CubicTo(cp1, cp2, p2);
             }
         }
-        else if (Interpolation == LineInterpolation.Smoothed)
-        {
+        else if (Interpolation == LineInterpolation.Smoothed) {
             var n = points.Count;
-            if (n > 2)
-            {
+            if (n > 2) {
                 var slopes = new float[n - 1];
-                for (var i = 0; i < n - 1; i++)
-                {
+                for (var i = 0; i < n - 1; i++) {
                     slopes[i] = (points[i + 1].Y - points[i].Y) / (points[i + 1].X - points[i].X + 1e-6f);
                 }
 
                 var tangents = new float[n];
-                for (var i = 1; i < n - 1; i++)
-                {
-                    if (Math.Sign(slopes[i - 1]) != Math.Sign(slopes[i]))
-                    {
+                for (var i = 1; i < n - 1; i++) {
+                    if (Math.Sign(slopes[i - 1]) != Math.Sign(slopes[i])) {
                         tangents[i] = 0;
                     }
-                    else
-                    {
+                    else {
                         var dxPrev = points[i].X - points[i - 1].X;
                         var dxCurr = points[i + 1].X - points[i].X;
                         var w1 = (2 * dxCurr) + dxPrev;
@@ -410,16 +339,14 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
                 tangents[0] = slopes[0];
                 tangents[n - 1] = slopes[n - 2];
 
-                for (var i = 0; i < n - 1; i++)
-                {
+                for (var i = 0; i < n - 1; i++) {
                     var xSpan = (points[i + 1].X - points[i].X) / 3f;
                     var cp1 = new SKPoint(points[i].X + xSpan, points[i].Y + (tangents[i] * xSpan));
                     var cp2 = new SKPoint(points[i + 1].X - xSpan, points[i + 1].Y - (tangents[i + 1] * xSpan));
                     path.CubicTo(cp1, cp2, points[i + 1]);
                 }
             }
-            else
-            {
+            else {
                 path.LineTo(points[1]);
             }
         }
@@ -428,33 +355,27 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
     }
 
     /// <inheritdoc />
-    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea)
-    {
-        if (Data == null || !Data.Any())
-        {
+    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
+        if (Data == null || !Data.Any()) {
             return null;
         }
 
-        var (xMin, xMax) = Chart.GetXRange(XAxis, true);
-        var (yMin, yMax) = Chart.GetYRange(YAxis, true);
+        var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
+        var (yMin, yMax) = Chart.GetYRange(EffectiveYAxis, true);
         var points = GetPoints(renderArea, xMin, xMax, yMin, yMax);
         var dataList = Data.ToList();
 
-        for (var i = 0; i < points.Count; i++)
-        {
+        for (var i = 0; i < points.Count; i++) {
             var p = points[i];
             var distance = Math.Sqrt(Math.Pow(p.X - point.X, 2) + Math.Pow(p.Y - point.Y, 2));
-            if (distance < PointSize + 5)
-            {
+            if (distance < PointSize + 5) {
                 return (i, dataList[i]);
             }
         }
 
-        if (points.Count > 1 && LineStyle != LineStyle.None)
-        {
+        if (points.Count > 1 && LineStyle != LineStyle.None) {
             using var path = BuildPath(points);
-            using var paint = new SKPaint
-            {
+            using var paint = new SKPaint {
                 Style = SKPaintStyle.Stroke,
                 StrokeWidth = StrokeWidth + 10, // Wider tolerance for hovering
                 StrokeCap = SKStrokeCap.Round,
@@ -464,30 +385,11 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class
             using var strokePath = new SKPath();
             paint.GetFillPath(path, strokePath);
 
-            if (strokePath.Contains(point.X, point.Y))
-            {
+            if (strokePath.Contains(point.X, point.Y)) {
                 return (-1, null);
             }
         }
 
         return null;
-    }
-
-    internal override (decimal Min, decimal Max)? GetYRange(double? xMin = null, double? xMax = null) {
-        if (Data == null || !Data.Any()) return null;
-
-        var dataToConsider = Data;
-        if (xMin.HasValue && xMax.HasValue) {
-            dataToConsider = dataToConsider.Where(d => {
-                var x = Chart.GetScaledXValue(XValue?.Invoke(d));
-                return x >= xMin.Value && x <= xMax.Value;
-            });
-        }
-
-        if (!dataToConsider.Any()) return null;
-
-        var visibilityFactor = (decimal)VisibilityFactor;
-        var values = dataToConsider.Select(item => YValueSelector(item) * visibilityFactor).ToList();
-        return (values.Min(), values.Max());
     }
 }

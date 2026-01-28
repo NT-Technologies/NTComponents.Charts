@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components;
 using SkiaSharp;
 using System.Collections.Generic;
 using NTComponents.Charts.Core.Series;
@@ -20,25 +21,35 @@ public enum RadialAxisShape {
 /// </summary>
 public class NTRadialAxisOptions : NTAxisOptions {
 
+   public static NTRadialAxisOptions Default => new();
+
+   protected override void OnInitialized() {
+      base.OnInitialized();
+      Chart?.SetRadialAxisOptions(this);
+   }
+
    /// <summary>
    ///    Gets or sets the number of concentric circles to draw.
    /// </summary>
+   [Parameter]
    public int Levels { get; set; } = 5;
 
    /// <summary>
    ///    Gets or sets whether to draw circles or polygons.
    /// </summary>
+   [Parameter]
    public RadialAxisShape Shape { get; set; } = RadialAxisShape.Polygon;
 
    /// <summary>
    ///    Gets or sets the labels for each spoke. If null, the series LabelSelector will be used.
    /// </summary>
+   [Parameter]
    public List<string>? Labels { get; set; }
 
    /// <inheritdoc />
-   internal override SKRect Measure<TData>(SKRect renderArea, NTChart<TData> chart) {
+   internal override SKRect Measure(SKRect renderArea, NTRenderContext context, IAxisChart chart) {
       // Add padding for labels around the perimeter
-      float padding = 60; // More padding for labels
+      float padding = 60 * context.Density; // More padding for labels
       return new SKRect(
           renderArea.Left + padding,
           renderArea.Top + padding,
@@ -48,36 +59,54 @@ public class NTRadialAxisOptions : NTAxisOptions {
    }
 
    /// <inheritdoc />
-   internal override void Render<TData>(SKCanvas canvas, SKRect plotArea, SKRect totalArea, NTChart<TData> chart) {
-      var series = chart.Series.OfType<NTRadarSeries<TData>>().FirstOrDefault();
-      if (series == null) return;
+   internal override void Render(NTRenderContext context, IAxisChart chart) {
+      var plotArea = context.PlotArea;
+      var canvas = context.Canvas;
+      
+      // We need to find the series. Radar charts usually have one series that defines the axis.
+      // Since we don't have TData here, we might need to rely on the chart to provide it or just use reflection/dynamic.
+      // But actually, we can just cast chart to dynamic or INTChart and get the series list.
+      
+      // Let's add a property to IAxisChart to get series.
+      // Or just cast to dynamic for now.
+      dynamic dChart = chart;
+      IEnumerable<object> seriesList = dChart.Series;
+      var radarSeries = seriesList.FirstOrDefault(s => s.GetType().Name.StartsWith("NTRadarSeries")) as dynamic;
+      if (radarSeries == null) return;
 
-      var dataList = series.Data?.ToList();
+      var dataList = Enumerable.ToList((IEnumerable<object>)radarSeries.Data);
       if (dataList == null || !dataList.Any()) return;
 
       float centerX = plotArea.MidX;
       float centerY = plotArea.MidY;
       float radius = Math.Min(plotArea.Width, plotArea.Height) / 2f;
 
-      decimal max = series.MaxValue ?? dataList.Max(series.ValueSelector);
+      decimal max = 1;
+      if (radarSeries.MaxValue != null) {
+          max = radarSeries.MaxValue;
+      } else {
+          foreach (var item in dataList) {
+              max = Math.Max(max, radarSeries.ValueSelector(item));
+          }
+      }
       if (max <= 0) max = 1;
 
       using var linePaint = new SKPaint {
          Color = chart.GetThemeColor(TnTColor.OutlineVariant),
-         StrokeWidth = 1,
+         StrokeWidth = context.Density,
          Style = SKPaintStyle.Stroke,
          IsAntialias = true
       };
 
       using var textPaint = new SKPaint {
-         Color = chart.GetThemeColor(chart.TextColor),
+         Color = context.TextColor,
          IsAntialias = true
       };
 
       using var textFont = new SKFont {
-         Size = 12,
+         Size = 12 * context.Density,
          Embolden = true,
-         Typeface = chart.DefaultTypeface
+         Typeface = context.DefaultFont.Typeface
       };
 
       // Draw concentric rings
@@ -87,7 +116,7 @@ public class NTRadialAxisOptions : NTAxisOptions {
             canvas.DrawCircle(centerX, centerY, r, linePaint);
          }
          else {
-            DrawPolygon(canvas, centerX, centerY, r, dataList.Count, linePaint);
+            DrawPolygon(context, centerX, centerY, r, dataList.Count, linePaint);
          }
 
          // Draw value label on the first axis
@@ -113,22 +142,24 @@ public class NTRadialAxisOptions : NTAxisOptions {
             label = Labels[i];
          }
          else {
-            label = series.XValue?.Invoke(dataList[i])?.ToString() ?? $"Item {i + 1}";
+            var xVal = radarSeries.XValue?.Invoke(dataList[i]);
+            label = xVal?.ToString() ?? $"Item {i + 1}";
          }
 
-         float labelX = centerX + (float)Math.Cos(rad) * (radius + 20);
-         float labelY = centerY + (float)Math.Sin(rad) * (radius + 20);
+         float labelX = centerX + (float)Math.Cos(rad) * (radius + (10 * context.Density));
+         float labelY = centerY + (float)Math.Sin(rad) * (radius + (10 * context.Density));
 
          SKTextAlign textAlign = SKTextAlign.Center;
          if (Math.Abs(Math.Cos(rad)) > 0.1) {
             textAlign = Math.Cos(rad) > 0 ? SKTextAlign.Left : SKTextAlign.Right;
          }
 
-         canvas.DrawText(label, labelX, labelY + 5, textAlign, textFont, textPaint);
+         canvas.DrawText(label, labelX, labelY + (5 * context.Density), textAlign, textFont, textPaint);
       }
    }
 
-   private void DrawPolygon(SKCanvas canvas, float cx, float cy, float r, int sides, SKPaint paint) {
+   private void DrawPolygon(NTRenderContext context, float cx, float cy, float r, int sides, SKPaint paint) {
+      var canvas = context.Canvas;
       using var path = new SKPath();
       for (int i = 0; i < sides; i++) {
          float angle = (i * 360f / sides) - 90f;

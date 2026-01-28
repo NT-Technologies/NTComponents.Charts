@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using SkiaSharp;
 
 namespace NTComponents.Charts.Core.Series;
@@ -111,6 +112,12 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TDa
     public TnTColor? TooltipTextColor { get; set; }
 
     /// <summary>
+    ///    Gets or sets the interaction modes enabled for this series.
+    /// </summary>
+    [Parameter]
+    public ChartInteractions Interactions { get; set; } = ChartInteractions.None;
+
+    /// <summary>
     ///     Gets the current visibility factor (0.0 to 1.0) for animation.
     /// </summary>
     public float VisibilityFactor {
@@ -182,7 +189,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TDa
     /// <returns>The index and data of the hit point, or null if no hit.</returns>
     public abstract (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea);
 
-    public abstract void Render(SKCanvas canvas, SKRect renderArea);
+    public abstract void Render(NTRenderContext context, SKRect renderArea);
 
     /// <summary>
     ///     Resets the animation to start from the beginning.
@@ -207,10 +214,8 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TDa
     /// </summary>
     /// <param name="data">The data point.</param>
     /// <returns>The tooltip info.</returns>
-    internal virtual TooltipInfo GetTooltipInfo(TData data)
-    {
-        return new TooltipInfo
-        {
+    internal virtual TooltipInfo GetTooltipInfo(TData data) {
+        return new TooltipInfo {
             Header = null,
             Lines = [new TooltipLine { Label = Title ?? "Series", Value = string.Empty, Color = Chart.GetSeriesColor(this) }]
         };
@@ -225,22 +230,23 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TDa
     /// <summary>
     ///     Gets the data bounds for the X axis.
     /// </summary>
-    internal virtual (double Min, double Max)? GetXRange() => null;
+    public virtual (double Min, double Max)? GetXRange() => null;
 
     /// <summary>
     ///     Gets the data bounds for the Y axis.
     /// </summary>
     /// <param name="xMin">The minimum X value to consider.</param>
     /// <param name="xMax">The maximum X value to consider.</param>
-    internal virtual (decimal Min, decimal Max)? GetYRange(double? xMin = null, double? xMax = null) => null;
+    public virtual (decimal Min, decimal Max)? GetYRange(double? xMin = null, double? xMax = null) => null;
 
     /// <summary>
     ///     Measures any decorators or axes the series might have and returns the remaining area.
     /// </summary>
     /// <param name="renderArea">The current available area.</param>
+    /// <param name="context">   The render context.</param>
     /// <param name="measured">  A set of objects already measured to avoid double measuring shared axes.</param>
     /// <returns>The remaining area after the series has taken its space.</returns>
-    internal virtual SKRect Measure(SKRect renderArea, HashSet<object> measured) => renderArea;
+    internal virtual SKRect Measure(SKRect renderArea, NTRenderContext context, HashSet<object> measured) => renderArea;
 
     /// <summary>
     ///     Registers any categorical X values the series has.
@@ -255,11 +261,9 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TDa
     /// <summary>
     ///     Renders any decorators or axes the series might have.
     /// </summary>
-    /// <param name="canvas">   The canvas to render on.</param>
-    /// <param name="plotArea"> The area of the chart content.</param>
-    /// <param name="totalArea">The total area of the chart.</param>
-    /// <param name="rendered"> A set of objects already rendered to avoid double rendering shared axes.</param>
-    internal virtual void RenderAxes(SKCanvas canvas, SKRect plotArea, SKRect totalArea, HashSet<object> rendered) { }
+    /// <param name="context">   The render context.</param>
+    /// <param name="rendered">  A set of objects already rendered to avoid double rendering shared axes.</param>
+    internal virtual void RenderAxes(NTRenderContext context, HashSet<object> rendered) { }
 
     /// <summary>
     ///     Toggles the visibility of a legend item.
@@ -270,6 +274,20 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TDa
             Visible = !Visible;
         }
     }
+
+    public virtual void HandleMouseDown(MouseEventArgs e) { }
+    public virtual void HandleMouseMove(MouseEventArgs e) { }
+    public virtual void HandleMouseUp(MouseEventArgs e) { }
+    public virtual void HandleMouseWheel(WheelEventArgs e) { }
+    public virtual void ResetView() { }
+
+    public virtual (double Min, double Max)? GetViewXRange() => null;
+    public virtual (decimal Min, decimal Max)? GetViewYRange() => null;
+
+    /// <summary>
+    ///     Returns true if the series is currently being panned.
+    /// </summary>
+    public virtual bool IsPanning => false;
 
     /// <summary>
     ///     Applies an overshoot effect to the progress.

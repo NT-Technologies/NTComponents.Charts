@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using NTComponents.Charts.Core.Series;
 using NTComponents.Charts.Core.Axes;
+using NTComponents.Charts.Core;
 using SkiaSharp;
 
 namespace NTComponents.Charts;
@@ -10,6 +11,9 @@ namespace NTComponents.Charts;
 /// </summary>
 /// <typeparam name="TData">The type of the data.</typeparam>
 public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class {
+   /// <inheritdoc />
+   public override ChartCoordinateSystem CoordinateSystem => ChartCoordinateSystem.Polar;
+
    [Parameter]
    public float StrokeWidth { get; set; } = 2f;
 
@@ -26,26 +30,29 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
    ///    Gets or sets the radial axis options for this series.
    /// </summary>
    [Parameter]
-   public NTRadialAxisOptions RadialAxis { get; set; } = new();
+   public NTRadialAxisOptions? RadialAxis { get; set; }
+
+   public NTRadialAxisOptions EffectiveRadialAxis => RadialAxis ?? Chart?.PrimaryRadialAxis ?? _defaultRadialAxis;
+
+   private static readonly NTRadialAxisOptions _defaultRadialAxis = new();
 
    /// <inheritdoc />
-   internal override SKRect Measure(SKRect renderArea, HashSet<object> measured) {
-      if (RadialAxis != null && RadialAxis.Visible && !measured.Contains(RadialAxis)) {
-         measured.Add(RadialAxis);
-         return RadialAxis.Measure(renderArea, Chart);
+   internal override SKRect Measure(SKRect renderArea, NTRenderContext context, HashSet<object> measured) {
+      if (EffectiveRadialAxis != null && EffectiveRadialAxis.Visible && measured.Add(EffectiveRadialAxis)) {
+         return EffectiveRadialAxis.Measure(renderArea, context, Chart);
       }
       return renderArea;
    }
 
    /// <inheritdoc />
-   internal override void RenderAxes(SKCanvas canvas, SKRect plotArea, SKRect totalArea, HashSet<object> rendered) {
-      if (RadialAxis != null && RadialAxis.Visible && !rendered.Contains(RadialAxis)) {
-         rendered.Add(RadialAxis);
-         RadialAxis.Render(canvas, plotArea, totalArea, Chart);
+   internal override void RenderAxes(NTRenderContext context, HashSet<object> rendered) {
+      if (EffectiveRadialAxis != null && EffectiveRadialAxis.Visible && rendered.Add(EffectiveRadialAxis)) {
+         EffectiveRadialAxis.Render(context, Chart);
       }
    }
 
-   public override void Render(SKCanvas canvas, SKRect renderArea) {
+   public override void Render(NTRenderContext context, SKRect renderArea) {
+      var canvas = context.Canvas;
       if (Data == null || !Data.Any()) return;
 
       var dataList = Data.ToList();
@@ -96,7 +103,7 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
       using (var strokePaint = new SKPaint {
          Style = SKPaintStyle.Stroke,
          Color = color,
-         StrokeWidth = StrokeWidth,
+         StrokeWidth = StrokeWidth * context.Density,
          IsAntialias = true
       }) {
          canvas.DrawPath(path, strokePaint);
@@ -115,26 +122,28 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
 
          var pointColor = args.Color ?? color;
          var p = points[i];
-         RenderPoint(canvas, p.X, p.Y, pointColor);
+         RenderPoint(context, p.X, p.Y, pointColor);
 
          if (ShowDataLabels) {
             var labelColor = args.DataLabelColor ?? pointColor;
             var labelSize = args.DataLabelSize ?? 12f;
-            RenderDataLabel(canvas, p.X, p.Y - 10, ValueSelector(item), labelColor, labelSize);
+            RenderDataLabel(context, p.X, p.Y - (10 * context.Density), ValueSelector(item), labelColor, labelSize);
          }
       }
    }
 
-   private void RenderDataLabel(SKCanvas canvas, float x, float y, decimal value, SKColor color, float fontSize) {
+   private void RenderDataLabel(NTRenderContext context, float x, float y, decimal value, SKColor color, float fontSize) {
+      var canvas = context.Canvas;
       var text = string.Format("{0:N0}", value);
       using var paint = new SKPaint { Color = color, IsAntialias = true };
-      using var font = new SKFont { Size = fontSize, Typeface = Chart.DefaultTypeface };
+      using var font = new SKFont { Size = fontSize * context.Density, Typeface = Chart.DefaultFont.Typeface };
       canvas.DrawText(text, x, y, SKTextAlign.Center, font, paint);
    }
 
-   private void RenderPoint(SKCanvas canvas, float x, float y, SKColor color) {
+   private void RenderPoint(NTRenderContext context, float x, float y, SKColor color) {
+      var canvas = context.Canvas;
       using var paint = new SKPaint { Color = color, IsAntialias = true };
-      canvas.DrawCircle(x, y, 4, paint);
+      canvas.DrawCircle(x, y, 4 * context.Density, paint);
    }
 
    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
@@ -157,7 +166,7 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
 
          float dx = point.X - px;
          float dy = point.Y - py;
-         if (dx * dx + dy * dy < 100) return (i, dataList[i]);
+         if (dx * dx + dy * dy < (10 * Chart.Density) * (10 * Chart.Density)) return (i, dataList[i]);
       }
       return null;
    }

@@ -9,8 +9,7 @@ namespace NTComponents.Charts;
 ///     Represents an area series in a cartesian chart.
 /// </summary>
 /// <typeparam name="TData">The type of the data.</typeparam>
-public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class
-{
+public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
    /// <summary>
    ///    Gets or sets the opacity of the area fill (0.0 to 1.0).
    /// </summary>
@@ -23,17 +22,16 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class
    [Parameter]
    public decimal BaselineValue { get; set; } = 0;
 
-   public override void Render(SKCanvas canvas, SKRect renderArea)
-   {
+   public override void Render(NTRenderContext context, SKRect renderArea) {
+      var canvas = context.Canvas;
       if (Data == null || !Data.Any()) return;
 
-      var (xMin, xMax) = Chart.GetXRange(XAxis, true);
-      var (yMin, yMax) = Chart.GetYRange(YAxis, true);
+      var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
+      var (yMin, yMax) = Chart.GetYRange(EffectiveYAxis, true);
 
       var points = GetAreaPoints(renderArea, xMin, xMax, yMin, yMax);
-      if (points.Count < 2)
-      {
-         base.Render(canvas, renderArea);
+      if (points.Count < 2) {
+         base.Render(context, renderArea);
          return;
       }
 
@@ -47,30 +45,26 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class
       var fillColor = strokeColor.WithAlpha((byte)(strokeColor.Alpha * AreaOpacity));
 
       // Draw Area Fill
-      using (var fillPaint = new SKPaint
-      {
+      using (var fillPaint = new SKPaint {
          Style = SKPaintStyle.Fill,
          Color = fillColor,
          IsAntialias = true
-      })
-      {
+      }) {
          using var areaPath = BuildAreaPath(points, renderArea);
          canvas.DrawPath(areaPath, fillPaint);
       }
 
       // Use base.Render to draw the line and points
-      base.Render(canvas, renderArea);
+      base.Render(context, renderArea);
    }
 
-   private List<SKPoint> GetAreaPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax)
-   {
+   private List<SKPoint> GetAreaPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {
       var dataList = Data.ToList();
       var points = new List<SKPoint>();
       var progress = GetAnimationProgress();
       var easedProgress = (decimal)BackEase(progress);
 
-      for (var i = 0; i < dataList.Count; i++)
-      {
+      for (var i = 0; i < dataList.Count; i++) {
          var originalX = XValue.Invoke(dataList[i]);
          var xValue = Chart.GetScaledXValue(originalX);
          var targetYValue = YValueSelector(dataList[i]);
@@ -81,21 +75,20 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class
          var vFactor = (decimal)VisibilityFactor;
          currentYValue *= vFactor * vFactor;
 
-         var screenXCoord = Chart.ScaleX(xValue, renderArea);
-         var screenYCoord = Chart.ScaleY(currentYValue, YAxis, renderArea);
+         var screenXCoord = Chart.ScaleX(xValue, renderArea, EffectiveXAxis);
+         var screenYCoord = Chart.ScaleY(currentYValue, EffectiveYAxis, renderArea);
 
          points.Add(new SKPoint(screenXCoord, screenYCoord));
       }
       return points;
    }
 
-   private SKPath BuildAreaPath(List<SKPoint> points, SKRect renderArea)
-   {
+   private SKPath BuildAreaPath(List<SKPoint> points, SKRect renderArea) {
       var path = BuildPath(points);
       if (points.Count < 2) return path;
 
       // Close the path to the baseline
-      float baselineCoord = Chart.ScaleY(BaselineValue, YAxis, renderArea);
+      float baselineCoord = Chart.ScaleY(BaselineValue, EffectiveYAxis, renderArea);
 
       path.LineTo(points.Last().X, baselineCoord);
       path.LineTo(points.First().X, baselineCoord);
