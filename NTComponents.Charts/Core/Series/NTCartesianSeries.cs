@@ -244,6 +244,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
                 var dataDx = dx / Chart.LastPlotArea.Width * xRangeSize;
                 _viewXMin = _panStartXRange.Value.Min + dataDx;
                 _viewXMax = _panStartXRange.Value.Max + dataDx;
+                EffectiveXAxis?.ClearCache();
             }
 
             if (_panStartYRange.HasValue && Interactions.HasFlag(ChartInteractions.YPan)) {
@@ -251,6 +252,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
                 var dataDy = (decimal)(dy / Chart.LastPlotArea.Height) * yRangeSize;
                 _viewYMin = _panStartYRange.Value.Min + dataDy;
                 _viewYMax = _panStartYRange.Value.Max + dataDy;
+                EffectiveYAxis?.ClearCache();
             }
         }
     }
@@ -282,6 +284,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             var xPct = (xVal - xMin) / (xMax - xMin);
             _viewXMin = xVal - (newXRange * xPct);
             _viewXMax = xVal + (newXRange * (1 - xPct));
+            EffectiveXAxis?.ClearCache();
         }
 
         if (Interactions.HasFlag(ChartInteractions.YZoom)) {
@@ -289,6 +292,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             var yPct = (decimal)((double)(yVal - yMin) / (double)(yMax - yMin));
             _viewYMin = yVal - (newYRange * yPct);
             _viewYMax = yVal + (newYRange * (1 - yPct));
+            EffectiveYAxis?.ClearCache();
         }
     }
 
@@ -297,6 +301,8 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         _viewXMax = null;
         _viewYMin = null;
         _viewYMax = null;
+        EffectiveXAxis?.ClearCache();
+        EffectiveYAxis?.ClearCache();
     }
 
     public override (double Min, double Max)? GetViewXRange() => (_viewXMin.HasValue && _viewXMax.HasValue) ? (_viewXMin.Value, _viewXMax.Value) : null;
@@ -316,6 +322,8 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         AnimationCurrentValues = null;
         _cachedTotalXRange = null;
         _cachedTotalYRange = null;
+        EffectiveXAxis?.ClearCache();
+        EffectiveYAxis?.ClearCache();
         base.OnDataChanged();
     }
 

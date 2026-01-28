@@ -30,7 +30,7 @@ public class NTXAxisOptions : NTAxisOptions {
       float rightMargin = (yAxes.Count > 1 ? 0 : 10) * context.Density;
 
       // Determine nice range once during measurement based on available space
-      if (!chart.IsCategoricalX && Scale == NTAxisScale.Linear) {
+      if (!chart.IsCategoricalX && Scale == NTAxisScale.Linear && !chart.HasViewRange(this)) {
          var (min, max) = chart.GetXRange(this, false);
          var maxTicks = Math.Min(MaxTicks, Math.Max(2, (int)(renderArea.Width / (100 * context.Density))));
          var (niceMin, niceMax, _) = CalculateNiceScaling(min, max, maxTicks);

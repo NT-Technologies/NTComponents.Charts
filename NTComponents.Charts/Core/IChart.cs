@@ -64,4 +64,6 @@ public interface IAxisChart : IChart
    decimal GetScaledYValue(object? originalY);
 
    bool IsXAxisDateTime { get; }
+
+   bool HasViewRange(NTAxisOptions axis);
 }

@@ -30,7 +30,7 @@ public class NTYAxisOptions : NTAxisOptions {
       var totalAxisWidth = labelWidth + titleWidth + (5 * context.Density);
 
       // Determine nice range once during measurement based on available space
-      if (!chart.IsCategoricalY && Scale == NTAxisScale.Linear) {
+      if (!chart.IsCategoricalY && Scale == NTAxisScale.Linear && !chart.HasViewRange(this)) {
          var (min, max) = chart.GetYRange(this, false);
          var maxTicks = Math.Min(MaxTicks, Math.Max(2, (int)(renderArea.Height / (40 * context.Density))));
          var (niceMin, niceMax, _) = CalculateNiceScaling(min, max, maxTicks);
