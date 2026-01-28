@@ -13,6 +13,21 @@ public class NTYAxisOptions : NTAxisOptions {
    private static readonly NTYAxisOptions _default = new();
    public static NTYAxisOptions Default => _default;
 
+   private SKPaint? _textPaint;
+   private SKPaint? _titlePaint;
+   private SKPaint? _linePaint;
+   private SKFont? _textFont;
+   private SKFont? _titleFont;
+
+   public override void Dispose() {
+      _textPaint?.Dispose();
+      _titlePaint?.Dispose();
+      _linePaint?.Dispose();
+      _textFont?.Dispose();
+      _titleFont?.Dispose();
+      base.Dispose();
+   }
+
    protected override void OnInitialized() {
       base.OnInitialized();
       Chart?.SetYAxisOptions(this);
@@ -49,38 +64,38 @@ public class NTYAxisOptions : NTAxisOptions {
       var canvas = context.Canvas;
       var (yMinReal, yMaxReal) = chart.GetYRange(this, false);
 
-      using var textPaint = new SKPaint {
-         Color = context.TextColor,
+      _textPaint ??= new SKPaint {
          IsAntialias = true
       };
+      _textPaint.Color = context.TextColor;
 
-      using var textFont = new SKFont {
-         Size = 12 * context.Density,
+      _textFont ??= new SKFont {
          Embolden = true,
          Typeface = context.DefaultFont.Typeface
       };
+      _textFont.Size = 12 * context.Density;
 
-      using var titlePaint = new SKPaint {
-         Color = context.TextColor,
+      _titlePaint ??= new SKPaint {
          IsAntialias = true
       };
+      _titlePaint.Color = context.TextColor;
 
-      using var titleFont = new SKFont {
-         Size = 16 * context.Density,
+      _titleFont ??= new SKFont {
          Embolden = true,
          Typeface = context.DefaultFont.Typeface
       };
+      _titleFont.Size = 16 * context.Density;
 
-      using var linePaint = new SKPaint {
-         Color = chart.GetThemeColor(TnTColor.Outline),
+      _linePaint ??= new SKPaint {
          StrokeWidth = context.Density,
          Style = SKPaintStyle.Stroke,
          IsAntialias = true
       };
+      _linePaint.Color = chart.GetThemeColor(TnTColor.Outline);
 
       var isSecondary = IsSecondary(chart);
       var xLine = isSecondary ? plotArea.Right : plotArea.Left;
-      canvas.DrawLine(xLine, plotArea.Top, xLine, plotArea.Bottom, linePaint);
+      canvas.DrawLine(xLine, plotArea.Top, xLine, plotArea.Bottom, _linePaint);
 
       var isCategorical = chart.IsCategoricalY;
 
@@ -120,10 +135,10 @@ public class NTYAxisOptions : NTAxisOptions {
 
                if (isSecondary) {
 
-                  canvas.DrawText(label, xLine + (4 * context.Density), screenCoord + yOffset, SKTextAlign.Left, textFont, textPaint);
+                  canvas.DrawText(label, xLine + (4 * context.Density), screenCoord + yOffset, SKTextAlign.Left, _textFont, _textPaint);
                }
                else {
-                  canvas.DrawText(label, xLine - (4 * context.Density), screenCoord + yOffset, SKTextAlign.Right, textFont, textPaint);
+                  canvas.DrawText(label, xLine - (4 * context.Density), screenCoord + yOffset, SKTextAlign.Right, _textFont, _textPaint);
                }
             }
          }
@@ -144,10 +159,10 @@ public class NTYAxisOptions : NTAxisOptions {
             if (screenCoord < plotArea.Top - (1 * context.Density) || screenCoord > plotArea.Bottom + (1 * context.Density)) continue;
 
             if (isSecondary) {
-               canvas.DrawText(val.ToString("G"), xLine + (4 * context.Density), screenCoord + (5 * context.Density), SKTextAlign.Left, textFont, textPaint);
+               canvas.DrawText(val.ToString("G"), xLine + (4 * context.Density), screenCoord + (5 * context.Density), SKTextAlign.Left, _textFont, _textPaint);
             }
             else {
-               canvas.DrawText(val.ToString("G"), xLine - (4 * context.Density), screenCoord + (5 * context.Density), SKTextAlign.Right, textFont, textPaint);
+               canvas.DrawText(val.ToString("G"), xLine - (4 * context.Density), screenCoord + (5 * context.Density), SKTextAlign.Right, _textFont, _textPaint);
             }
          }
       }
@@ -183,10 +198,10 @@ public class NTYAxisOptions : NTAxisOptions {
             }
 
             if (isSecondary) {
-               canvas.DrawText(label, xLine + (4 * context.Density), screenCoord + yOffset, SKTextAlign.Left, textFont, textPaint);
+               canvas.DrawText(label, xLine + (4 * context.Density), screenCoord + yOffset, SKTextAlign.Left, _textFont, _textPaint);
             }
             else {
-               canvas.DrawText(label, xLine - (4 * context.Density), screenCoord + yOffset, SKTextAlign.Right, textFont, textPaint);
+               canvas.DrawText(label, xLine - (4 * context.Density), screenCoord + yOffset, SKTextAlign.Right, _textFont, _textPaint);
             }
          }
       }
@@ -196,11 +211,11 @@ public class NTYAxisOptions : NTAxisOptions {
          canvas.Save();
          if (isSecondary) {
             canvas.RotateDegrees(90, xLine + (45 * context.Density), plotArea.Top + (plotArea.Height / 2));
-            canvas.DrawText(Title, xLine + (45 * context.Density), plotArea.Top + (plotArea.Height / 2), SKTextAlign.Center, titleFont, titlePaint);
+            canvas.DrawText(Title, xLine + (45 * context.Density), plotArea.Top + (plotArea.Height / 2), SKTextAlign.Center, _titleFont, _titlePaint);
          }
          else {
             canvas.RotateDegrees(-90, xLine - (45 * context.Density), plotArea.Top + (plotArea.Height / 2));
-            canvas.DrawText(Title, xLine - (45 * context.Density), plotArea.Top + (plotArea.Height / 2), SKTextAlign.Center, titleFont, titlePaint);
+            canvas.DrawText(Title, xLine - (45 * context.Density), plotArea.Top + (plotArea.Height / 2), SKTextAlign.Center, _titleFont, _titlePaint);
          }
          canvas.Restore();
       }

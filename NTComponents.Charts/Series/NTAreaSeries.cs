@@ -22,6 +22,9 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
    [Parameter]
    public decimal BaselineValue { get; set; } = 0;
 
+   private SKPaint? _areaPaint;
+   private SKPath? _areaPath;
+
    public override void Render(NTRenderContext context, SKRect renderArea) {
       var canvas = context.Canvas;
       if (Data == null || !Data.Any()) return;
@@ -45,17 +48,28 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
       var fillColor = strokeColor.WithAlpha((byte)(strokeColor.Alpha * AreaOpacity));
 
       // Draw Area Fill
-      using (var fillPaint = new SKPaint {
+      _areaPaint ??= new SKPaint {
          Style = SKPaintStyle.Fill,
-         Color = fillColor,
          IsAntialias = true
-      }) {
-         using var areaPath = BuildAreaPath(points, renderArea);
-         canvas.DrawPath(areaPath, fillPaint);
-      }
+      };
+      _areaPaint.Color = fillColor;
+
+      _areaPath?.Dispose();
+      _areaPath = BuildAreaPath(points, renderArea);
+      canvas.DrawPath(_areaPath, _areaPaint);
 
       // Use base.Render to draw the line and points
       base.Render(context, renderArea);
+   }
+
+   protected override void Dispose(bool disposing) {
+      if (disposing) {
+         _areaPaint?.Dispose();
+         _areaPath?.Dispose();
+         _areaPaint = null;
+         _areaPath = null;
+      }
+      base.Dispose(disposing);
    }
 
    private List<SKPoint> GetAreaPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {

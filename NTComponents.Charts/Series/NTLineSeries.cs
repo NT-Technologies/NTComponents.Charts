@@ -47,6 +47,25 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     [Parameter]
     public AggregationMode AggregationMode { get; set; } = AggregationMode.Average;
 
+    private SKPaint? _linePaint;
+    private SKPaint? _segmentPaint;
+    private SKPath? _linePath;
+    private SKPaint? _hitTestPaint;
+    private SKPath? _hitTestPath;
+    private SKPath? _hitTestStrokePath;
+
+    protected override void Dispose(bool disposing) {
+        if (disposing) {
+            _linePaint?.Dispose();
+            _segmentPaint?.Dispose();
+            _linePath?.Dispose();
+            _hitTestPaint?.Dispose();
+            _hitTestPath?.Dispose();
+            _hitTestStrokePath?.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
     /// <inheritdoc />
     public override void Render(NTRenderContext context, SKRect renderArea) {
         var canvas = context.Canvas;
@@ -66,23 +85,27 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
         color = color.WithAlpha((byte)(color.Alpha * hoverFactor * visibilityFactor));
 
-        using var paint = new SKPaint {
+        _linePaint ??= new SKPaint {
             Style = SKPaintStyle.Stroke,
-            Color = color,
-            StrokeWidth = StrokeWidth,
             IsAntialias = true,
             StrokeCap = SKStrokeCap.Round,
             StrokeJoin = SKStrokeJoin.Round
         };
+        _linePaint.Color = color;
+        _linePaint.StrokeWidth = StrokeWidth;
 
         if (LineStyle == LineStyle.Dashed) {
-            paint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
+            _linePaint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
+        }
+        else {
+            _linePaint.PathEffect = null;
         }
 
         if (LineStyle != LineStyle.None && points.Count > 1) {
             if (OnDataPointRender == null) {
-                using var path = BuildPath(points);
-                canvas.DrawPath(path, paint);
+                _linePath?.Dispose();
+                _linePath = BuildPath(points);
+                canvas.DrawPath(_linePath, _linePaint);
             }
             else {
                 // Draw segment by segment to allow for per-point line styling
@@ -104,21 +127,24 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
                     if (segmentStyle == LineStyle.None) continue;
 
-                    using var segmentPaint = new SKPaint {
+                    _segmentPaint ??= new SKPaint {
                         Style = SKPaintStyle.Stroke,
-                        Color = segmentColor,
-                        StrokeWidth = segmentWidth,
                         IsAntialias = true,
                         StrokeCap = SKStrokeCap.Round,
                         StrokeJoin = SKStrokeJoin.Round
                     };
+                    _segmentPaint.Color = segmentColor;
+                    _segmentPaint.StrokeWidth = segmentWidth;
 
                     if (segmentStyle == LineStyle.Dashed) {
-                        segmentPaint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
+                        _segmentPaint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
+                    }
+                    else {
+                        _segmentPaint.PathEffect = null;
                     }
 
                     // For now, segment-based styling only supports straight lines
-                    canvas.DrawLine(points[i - 1], points[i], segmentPaint);
+                    canvas.DrawLine(points[i - 1], points[i], _segmentPaint);
                 }
             }
         }
@@ -374,18 +400,22 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         }
 
         if (points.Count > 1 && LineStyle != LineStyle.None) {
-            using var path = BuildPath(points);
-            using var paint = new SKPaint {
+            _hitTestPath?.Dispose();
+            _hitTestPath = BuildPath(points);
+
+            _hitTestPaint ??= new SKPaint {
                 Style = SKPaintStyle.Stroke,
-                StrokeWidth = StrokeWidth + 10, // Wider tolerance for hovering
                 StrokeCap = SKStrokeCap.Round,
                 StrokeJoin = SKStrokeJoin.Round
             };
+            _hitTestPaint.StrokeWidth = StrokeWidth + 10; // Wider tolerance for hovering
 
-            using var strokePath = new SKPath();
-            paint.GetFillPath(path, strokePath);
+            _hitTestStrokePath ??= new SKPath();
+            _hitTestStrokePath.Reset();
 
-            if (strokePath.Contains(point.X, point.Y)) {
+            _hitTestPaint.GetFillPath(_hitTestPath, _hitTestStrokePath);
+
+            if (_hitTestStrokePath.Contains(point.X, point.Y)) {
                 return (-1, null);
             }
         }

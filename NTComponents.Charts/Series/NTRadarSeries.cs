@@ -36,6 +36,23 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
 
    private static readonly NTRadialAxisOptions _defaultRadialAxis = new();
 
+   private SKPaint? _fillPaint;
+   private SKPaint? _strokePaint;
+   private SKPaint? _pointPaint;
+   private SKPaint? _labelPaint;
+   private SKFont? _labelFont;
+
+   protected override void Dispose(bool disposing) {
+      if (disposing) {
+         _fillPaint?.Dispose();
+         _strokePaint?.Dispose();
+         _pointPaint?.Dispose();
+         _labelPaint?.Dispose();
+         _labelFont?.Dispose();
+      }
+      base.Dispose(disposing);
+   }
+
    /// <inheritdoc />
    internal override SKRect Measure(SKRect renderArea, NTRenderContext context, HashSet<object> measured) {
       if (EffectiveRadialAxis != null && EffectiveRadialAxis.Visible && measured.Add(EffectiveRadialAxis)) {
@@ -91,23 +108,21 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
       path.AddPoly(points, true);
 
       // Fill
-      using (var fillPaint = new SKPaint {
+      _fillPaint ??= new SKPaint {
          Style = SKPaintStyle.Fill,
-         Color = color.WithAlpha((byte)(color.Alpha * AreaOpacity)),
          IsAntialias = true
-      }) {
-         canvas.DrawPath(path, fillPaint);
-      }
+      };
+      _fillPaint.Color = color.WithAlpha((byte)(color.Alpha * AreaOpacity));
+      canvas.DrawPath(path, _fillPaint);
 
       // Stroke
-      using (var strokePaint = new SKPaint {
+      _strokePaint ??= new SKPaint {
          Style = SKPaintStyle.Stroke,
-         Color = color,
-         StrokeWidth = StrokeWidth * context.Density,
          IsAntialias = true
-      }) {
-         canvas.DrawPath(path, strokePaint);
-      }
+      };
+      _strokePaint.Color = color;
+      _strokePaint.StrokeWidth = StrokeWidth * context.Density;
+      canvas.DrawPath(path, _strokePaint);
 
       // Points and Labels
       for (int i = 0; i < count; i++) {
@@ -135,15 +150,21 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
    private void RenderDataLabel(NTRenderContext context, float x, float y, decimal value, SKColor color, float fontSize) {
       var canvas = context.Canvas;
       var text = string.Format("{0:N0}", value);
-      using var paint = new SKPaint { Color = color, IsAntialias = true };
-      using var font = new SKFont { Size = fontSize * context.Density, Typeface = Chart.DefaultFont.Typeface };
-      canvas.DrawText(text, x, y, SKTextAlign.Center, font, paint);
+
+      _labelPaint ??= new SKPaint { IsAntialias = true };
+      _labelPaint.Color = color;
+
+      _labelFont ??= new SKFont { Typeface = Chart.DefaultFont.Typeface };
+      _labelFont.Size = fontSize * context.Density;
+
+      canvas.DrawText(text, x, y, SKTextAlign.Center, _labelFont, _labelPaint);
    }
 
    private void RenderPoint(NTRenderContext context, float x, float y, SKColor color) {
       var canvas = context.Canvas;
-      using var paint = new SKPaint { Color = color, IsAntialias = true };
-      canvas.DrawCircle(x, y, 4 * context.Density, paint);
+      _pointPaint ??= new SKPaint { IsAntialias = true };
+      _pointPaint.Color = color;
+      canvas.DrawCircle(x, y, 4 * context.Density, _pointPaint);
    }
 
    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {

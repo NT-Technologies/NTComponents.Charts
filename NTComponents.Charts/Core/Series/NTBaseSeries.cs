@@ -177,8 +177,14 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TDa
     private DateTime? _visibilityAnimationStartTime;
 
     public void Dispose() {
+        Dispose(true);
         GC.SuppressFinalize(this);
-        Chart?.RemoveSeries(this);
+    }
+
+    protected virtual void Dispose(bool disposing) {
+        if (disposing) {
+            Chart?.RemoveSeries(this);
+        }
     }
 
     /// <summary>

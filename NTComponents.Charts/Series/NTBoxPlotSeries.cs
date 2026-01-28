@@ -25,6 +25,9 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
    [Parameter]
    public float WhiskerWidthRatio { get; set; } = 0.5f;
 
+   private SKPaint? _strokePaint;
+   private SKPaint? _fillPaint;
+
    public override void Render(NTRenderContext context, SKRect renderArea) {
       var canvas = context.Canvas;
       if (Data == null || !Data.Any()) return;
@@ -46,6 +49,17 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
       float plotWidth = renderArea.Width;
       float itemWidth = plotWidth / Math.Max(1, allX.Count);
       float boxWidth = itemWidth * BoxWidthRatio;
+
+      _strokePaint ??= new SKPaint {
+         Style = SKPaintStyle.Stroke,
+         IsAntialias = true
+      };
+      _strokePaint.StrokeWidth = 2 * context.Density;
+
+      _fillPaint ??= new SKPaint {
+         Style = SKPaintStyle.Fill,
+         IsAntialias = true
+      };
 
       for (int i = 0; i < dataList.Count; i++) {
          var item = dataList[i];
@@ -84,34 +98,24 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
          var currentColor = args.Color ?? baseColor;
          var color = (isPointHovered) ? currentColor : currentColor.WithAlpha((byte)(currentColor.Alpha * hoverFactor));
 
-         using var strokePaint = new SKPaint {
-            Style = SKPaintStyle.Stroke,
-            Color = color,
-            StrokeWidth = 2 * context.Density,
-            IsAntialias = true
-         };
-
-         using var fillPaint = new SKPaint {
-            Style = SKPaintStyle.Fill,
-            Color = color.WithAlpha((byte)(color.Alpha * 0.3f)),
-            IsAntialias = true
-         };
+         _strokePaint.Color = color;
+         _fillPaint.Color = color.WithAlpha((byte)(color.Alpha * 0.3f));
 
          // Draw Box
          var boxRect = new SKRect(centerPos - boxWidth / 2, q3Pos, centerPos + boxWidth / 2, q1Pos);
-         canvas.DrawRect(boxRect, fillPaint);
-         canvas.DrawRect(boxRect, strokePaint);
+         canvas.DrawRect(boxRect, _fillPaint);
+         canvas.DrawRect(boxRect, _strokePaint);
 
          // Draw Median
-         canvas.DrawLine(centerPos - boxWidth / 2, medianPos, centerPos + boxWidth / 2, medianPos, strokePaint);
+         canvas.DrawLine(centerPos - boxWidth / 2, medianPos, centerPos + boxWidth / 2, medianPos, _strokePaint);
 
          // Draw Whiskers
-         canvas.DrawLine(centerPos, q3Pos, centerPos, maxPos, strokePaint);
-         canvas.DrawLine(centerPos, q1Pos, centerPos, minPos, strokePaint);
+         canvas.DrawLine(centerPos, q3Pos, centerPos, maxPos, _strokePaint);
+         canvas.DrawLine(centerPos, q1Pos, centerPos, minPos, _strokePaint);
 
          float whiskerWidth = boxWidth * WhiskerWidthRatio;
-         canvas.DrawLine(centerPos - whiskerWidth / 2, maxPos, centerPos + whiskerWidth / 2, maxPos, strokePaint);
-         canvas.DrawLine(centerPos - whiskerWidth / 2, minPos, centerPos + whiskerWidth / 2, minPos, strokePaint);
+         canvas.DrawLine(centerPos - whiskerWidth / 2, maxPos, centerPos + whiskerWidth / 2, maxPos, _strokePaint);
+         canvas.DrawLine(centerPos - whiskerWidth / 2, minPos, centerPos + whiskerWidth / 2, minPos, _strokePaint);
 
          // Outliers
          if (boxValues.Outliers != null) {
@@ -121,6 +125,16 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
             }
          }
       }
+   }
+
+   protected override void Dispose(bool disposing) {
+      if (disposing) {
+         _strokePaint?.Dispose();
+         _fillPaint?.Dispose();
+         _strokePaint = null;
+         _fillPaint = null;
+      }
+      base.Dispose(disposing);
    }
 
    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {

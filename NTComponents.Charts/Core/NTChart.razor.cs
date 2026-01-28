@@ -181,6 +181,27 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     private DotNetObjectReference<NTChart<TData>>? _objRef;
     private IJSObjectReference? _themeListener;
 
+    // Cached paints and fonts to avoid allocations in render loop
+    private SKPaint? _errorPaint;
+    private SKFont? _errorFont;
+    private SKPaint? _debugBgPaint;
+    private SKPaint? _debugTextPaint;
+    private SKFont? _debugFont;
+    private SKPaint? _titlePaint;
+    private SKFont? _titleFont;
+    private SKPaint? _tooltipBgPaint;
+    private SKPaint? _tooltipBorderPaint;
+    private SKFont? _tooltipHeaderFont;
+    private SKFont? _tooltipLabelFont;
+    private SKFont? _tooltipValueFont;
+    private SKPaint? _tooltipHeaderPaint;
+    private SKPaint? _tooltipSeparatorPaint;
+    private SKPaint? _tooltipIconPaint;
+    private SKPaint? _tooltipLabelPaint;
+    private SKPaint? _tooltipValuePaint;
+    private SKPaint? _treeMapGroupPaint;
+    private SKFont? _treeMapGroupFont;
+
     /// <summary>
     ///     Exports the current chart as a PNG image.
     /// </summary>
@@ -753,6 +774,27 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     internal void SetLegend(NTLegend<TData> legend) => Legend = legend;
 
     protected override void Dispose(bool disposing) {
+        if (disposing) {
+            _errorPaint?.Dispose();
+            _errorFont?.Dispose();
+            _debugBgPaint?.Dispose();
+            _debugTextPaint?.Dispose();
+            _debugFont?.Dispose();
+            _titlePaint?.Dispose();
+            _titleFont?.Dispose();
+            _tooltipBgPaint?.Dispose();
+            _tooltipBorderPaint?.Dispose();
+            _tooltipHeaderFont?.Dispose();
+            _tooltipLabelFont?.Dispose();
+            _tooltipValueFont?.Dispose();
+            _tooltipHeaderPaint?.Dispose();
+            _tooltipSeparatorPaint?.Dispose();
+            _tooltipIconPaint?.Dispose();
+            _tooltipLabelPaint?.Dispose();
+            _tooltipValuePaint?.Dispose();
+            _treeMapGroupPaint?.Dispose();
+            _treeMapGroupFont?.Dispose();
+        }
         base.Dispose(disposing);
     }
 
@@ -875,10 +917,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         }
         catch (Exception ex) {
             // Render error instead of crashing the surface
-            using var paint = new SKPaint { Color = SKColors.Red, IsAntialias = true };
-            using var font = new SKFont { Size = 14 * Density };
+            _errorPaint ??= new SKPaint { Color = SKColors.Red, IsAntialias = true };
+            _errorFont ??= new SKFont { Size = 14 * Density };
+            _errorFont.Size = 14 * Density;
+
             canvas.Clear(SKColors.White);
-            canvas.DrawText($"Chart Error: {ex.Message}", 10 * Density, 30 * Density, font, paint);
+            canvas.DrawText($"Chart Error: {ex.Message}", 10 * Density, 30 * Density, _errorFont, _errorPaint);
             return;
         }
 
@@ -1100,21 +1144,24 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     }
 
     private void RenderDebugInfo(NTRenderContext context) {
-        using var paint = new SKPaint {
+        _debugBgPaint ??= new SKPaint {
             Color = SKColors.Black.WithAlpha(160),
             Style = SKPaintStyle.Fill
         };
-        context.Canvas.DrawRect(0, 0, context.Info.Width, 24 * context.Density, paint);
+        context.Canvas.DrawRect(0, 0, context.Info.Width, 24 * context.Density, _debugBgPaint);
 
-        using var textPaint = new SKPaint {
+        _debugTextPaint ??= new SKPaint {
             Color = SKColors.White,
             IsAntialias = true
         };
 
-        using var typeface = SKTypeface.FromFamilyName("monospace");
-        using var font = new SKFont(typeface, 12 * context.Density);
+        if (_debugFont == null) {
+            var typeface = SKTypeface.FromFamilyName("monospace");
+            _debugFont = new SKFont(typeface, 12 * context.Density);
+        }
+        _debugFont.Size = 12 * context.Density;
 
-        context.Canvas.DrawText($"Render: {_lastRenderTimeMs:F2} ms", 10 * context.Density, 16 * context.Density, font, textPaint);
+        context.Canvas.DrawText($"Render: {_lastRenderTimeMs:F2} ms", 10 * context.Density, 16 * context.Density, _debugFont, _debugTextPaint);
     }
 
     protected virtual void OnWheel(WheelEventArgs e) {
@@ -1211,22 +1258,22 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     }
 
     private void RenderTitle(NTRenderContext context) {
-        using var paint = new SKPaint {
-            Color = GetThemeColor(TextColor),
+        _titlePaint ??= new SKPaint {
             IsAntialias = true,
             Style = SKPaintStyle.Fill
         };
+        _titlePaint.Color = GetThemeColor(TextColor);
 
-        using var font = new SKFont {
-            Size = 20 * context.Density,
+        _titleFont ??= new SKFont {
             Embolden = true,
             Typeface = context.DefaultFont.Typeface
         };
+        _titleFont.Size = 20 * context.Density;
 
         var x = (Margin.Left * context.Density) + ((context.Info.Width - (Margin.Left * context.Density) - (Margin.Right * context.Density)) / 2);
         var y = (Margin.Top * context.Density) + (20 * context.Density);
 
-        context.Canvas.DrawText(Title!, x, y, SKTextAlign.Center, font, paint);
+        context.Canvas.DrawText(Title!, x, y, SKTextAlign.Center, _titleFont, _titlePaint);
     }
 
     private void RenderTooltip(NTRenderContext context, SKRect plotArea) {
@@ -1250,21 +1297,17 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         var textColor = GetThemeColor(_tooltipComponent?.TextColor ?? HoveredSeries.TooltipTextColor ?? TooltipTextColor);
         var subTextColor = textColor.WithAlpha(200);
 
-        using var fontHeader = new SKFont {
-            Size = 11 * context.Density,
-            Typeface = context.RegularFont.Typeface
-        };
-        using var fontLabel = new SKFont {
-            Size = 12 * context.Density,
-            Typeface = context.RegularFont.Typeface
-        };
-        using var fontValue = new SKFont {
-            Size = 12 * context.Density,
-            Typeface = context.DefaultFont.Typeface
-        };
+        _tooltipHeaderFont ??= new SKFont { Typeface = context.RegularFont.Typeface };
+        _tooltipHeaderFont.Size = 11 * context.Density;
+
+        _tooltipLabelFont ??= new SKFont { Typeface = context.RegularFont.Typeface };
+        _tooltipLabelFont.Size = 12 * context.Density;
+
+        _tooltipValueFont ??= new SKFont { Typeface = context.DefaultFont.Typeface };
+        _tooltipValueFont.Size = 12 * context.Density;
 
         var padding = 8f * context.Density;
-        var headerHeight = string.IsNullOrEmpty(tooltipInfo.Header) ? 0 : fontHeader.Size + (6 * context.Density);
+        var headerHeight = string.IsNullOrEmpty(tooltipInfo.Header) ? 0 : _tooltipHeaderFont.Size + (6 * context.Density);
         var separatorHeight = string.IsNullOrEmpty(tooltipInfo.Header) ? 0 : 6 * context.Density;
         var lineHeight = 18f * context.Density;
         var iconSize = 8f * context.Density;
@@ -1272,11 +1315,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
 
         float maxWidth = 0;
         if (!string.IsNullOrEmpty(tooltipInfo.Header)) {
-            maxWidth = fontHeader.MeasureText(tooltipInfo.Header);
+            maxWidth = _tooltipHeaderFont.MeasureText(tooltipInfo.Header);
         }
 
         foreach (var line in tooltipInfo.Lines) {
-            var lineWidth = iconSize + iconSpacing + fontLabel.MeasureText(line.Label + ": ") + fontValue.MeasureText(line.Value);
+            var lineWidth = iconSize + iconSpacing + _tooltipLabelFont.MeasureText(line.Label + ": ") + _tooltipValueFont.MeasureText(line.Value);
             maxWidth = Math.Max(maxWidth, lineWidth);
         }
 
@@ -1292,30 +1335,32 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
             rect.Offset(0, totalHeight + (30 * context.Density));
         }
 
-        using var bgPaint = new SKPaint {
-            Color = bgColor.WithAlpha(250),
+        _tooltipBgPaint ??= new SKPaint {
             Style = SKPaintStyle.Fill,
             IsAntialias = true
         };
-        canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, bgPaint);
+        _tooltipBgPaint.Color = bgColor.WithAlpha(250);
+        canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, _tooltipBgPaint);
 
-        using var borderPaint = new SKPaint {
-            Color = GetThemeColor(TnTColor.OutlineVariant),
+        _tooltipBorderPaint ??= new SKPaint {
             Style = SKPaintStyle.Stroke,
             StrokeWidth = 1,
             IsAntialias = true
         };
-        canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, borderPaint);
+        _tooltipBorderPaint.Color = GetThemeColor(TnTColor.OutlineVariant);
+        canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, _tooltipBorderPaint);
 
         var currentY = rect.Top + padding;
 
         if (!string.IsNullOrEmpty(tooltipInfo.Header)) {
-            using var headerPaint = new SKPaint { Color = subTextColor, IsAntialias = true };
-            canvas.DrawText(tooltipInfo.Header, rect.Left + padding, currentY + fontHeader.Size - (2 * context.Density), SKTextAlign.Left, fontHeader, headerPaint);
+            _tooltipHeaderPaint ??= new SKPaint { IsAntialias = true };
+            _tooltipHeaderPaint.Color = subTextColor;
+            canvas.DrawText(tooltipInfo.Header, rect.Left + padding, currentY + _tooltipHeaderFont.Size - (2 * context.Density), SKTextAlign.Left, _tooltipHeaderFont, _tooltipHeaderPaint);
             currentY += headerHeight;
 
-            using var separatorPaint = new SKPaint { Color = GetThemeColor(TnTColor.OutlineVariant), StrokeWidth = 1, IsAntialias = true };
-            canvas.DrawLine(rect.Left, currentY - (4 * context.Density), rect.Right, currentY - (4 * context.Density), separatorPaint);
+            _tooltipSeparatorPaint ??= new SKPaint { StrokeWidth = 1, IsAntialias = true };
+            _tooltipSeparatorPaint.Color = GetThemeColor(TnTColor.OutlineVariant);
+            canvas.DrawLine(rect.Left, currentY - (4 * context.Density), rect.Right, currentY - (4 * context.Density), _tooltipSeparatorPaint);
             currentY += separatorHeight - (4 * context.Density);
         }
 
@@ -1323,19 +1368,22 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
             var centerX = rect.Left + padding + (iconSize / 2);
             var centerY = currentY + (lineHeight / 2) - (1 * context.Density);
 
-            using var iconPaint = new SKPaint { Color = line.Color, Style = SKPaintStyle.Fill, IsAntialias = true };
-            canvas.DrawCircle(centerX, centerY, iconSize / 2, iconPaint);
+            _tooltipIconPaint ??= new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = true };
+            _tooltipIconPaint.Color = line.Color;
+            canvas.DrawCircle(centerX, centerY, iconSize / 2, _tooltipIconPaint);
 
             var textX = rect.Left + padding + iconSize + iconSpacing;
             var textY = currentY + (14 * context.Density);
 
-            using var labelPaint = new SKPaint { Color = subTextColor, IsAntialias = true };
-            canvas.DrawText(line.Label + ": ", textX, textY, SKTextAlign.Left, fontLabel, labelPaint);
+            _tooltipLabelPaint ??= new SKPaint { IsAntialias = true };
+            _tooltipLabelPaint.Color = subTextColor;
+            canvas.DrawText(line.Label + ": ", textX, textY, SKTextAlign.Left, _tooltipLabelFont, _tooltipLabelPaint);
 
-            var labelWidth = fontLabel.MeasureText(line.Label + ": ");
+            var labelWidth = _tooltipLabelFont.MeasureText(line.Label + ": ");
 
-            using var valuePaint = new SKPaint { Color = textColor, IsAntialias = true };
-            canvas.DrawText(line.Value, textX + labelWidth, textY, SKTextAlign.Left, fontValue, valuePaint);
+            _tooltipValuePaint ??= new SKPaint { IsAntialias = true };
+            _tooltipValuePaint.Color = textColor;
+            canvas.DrawText(line.Value, textX + labelWidth, textY, SKTextAlign.Left, _tooltipValueFont, _tooltipValuePaint);
 
             currentY += lineHeight;
         }
@@ -1348,32 +1396,33 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
             return;
         }
 
+        _treeMapGroupPaint ??= new SKPaint {
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill
+        };
+
+        _treeMapGroupFont ??= new SKFont {
+            Embolden = true,
+            Typeface = context.DefaultFont.Typeface
+        };
+        _treeMapGroupFont.Size = 14 * context.Density;
+
         foreach (var series in treeMapSeries) {
             if (!_treeMapAreas.TryGetValue(series, out var area)) {
                 continue;
             }
 
-            using var paint = new SKPaint {
-                Color = GetSeriesTextColor(series).WithAlpha((byte)(255 * series.VisibilityFactor)),
-                IsAntialias = true,
-                Style = SKPaintStyle.Fill
-            };
-
-            using var font = new SKFont {
-                Size = 14 * context.Density,
-                Embolden = true,
-                Typeface = context.DefaultFont.Typeface
-            };
+            _treeMapGroupPaint.Color = GetSeriesTextColor(series).WithAlpha((byte)(255 * series.VisibilityFactor));
 
             var title = series.Title ?? "Series";
             // Measure text to make sure it fits
-            var textWidth = font.MeasureText(title);
+            var textWidth = _treeMapGroupFont.MeasureText(title);
             if (area.Width < textWidth + (10 * context.Density) || area.Height < (20 * context.Density)) {
                 continue;
             }
 
             // Draw at top left of the area with a small offset
-            canvas.DrawText(title, area.Left + (5 * context.Density), area.Top + (15 * context.Density), SKTextAlign.Left, font, paint);
+            canvas.DrawText(title, area.Left + (5 * context.Density), area.Top + (15 * context.Density), SKTextAlign.Left, _treeMapGroupFont, _treeMapGroupPaint);
         }
     }
 

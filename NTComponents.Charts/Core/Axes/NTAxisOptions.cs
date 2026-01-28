@@ -6,10 +6,14 @@ namespace NTComponents.Charts.Core.Axes;
 /// <summary>
 ///     Base class for all chart axis options.
 /// </summary>
-public abstract class NTAxisOptions : ComponentBase {
+public abstract class NTAxisOptions : ComponentBase, IDisposable {
 
     [CascadingParameter]
     protected IAxisChart Chart { get; set; } = default!;
+
+    public virtual void Dispose() {
+        GC.SuppressFinalize(this);
+    }
 
     /// <summary>
     ///    Gets or sets the title of the axis.

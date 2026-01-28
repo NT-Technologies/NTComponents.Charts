@@ -22,6 +22,17 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     [Parameter]
     public NTChartOrientation Orientation { get; set; } = NTChartOrientation.Vertical;
 
+    private SKPaint? _barPaint;
+    private SKPaint? _highlightPaint;
+
+    protected override void Dispose(bool disposing) {
+        if (disposing) {
+            _barPaint?.Dispose();
+            _highlightPaint?.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
     /// <inheritdoc />
     public override void Render(NTRenderContext context, SKRect renderArea) {
         var canvas = context.Canvas;
@@ -43,11 +54,11 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
         color = color.WithAlpha((byte)(color.Alpha * hoverFactor * myVisibilityFactor));
 
-        using var paint = new SKPaint {
-            Color = color,
+        _barPaint ??= new SKPaint {
             IsAntialias = true,
             Style = SKPaintStyle.Fill
         };
+        _barPaint.Color = color;
 
         var dataList = Data.ToList();
         for (var i = 0; i < barRects.Count; i++) {
@@ -66,20 +77,17 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
             if (isPointHovered) {
                 // Highlight hovered bar
-                using var highlightPaint = new SKPaint {
-                    Color = pointColor.WithAlpha(255),
+                _highlightPaint ??= new SKPaint {
                     IsAntialias = true,
                     Style = SKPaintStyle.Fill
                 };
-                DrawBar(canvas, rect, highlightPaint, context.Density);
+                _highlightPaint.Color = pointColor.WithAlpha(255);
+                DrawBar(canvas, rect, _highlightPaint, context.Density);
             }
             else {
-                using var barPaint = new SKPaint {
-                    Color = pointColor,
-                    IsAntialias = true,
-                    Style = SKPaintStyle.Fill
-                };
-                DrawBar(canvas, rect, barPaint, context.Density);
+                // If the color changed per point, we update _barPaint
+                _barPaint.Color = pointColor;
+                DrawBar(canvas, rect, _barPaint, context.Density);
             }
 
             if (ShowDataLabels || isPointHovered) {

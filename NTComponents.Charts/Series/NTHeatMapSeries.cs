@@ -25,6 +25,8 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
    [Parameter]
    public float CellPadding { get; set; } = 0.05f;
 
+   private SKPaint? _cellPaint;
+
    public override void Render(NTRenderContext context, SKRect renderArea) {
       var canvas = context.Canvas;
       if (Data == null || !Data.Any()) return;
@@ -47,6 +49,11 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
 
       var visibilityFactor = VisibilityFactor;
       var hoverFactor = HoverFactor;
+
+      _cellPaint ??= new SKPaint {
+         Style = SKPaintStyle.Fill,
+         IsAntialias = true
+      };
 
       for (int i = 0; i < dataList.Count; i++) {
          var item = dataList[i];
@@ -81,13 +88,8 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
          var cellRect = new SKRect(x - cellWidth / 2, y - cellHeight / 2, x + cellWidth / 2, y + cellHeight / 2);
          cellRect.Inflate(-cellWidth * CellPadding / 2, -cellHeight * CellPadding / 2);
 
-         using var paint = new SKPaint {
-            Color = color,
-            Style = SKPaintStyle.Fill,
-            IsAntialias = true
-         };
-
-         canvas.DrawRect(cellRect, paint);
+         _cellPaint.Color = color;
+         canvas.DrawRect(cellRect, _cellPaint);
 
          if (ShowDataLabels) {
             var labelColor = args.DataLabelColor;
@@ -95,6 +97,14 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
             RenderDataLabel(context, x, y + (5 * context.Density), weight, renderArea, labelColor, labelSize);
          }
       }
+   }
+
+   protected override void Dispose(bool disposing) {
+      if (disposing) {
+         _cellPaint?.Dispose();
+         _cellPaint = null;
+      }
+      base.Dispose(disposing);
    }
 
    private SKColor InterpolateColor(SKColor c1, SKColor c2, float t) {

@@ -8,8 +8,7 @@ namespace NTComponents.Charts.Core;
 /// <summary>
 ///     Common interface for all charts.
 /// </summary>
-public interface IChart
-{
+public interface IChart {
    /// <summary>
    ///     Gets the density of the screen.
    /// </summary>
@@ -34,8 +33,7 @@ public interface IChart
 /// <summary>
 ///    Interface for charts that support axes.
 /// </summary>
-public interface IAxisChart : IChart
-{
+public interface IAxisChart : IChart {
    void SetXAxisOptions(NTAxisOptions options);
    void SetYAxisOptions(NTAxisOptions options);
    void SetRadialAxisOptions(NTAxisOptions options);

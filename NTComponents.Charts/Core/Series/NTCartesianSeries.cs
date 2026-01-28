@@ -218,6 +218,14 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     private (double Min, double Max)? _cachedTotalXRange;
     private (decimal Min, decimal Max)? _cachedTotalYRange;
 
+    private SKPaint? _pointPaint;
+    private SKPaint? _labelPaint;
+    private SKPaint? _labelBgPaint;
+    private SKPaint? _labelBorderPaint;
+    private SKFont? _labelFont;
+    private SKPath? _trianglePath;
+    private SKPath? _diamondPath;
+
     protected bool _isPanning;
     protected SKPoint _panStartPoint;
     protected (double Min, double Max)? _panStartXRange;
@@ -311,6 +319,19 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     /// <inheritdoc />
     public override bool IsPanning => _isPanning;
 
+    protected override void Dispose(bool disposing) {
+        if (disposing) {
+            _pointPaint?.Dispose();
+            _labelPaint?.Dispose();
+            _labelBgPaint?.Dispose();
+            _labelBorderPaint?.Dispose();
+            _labelFont?.Dispose();
+            _trianglePath?.Dispose();
+            _diamondPath?.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
     protected decimal[]? AnimationStartValues { get; set; }
     protected decimal[]? AnimationCurrentValues { get; set; }
 
@@ -332,19 +353,63 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             return;
         }
 
-        context.DrawDataLabel(
-            Chart,
-            this,
-            x,
-            y,
-            value,
-            renderArea,
-            DataLabelFormat,
-            overrideColor,
-            overrideFontSize,
-            textAlign,
-            ShowDataLabelBackground,
-            DataLabelBackgroundColor.HasValue ? Chart.GetThemeColor(DataLabelBackgroundColor.Value) : null);
+        var color = overrideColor ?? Chart.GetSeriesTextColor(this);
+        var size = (overrideFontSize ?? DataLabelSize) * context.Density;
+
+        _labelFont ??= new SKFont {
+            Embolden = true,
+            Typeface = context.DefaultFont.Typeface
+        };
+        _labelFont.Size = size;
+
+        _labelPaint ??= new SKPaint {
+            IsAntialias = true
+        };
+        _labelPaint.Color = color;
+
+        var text = string.Format(DataLabelFormat, value);
+        var textWidth = _labelFont.MeasureText(text);
+        var textHeight = _labelFont.Size;
+
+        var paddingX = 6f * context.Density;
+        var paddingY = 2f * context.Density;
+
+        var drawY = y;
+        if (textAlign == SKTextAlign.Center) {
+            drawY = y - ((size / 2) + (5 * context.Density));
+            if (drawY - textHeight < renderArea.Top) {
+                drawY = y + ((size / 2) + textHeight + (5 * context.Density));
+            }
+        }
+
+        if (ShowDataLabelBackground) {
+            var bgColor = DataLabelBackgroundColor.HasValue ? Chart.GetThemeColor(DataLabelBackgroundColor.Value) : Chart.GetSeriesColor(this);
+
+            _labelBgPaint ??= new SKPaint {
+                Style = SKPaintStyle.Fill,
+                IsAntialias = true,
+                ImageFilter = SKImageFilter.CreateDropShadow(2 * context.Density, 2 * context.Density, 4 * context.Density, 4 * context.Density, SKColors.Black.WithAlpha(80))
+            };
+            _labelBgPaint.Color = bgColor;
+
+            var bgRect = textAlign switch {
+                SKTextAlign.Left => new SKRect(x - paddingX, drawY - (textHeight / 2) - paddingY, x + textWidth + paddingX, drawY + (textHeight / 2) + paddingY),
+                SKTextAlign.Right => new SKRect(x - textWidth - paddingX, drawY - (textHeight / 2) - paddingY, x + paddingX, drawY + (textHeight / 2) + paddingY),
+                _ => new SKRect(x - (textWidth / 2) - paddingX, drawY - textHeight - paddingY, x + (textWidth / 2) + paddingX + (2 * context.Density), drawY + paddingY)
+            };
+
+            context.Canvas.DrawRoundRect(bgRect, 6 * context.Density, 6 * context.Density, _labelBgPaint);
+
+            _labelBorderPaint ??= new SKPaint {
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = 1,
+                IsAntialias = true
+            };
+            _labelBorderPaint.Color = Chart.GetThemeColor(TnTColor.Outline);
+            context.Canvas.DrawRoundRect(bgRect, 6 * context.Density, 6 * context.Density, _labelBorderPaint);
+        }
+
+        context.Canvas.DrawText(text, x, drawY, textAlign, _labelFont, _labelPaint);
     }
 
     protected void RenderPoint(NTRenderContext context, float x, float y, SKColor color, float? pointSize = null, PointShape? pointShape = null, SKColor? strokeColor = null) {
@@ -355,15 +420,20 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         var size = pointSize ?? PointSize;
         var shape = pointShape ?? PointShape ?? (PointShape)(Chart.GetSeriesIndex(this) % Enum.GetValues<PointShape>().Length);
 
-        context.DrawPoint(
-            Chart,
-            this,
-            x,
-            y,
-            color,
-            PointStyle,
-            size,
-            shape,
-            strokeColor);
+        _pointPaint ??= new SKPaint {
+            IsAntialias = true
+        };
+        _pointPaint.Color = color;
+        _pointPaint.Style = PointStyle == PointStyle.Filled ? SKPaintStyle.Fill : SKPaintStyle.Stroke;
+        _pointPaint.StrokeWidth = 2 * context.Density;
+
+        var scaledSize = size * context.Density;
+        NTRenderContextExtensions.DrawPointInternal(context.Canvas, x, y, scaledSize, shape, _pointPaint);
+
+        if (PointStyle == PointStyle.Outlined && strokeColor.HasValue) {
+            _pointPaint.Color = strokeColor.Value;
+            _pointPaint.Style = SKPaintStyle.Stroke;
+            context.Canvas.DrawCircle(x, y, scaledSize / 2, _pointPaint);
+        }
     }
 }

@@ -13,6 +13,21 @@ public class NTXAxisOptions : NTAxisOptions {
    private static readonly NTXAxisOptions _default = new();
    public static NTXAxisOptions Default => _default;
 
+   private SKPaint? _textPaint;
+   private SKPaint? _titlePaint;
+   private SKPaint? _linePaint;
+   private SKFont? _textFont;
+   private SKFont? _titleFont;
+
+   public override void Dispose() {
+      _textPaint?.Dispose();
+      _titlePaint?.Dispose();
+      _linePaint?.Dispose();
+      _textFont?.Dispose();
+      _titleFont?.Dispose();
+      base.Dispose();
+   }
+
    protected override void OnInitialized() {
       base.OnInitialized();
       Chart?.SetXAxisOptions(this);
@@ -46,37 +61,37 @@ public class NTXAxisOptions : NTAxisOptions {
       var canvas = context.Canvas;
       var (xMinReal, xMaxReal) = chart.GetXRange(this, false);
 
-      using var textPaint = new SKPaint {
-         Color = context.TextColor,
+      _textPaint ??= new SKPaint {
          IsAntialias = true
       };
+      _textPaint.Color = context.TextColor;
 
-      using var textFont = new SKFont {
-         Size = 12 * context.Density,
+      _textFont ??= new SKFont {
          Embolden = true,
          Typeface = context.DefaultFont.Typeface
       };
+      _textFont.Size = 12 * context.Density;
 
-      using var titlePaint = new SKPaint {
-         Color = context.TextColor,
+      _titlePaint ??= new SKPaint {
          IsAntialias = true
       };
+      _titlePaint.Color = context.TextColor;
 
-      using var titleFont = new SKFont {
-         Size = 16 * context.Density,
+      _titleFont ??= new SKFont {
          Embolden = true,
          Typeface = context.DefaultFont.Typeface
       };
+      _titleFont.Size = 16 * context.Density;
 
-      using var linePaint = new SKPaint {
-         Color = chart.GetThemeColor(TnTColor.Outline),
+      _linePaint ??= new SKPaint {
          StrokeWidth = context.Density,
          Style = SKPaintStyle.Stroke,
          IsAntialias = true
       };
+      _linePaint.Color = chart.GetThemeColor(TnTColor.Outline);
 
       var yLine = plotArea.Bottom;
-      canvas.DrawLine(plotArea.Left, yLine, plotArea.Right, yLine, linePaint);
+      canvas.DrawLine(plotArea.Left, yLine, plotArea.Right, yLine, _linePaint);
 
       var isCategorical = chart.IsCategoricalX;
 
@@ -117,7 +132,7 @@ public class NTXAxisOptions : NTAxisOptions {
                   }
                }
 
-               canvas.DrawText(label, screenCoord, yLine + (12 * context.Density), textAlign, textFont, textPaint);
+               canvas.DrawText(label, screenCoord, yLine + (12 * context.Density), textAlign, _textFont, _textPaint);
             }
          }
       }
@@ -136,7 +151,7 @@ public class NTXAxisOptions : NTAxisOptions {
             var screenCoord = chart.ScaleX(val, plotArea);
             if (screenCoord < plotArea.Left - (1 * context.Density) || screenCoord > plotArea.Right + (1 * context.Density)) continue;
 
-            canvas.DrawText(val.ToString("G"), screenCoord, yLine + (12 * context.Density), SKTextAlign.Center, textFont, textPaint);
+            canvas.DrawText(val.ToString("G"), screenCoord, yLine + (12 * context.Density), SKTextAlign.Center, _textFont, _textPaint);
          }
       }
       else {
@@ -176,13 +191,13 @@ public class NTXAxisOptions : NTAxisOptions {
                label = val.ToString("0.##");
             }
 
-            canvas.DrawText(label, screenCoord, yLine + (12 * context.Density), textAlign, textFont, textPaint);
+            canvas.DrawText(label, screenCoord, yLine + (12 * context.Density), textAlign, _textFont, _textPaint);
 
          }
       }
 
       if (!string.IsNullOrEmpty(Title)) {
-         canvas.DrawText(Title, plotArea.Left + (plotArea.Width / 2), plotArea.Bottom + (30 * context.Density), SKTextAlign.Center, titleFont, titlePaint);
+         canvas.DrawText(Title, plotArea.Left + (plotArea.Width / 2), plotArea.Bottom + (30 * context.Density), SKTextAlign.Center, _titleFont, _titlePaint);
       }
    }
 }
