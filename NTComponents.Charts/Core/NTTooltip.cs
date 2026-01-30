@@ -5,7 +5,7 @@ namespace NTComponents.Charts.Core;
 /// <summary>
 ///     Component for configuring chart tooltips.
 /// </summary>
-public class NTTooltip : ComponentBase {
+public class NTTooltip<TData> : ComponentBase {
 
     [CascadingParameter]
     protected IAxisChart Chart { get; set; } = default!;
