@@ -25,17 +25,16 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
    private SKPaint? _areaPaint;
    private SKPath? _areaPath;
 
-   public override void Render(NTRenderContext context, SKRect renderArea) {
+   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
       var canvas = context.Canvas;
-      if (Data == null || !Data.Any()) return;
+      if (Data == null || !Data.Any()) return renderArea;
 
       var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
       var (yMin, yMax) = Chart.GetYRange(EffectiveYAxis, true);
 
       var points = GetAreaPoints(renderArea, xMin, xMax, yMin, yMax);
       if (points.Count < 2) {
-         base.Render(context, renderArea);
-         return;
+         return base.Render(context, renderArea);
       }
 
       var isHovered = Chart.HoveredSeries == this;
@@ -59,7 +58,7 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
       canvas.DrawPath(_areaPath, _areaPaint);
 
       // Use base.Render to draw the line and points
-      base.Render(context, renderArea);
+      return base.Render(context, renderArea);
    }
 
    protected override void Dispose(bool disposing) {

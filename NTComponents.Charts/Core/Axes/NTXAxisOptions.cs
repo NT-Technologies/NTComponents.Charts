@@ -34,32 +34,42 @@ public class NTXAxisOptions : NTAxisOptions {
    }
 
    /// <inheritdoc />
-   internal override SKRect Measure(SKRect renderArea, NTRenderContext context, IAxisChart chart) {
+
+   /// <inheritdoc />
+   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
+      if (!Visible) return renderArea;
+
       float labelHeight = 16;
       float titleHeight = string.IsNullOrEmpty(Title) ? 0 : 20;
       var totalAxisHeight = (labelHeight + titleHeight + 4) * context.Density;
 
       // Add a 10px margin on the right to prevent data points from being cut off,
       // but only if there isn't a secondary Y-axis providing its own space.
-      var yAxes = chart.GetUniqueYAxes();
+      var yAxes = Chart.GetUniqueYAxes();
       float rightMargin = (yAxes.Count > 1 ? 0 : 10) * context.Density;
 
       // Determine nice range once during measurement based on available space
-      if (!chart.IsCategoricalX && Scale == NTAxisScale.Linear && !chart.HasViewRange(this)) {
-         var (min, max) = chart.GetXRange(this, false);
+      if (!Chart.IsCategoricalX && Scale == NTAxisScale.Linear && !Chart.HasViewRange(this)) {
+         var (min, max) = Chart.GetXRange(this, false);
          var maxTicks = Math.Min(MaxTicks, Math.Max(2, (int)(renderArea.Width / (100 * context.Density))));
          var (niceMin, niceMax, _) = CalculateNiceScaling(min, max, maxTicks);
          CachedXRange = (niceMin, niceMax);
       }
 
-      return new SKRect(renderArea.Left, renderArea.Top, renderArea.Right - rightMargin, renderArea.Bottom - totalAxisHeight);
-   }
+      var newArea = new SKRect(renderArea.Left, renderArea.Top, renderArea.Right - rightMargin, renderArea.Bottom - totalAxisHeight);
 
-   /// <inheritdoc />
-   internal override void Render(NTRenderContext context, IAxisChart chart) {
-      var plotArea = context.PlotArea;
+      // Now draw the axis
+      var plotArea = context.PlotArea; // This might need to be calculated or passed
+      // In the new architecture, axes are drawn AFTER the final plotArea is determined?
+      // ARCHITECTURE.md says: "Each component performs its drawing and returns the remaining SKRect.
+      // For example, a LeftAxis might draw itself and return an area with the left margin removed,
+      // which the next component then uses as its bounds."
+
+      // So the AXIS should draw itself relative to the renderArea provided to it.
+      // If it's a bottom axis, it draws at the bottom of renderArea and returns renderArea minus its height.
+
       var canvas = context.Canvas;
-      var (xMinReal, xMaxReal) = chart.GetXRange(this, false);
+      var (xMinReal, xMaxReal) = Chart.GetXRange(this, false);
 
       _textPaint ??= new SKPaint {
          IsAntialias = true
@@ -88,22 +98,44 @@ public class NTXAxisOptions : NTAxisOptions {
          Style = SKPaintStyle.Stroke,
          IsAntialias = true
       };
-      _linePaint.Color = chart.GetThemeColor(TnTColor.Outline);
+      _linePaint.Color = Chart.GetThemeColor(TnTColor.Outline);
 
-      var yLine = plotArea.Bottom;
-      canvas.DrawLine(plotArea.Left, yLine, plotArea.Right, yLine, _linePaint);
+      // We use the full width of the renderArea for the axis line
+      var yLine = renderArea.Bottom - totalAxisHeight;
+      canvas.DrawLine(renderArea.Left, yLine, renderArea.Right - rightMargin, yLine, _linePaint);
 
-      var isCategorical = chart.IsCategoricalX;
+      // We need to use the PLOT AREA for scaling.
+      // But who determines the plot area?
+      // In the new architecture, the plot area is what's left after all axes have rendered.
+      // This means the axes need to render based on the FINAL plot area, OR they render markers based on the available width.
+
+      // Actually, if we follow the PASSES description in ARCHITECTURE.md:
+      // Pass 3: The Render Pass:
+      // "The chart iterates through the sorted list, calling Render on each.
+      // Each component performs its drawing and returns the remaining SKRect."
+
+      // This works for simple partitioning, but drawing labels needs to know the final bounds.
+      // Maybe we have a Measurement pass first?
+      // Actually, the user says: "All axis sizes, calculations, and drawing of actual chart logic should belong to IRenderable.cs implementors."
+
+      // If we use the provided renderArea.Right - rightMargin, we are assuming the width.
+      var axisWidth = (renderArea.Right - rightMargin) - renderArea.Left;
+      var axisLeft = renderArea.Left;
+
+      // Mocking PlotArea for the scale call if it's not set yet.
+      var tempPlotArea = new SKRect(axisLeft, renderArea.Top, axisLeft + axisWidth, yLine);
+
+      var isCategorical = Chart.IsCategoricalX;
 
       if (isCategorical) {
-         var allValues = chart.GetAllXValues();
+         var allValues = Chart.GetAllXValues();
          if (allValues.Any()) {
             for (var i = 0; i < allValues.Count; i++) {
                var val = allValues[i];
-               var scaledVal = chart.GetScaledXValue(val);
-               var screenCoord = chart.ScaleX(scaledVal, plotArea);
+               var scaledVal = Chart.GetScaledXValue(val);
+               var screenCoord = Chart.ScaleX(scaledVal, tempPlotArea, this);
 
-               if (screenCoord < plotArea.Left - (1 * context.Density) || screenCoord > plotArea.Right + (1 * context.Density)) continue;
+               if (screenCoord < tempPlotArea.Left - (1 * context.Density) || screenCoord > tempPlotArea.Right + (1 * context.Density)) continue;
 
                string label;
                if (!string.IsNullOrEmpty(LabelFormat)) {
@@ -122,22 +154,12 @@ public class NTXAxisOptions : NTAxisOptions {
                }
 
                SKTextAlign textAlign = SKTextAlign.Center;
-
-               if (!isCategorical) {
-                  if (i == 0 && allValues.Count > 1) {
-                     textAlign = SKTextAlign.Left;
-                  }
-                  else if (i == allValues.Count - 1 && allValues.Count > 1) {
-                     textAlign = SKTextAlign.Right;
-                  }
-               }
-
                canvas.DrawText(label, screenCoord, yLine + (12 * context.Density), textAlign, _textFont, _textPaint);
             }
          }
       }
       else if (Scale == NTAxisScale.Logarithmic) {
-         var (min, max) = chart.GetXRange(this, true);
+         var (min, max) = Chart.GetXRange(this, true);
          min = Math.Max(0.000001, min);
          max = Math.Max(min * 1.1, max);
 
@@ -148,21 +170,21 @@ public class NTXAxisOptions : NTAxisOptions {
             double val = Math.Pow(10, log);
             if (val < min || val > max) continue;
 
-            var screenCoord = chart.ScaleX(val, plotArea);
-            if (screenCoord < plotArea.Left - (1 * context.Density) || screenCoord > plotArea.Right + (1 * context.Density)) continue;
+            var screenCoord = Chart.ScaleX(val, tempPlotArea, this);
+            if (screenCoord < tempPlotArea.Left - (1 * context.Density) || screenCoord > tempPlotArea.Right + (1 * context.Density)) continue;
 
             canvas.DrawText(val.ToString("G"), screenCoord, yLine + (12 * context.Density), SKTextAlign.Center, _textFont, _textPaint);
          }
       }
       else {
-         var maxTicks = Math.Min(MaxTicks, Math.Max(2, (int)(plotArea.Width / (100 * context.Density))));
+         var maxTicks = Math.Min(MaxTicks, Math.Max(2, (int)(axisWidth / (100 * context.Density))));
          var (niceMin, niceMax, spacing) = CalculateNiceScaling(xMinReal, xMaxReal, maxTicks);
          int totalLabels = (int)Math.Round((niceMax - niceMin) / spacing) + 1;
          for (int i = 0; i < totalLabels; i++) {
             double val = niceMin + i * spacing;
-            var screenCoord = chart.ScaleX(val, plotArea);
+            var screenCoord = Chart.ScaleX(val, tempPlotArea, this);
 
-            if (screenCoord < plotArea.Left - (1 * context.Density) || screenCoord > plotArea.Right + (1 * context.Density)) continue;
+            if (screenCoord < tempPlotArea.Left - (1 * context.Density) || screenCoord > tempPlotArea.Right + (1 * context.Density)) continue;
 
             SKTextAlign textAlign = SKTextAlign.Center;
             if (i == 0) {
@@ -175,16 +197,16 @@ public class NTXAxisOptions : NTAxisOptions {
             string label;
             if (!string.IsNullOrEmpty(LabelFormat)) {
                if (LabelFormat.Contains("{0")) {
-                  label = string.Format(LabelFormat, chart.IsXAxisDateTime ? new DateTime((long)val) : val);
+                  label = string.Format(LabelFormat, Chart.IsXAxisDateTime ? new DateTime((long)val) : val);
                }
-               else if (chart.IsXAxisDateTime) {
+               else if (Chart.IsXAxisDateTime) {
                   label = new DateTime((long)val).ToString(LabelFormat);
                }
                else {
                   label = val.ToString(LabelFormat);
                }
             }
-            else if (chart.IsXAxisDateTime) {
+            else if (Chart.IsXAxisDateTime) {
                label = new DateTime((long)val).ToString("d");
             }
             else {
@@ -197,7 +219,9 @@ public class NTXAxisOptions : NTAxisOptions {
       }
 
       if (!string.IsNullOrEmpty(Title)) {
-         canvas.DrawText(Title, plotArea.Left + (plotArea.Width / 2), plotArea.Bottom + (30 * context.Density), SKTextAlign.Center, _titleFont, _titlePaint);
+         canvas.DrawText(Title, axisLeft + (axisWidth / 2), yLine + (30 * context.Density), SKTextAlign.Center, _titleFont, _titlePaint);
       }
+
+      return newArea;
    }
 }

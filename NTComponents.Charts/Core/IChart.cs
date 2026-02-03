@@ -6,6 +6,16 @@ using NTComponents.Core;
 namespace NTComponents.Charts.Core;
 
 /// <summary>
+///    Interface for a chart series.
+/// </summary>
+public interface ISeries : IRenderable {
+    bool Visible { get; }
+    TnTColor? TooltipBackgroundColor { get; }
+    TnTColor? TooltipTextColor { get; }
+    TooltipInfo GetTooltipInfo(object data);
+}
+
+/// <summary>
 ///     Common interface for all charts.
 /// </summary>
 public interface IChart {
@@ -50,6 +60,14 @@ public interface IAxisChart : IChart {
 
     List<NTXAxisOptions> GetUniqueXAxes();
     List<NTYAxisOptions> GetUniqueYAxes();
+
+    object? HoveredDataPoint { get; }
+    int? HoveredPointIndex { get; }
+    ISeries? HoveredSeries { get; }
+    SKPoint? LastMousePosition { get; }
+
+    TnTColor TooltipBackgroundColor { get; }
+    TnTColor TooltipTextColor { get; }
 
     (double Min, double Max) GetXRange(NTAxisOptions? axis, bool padded);
     (decimal Min, decimal Max) GetYRange(NTAxisOptions? axis, bool padded);

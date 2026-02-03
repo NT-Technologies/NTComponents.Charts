@@ -50,36 +50,6 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     }
 
     /// <inheritdoc />
-    internal override SKRect Measure(SKRect renderArea, NTRenderContext context, HashSet<object> measured) {
-        if (!IsEffectivelyVisible) {
-            return renderArea;
-        }
-
-        var rect = renderArea;
-        if (EffectiveXAxis != null && EffectiveXAxis.Visible && measured.Add(EffectiveXAxis)) {
-            rect = EffectiveXAxis.Measure(rect, context, Chart);
-        }
-        if (EffectiveYAxis != null && EffectiveYAxis.Visible && measured.Add(EffectiveYAxis)) {
-            rect = EffectiveYAxis.Measure(rect, context, Chart);
-        }
-        return rect;
-    }
-
-    /// <inheritdoc />
-    internal override void RenderAxes(NTRenderContext context, HashSet<object> rendered) {
-        if (!IsEffectivelyVisible) {
-            return;
-        }
-
-        if (EffectiveXAxis != null && EffectiveXAxis.Visible && rendered.Add(EffectiveXAxis)) {
-            EffectiveXAxis.Render(context, Chart);
-        }
-        if (EffectiveYAxis != null && EffectiveYAxis.Visible && rendered.Add(EffectiveYAxis)) {
-            EffectiveYAxis.Render(context, Chart);
-        }
-    }
-
-    /// <inheritdoc />
     public override (double Min, double Max)? GetXRange() {
         if (Data == null || !Data.Any()) {
             return null;

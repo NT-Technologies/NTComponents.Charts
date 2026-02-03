@@ -67,10 +67,10 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     }
 
     /// <inheritdoc />
-    public override void Render(NTRenderContext context, SKRect renderArea) {
+    public override SKRect Render(NTRenderContext context, SKRect renderArea) {
         var canvas = context.Canvas;
         if (Data == null || !Data.Any()) {
-            return;
+            return renderArea;
         }
 
         var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
@@ -188,6 +188,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
                 }
             }
         }
+
+        return renderArea;
     }
 
     protected List<SKPoint> GetPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {

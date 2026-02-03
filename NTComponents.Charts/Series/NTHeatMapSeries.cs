@@ -27,15 +27,15 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
 
    private SKPaint? _cellPaint;
 
-   public override void Render(NTRenderContext context, SKRect renderArea) {
+   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
       var canvas = context.Canvas;
-      if (Data == null || !Data.Any()) return;
+      if (Data == null || !Data.Any()) return renderArea;
 
       var dataList = Data.ToList();
       var allX = Chart.GetAllXValues();
       var allY = Chart.GetAllYValues();
 
-      if (!allX.Any() || !allY.Any()) return;
+      if (!allX.Any() || !allY.Any()) return renderArea;
 
       float cellWidth = renderArea.Width / allX.Count;
       float cellHeight = renderArea.Height / allY.Count;
@@ -97,6 +97,8 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
             RenderDataLabel(context, x, y + (5 * context.Density), weight, renderArea, labelColor, labelSize);
          }
       }
+
+      return renderArea;
    }
 
    protected override void Dispose(bool disposing) {

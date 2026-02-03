@@ -55,13 +55,13 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData> where TData : class {
    private SKPaint? _labelPaint;
    private SKFont? _labelFont;
 
-   public override void Render(NTRenderContext context, SKRect renderArea) {
+   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
       var canvas = context.Canvas;
-      if (Data == null || !Data.Any()) return;
+      if (Data == null || !Data.Any()) return renderArea;
 
       var dataList = Data.ToList();
       var totalValue = dataList.Sum(ValueSelector);
-      if (totalValue <= 0) return;
+      if (totalValue <= 0) return renderArea;
 
       var progress = GetAnimationProgress();
       var easedProgress = BackEase(progress);
@@ -108,6 +108,8 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData> where TData : class {
             RenderLabel(context, rect, item.Data, color, args);
          }
       }
+
+      return renderArea;
    }
 
    private void RenderLabel(NTRenderContext context, SKRect rect, TData data, SKColor bgColor, NTDataPointRenderArgs<TData>? args) {

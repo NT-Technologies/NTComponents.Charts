@@ -27,9 +27,9 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
    private SKPaint? _labelPaint;
    private SKFont? _labelFont;
 
-   public override void Render(NTRenderContext context, SKRect renderArea) {
+   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
       CalculateSlices(renderArea);
-      if (!SliceInfos.Any()) return;
+      if (!SliceInfos.Any()) return renderArea;
 
       var progress = GetAnimationProgress();
       var myVisibilityFactor = VisibilityFactor;
@@ -152,6 +152,8 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
             RenderSliceLabel(context, slice, centerX, centerY, currentRadius, currentInnerRadius, color, args);
          }
       }
+
+      return renderArea;
    }
 
    private void RenderSliceLabel(NTRenderContext context, PieSliceInfo slice, float centerX, float centerY, float radius, float innerRadius, SKColor color, NTDataPointRenderArgs<TData>? args) {

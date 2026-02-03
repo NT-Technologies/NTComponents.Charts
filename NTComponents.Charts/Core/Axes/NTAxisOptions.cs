@@ -6,13 +6,19 @@ namespace NTComponents.Charts.Core.Axes;
 /// <summary>
 ///     Base class for all chart axis options.
 /// </summary>
-public abstract class NTAxisOptions : ComponentBase, IDisposable {
+public abstract class NTAxisOptions : ComponentBase, IRenderable {
 
     [CascadingParameter]
     protected IAxisChart Chart { get; set; } = default!;
 
     public virtual void Dispose() {
+        Chart?.UnregisterRenderable(this);
         GC.SuppressFinalize(this);
+    }
+
+    protected override void OnInitialized() {
+        base.OnInitialized();
+        Chart?.RegisterRenderable(this);
     }
 
     /// <summary>
@@ -70,20 +76,14 @@ public abstract class NTAxisOptions : ComponentBase, IDisposable {
     [Parameter]
     public int MaxTicks { get; set; } = 10;
 
-    /// <summary>
-    ///    Measures the axis and returns the remaining area.
-    /// </summary>
-    /// <param name="renderArea">The current available area.</param>
-    /// <param name="context">   The render context.</param>
-    /// <returns>The remaining area after the axis has taken its space.</returns>
-    internal abstract SKRect Measure(SKRect renderArea, NTRenderContext context, IAxisChart chart);
+    /// <inheritdoc />
+    public RenderOrdered RenderOrder => RenderOrdered.Axis;
 
-    /// <summary>
-    ///    Renders the axis on the canvas.
-    /// </summary>
-    /// <param name="context">   The render context.</param>
-    /// <param name="chart">     The chart the axis belongs to.</param>
-    internal abstract void Render(NTRenderContext context, IAxisChart chart);
+    /// <inheritdoc />
+    public abstract SKRect Render(NTRenderContext context, SKRect renderArea);
+
+    /// <inheritdoc />
+    public virtual void Invalidate() => ClearCache();
 
     internal (double Min, double Max)? CachedXRange { get; set; }
     internal (decimal Min, decimal Max)? CachedYRange { get; set; }

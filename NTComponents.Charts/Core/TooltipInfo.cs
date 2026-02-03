@@ -3,13 +3,13 @@ using System.Collections.Generic;
 
 namespace NTComponents.Charts.Core;
 
-internal class TooltipInfo
+public class TooltipInfo
 {
     public string? Header { get; set; }
     public List<TooltipLine> Lines { get; set; } = [];
 }
 
-internal struct TooltipLine
+public struct TooltipLine
 {
     public string Label { get; set; }
     public string Value { get; set; }

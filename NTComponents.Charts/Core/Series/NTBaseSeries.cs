@@ -4,7 +4,7 @@ using SkiaSharp;
 
 namespace NTComponents.Charts.Core.Series;
 
-public abstract class NTBaseSeries<TData> : ComponentBase, IRenderable where TData : class {
+public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData : class {
 
     /// <summary>
     ///     Gets or sets the duration of the animation.
@@ -184,7 +184,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IRenderable where TDa
     protected virtual void Dispose(bool disposing) {
         if (disposing) {
             Chart?.RemoveSeries(this);
-            Chart.UnregisterRenderable(this);
+            Chart?.UnregisterRenderable(this);
         }
     }
 
@@ -196,7 +196,14 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IRenderable where TDa
     /// <returns>The index and data of the hit point, or null if no hit.</returns>
     public abstract (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea);
 
-    public abstract void Render(NTRenderContext context, SKRect renderArea);
+    /// <inheritdoc />
+    public virtual RenderOrdered RenderOrder => RenderOrdered.Series;
+
+    /// <inheritdoc />
+    public abstract SKRect Render(NTRenderContext context, SKRect renderArea);
+
+    /// <inheritdoc />
+    public virtual void Invalidate() => ResetAnimation();
 
     /// <summary>
     ///     Resets the animation to start from the beginning.
@@ -228,6 +235,8 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IRenderable where TDa
         };
     }
 
+    TooltipInfo ISeries.GetTooltipInfo(object data) => GetTooltipInfo((TData)data);
+
     /// <summary>
     ///     Gets the total value of the series (used for partitioning areas in TreeMap/Circular charts).
     /// </summary>
@@ -247,15 +256,6 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IRenderable where TDa
     public virtual (decimal Min, decimal Max)? GetYRange(double? xMin = null, double? xMax = null) => null;
 
     /// <summary>
-    ///     Measures any decorators or axes the series might have and returns the remaining area.
-    /// </summary>
-    /// <param name="renderArea">The current available area.</param>
-    /// <param name="context">   The render context.</param>
-    /// <param name="measured">  A set of objects already measured to avoid double measuring shared axes.</param>
-    /// <returns>The remaining area after the series has taken its space.</returns>
-    internal virtual SKRect Measure(SKRect renderArea, NTRenderContext context, HashSet<object> measured) => renderArea;
-
-    /// <summary>
     ///     Registers any categorical X values the series has.
     /// </summary>
     internal virtual void RegisterXValues(HashSet<object> values) { }
@@ -264,13 +264,6 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IRenderable where TDa
     ///     Registers any categorical Y values the series has.
     /// </summary>
     internal virtual void RegisterYValues(HashSet<object> values) { }
-
-    /// <summary>
-    ///     Renders any decorators or axes the series might have.
-    /// </summary>
-    /// <param name="context">   The render context.</param>
-    /// <param name="rendered">  A set of objects already rendered to avoid double rendering shared axes.</param>
-    internal virtual void RenderAxes(NTRenderContext context, HashSet<object> rendered) { }
 
     /// <summary>
     ///     Toggles the visibility of a legend item.
@@ -295,8 +288,6 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IRenderable where TDa
     ///     Returns true if the series is currently being panned.
     /// </summary>
     public virtual bool IsPanning => false;
-
-    public RenderOrdered RenderOrder => RenderOrdered.Series;
 
     /// <summary>
     ///     Applies an overshoot effect to the progress.
@@ -330,6 +321,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IRenderable where TDa
             throw new ArgumentNullException(nameof(Chart), $"Series must be used within a {nameof(NTChart<TData>)}.");
         }
         Chart.AddSeries(this);
+        Chart.RegisterRenderable(this);
     }
 
     protected override void OnParametersSet() {
@@ -356,7 +348,4 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IRenderable where TDa
             ResetAnimation();
         }
     }
-
-    SKRect IRenderable.Render(NTRenderContext context, SKRect renderArea) => throw new NotImplementedException();
-    public void Invalidate() { }
 }

@@ -149,9 +149,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     public TnTColor TooltipTextColor { get; set; } = TnTColor.OnSurfaceVariant;
 
     internal SKFont DefaultFont => _defaultFont;
-    internal TData? HoveredDataPoint { get; private set; }
-    internal int? HoveredPointIndex { get; private set; }
-    internal NTBaseSeries<TData>? HoveredSeries { get; private set; }
+    public TData? HoveredDataPoint { get; private set; }
+    public int? HoveredPointIndex { get; private set; }
+    public NTBaseSeries<TData>? HoveredSeries { get; private set; }
+
+    object? IAxisChart.HoveredDataPoint => HoveredDataPoint;
+    ISeries? IAxisChart.HoveredSeries => HoveredSeries;
 
     public bool IsXAxisDateTime {
         get {
@@ -190,8 +193,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     [Inject]
     protected IJSRuntime JSRuntime { get; set; } = default!;
 
-    internal SKRect LastLegendDrawArea { get; private set; }
-    internal SKPoint? LastMousePosition { get; private set; }
+    public SKPoint? LastMousePosition { get; private set; }
     internal SKRect LastPlotArea { get; private set; }
     private static readonly SKFont _defaultFont = new(SKTypeface.FromFamilyName("Roboto", SKFontStyleWeight.Bold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright), 12);
     private static readonly SKFont _regularFont = new(SKTypeface.FromFamilyName("Roboto", SKFontStyleWeight.Medium, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright), 12);
@@ -218,18 +220,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     private SKPaint? _debugBgPaint;
     private SKPaint? _debugTextPaint;
     private SKFont? _debugFont;
-    private SKPaint? _titlePaint;
-    private SKFont? _titleFont;
-    private SKPaint? _tooltipBgPaint;
-    private SKPaint? _tooltipBorderPaint;
-    private SKFont? _tooltipHeaderFont;
-    private SKFont? _tooltipLabelFont;
-    private SKFont? _tooltipValueFont;
-    private SKPaint? _tooltipHeaderPaint;
-    private SKPaint? _tooltipSeparatorPaint;
-    private SKPaint? _tooltipIconPaint;
-    private SKPaint? _tooltipLabelPaint;
-    private SKPaint? _tooltipValuePaint;
     private SKPaint? _treeMapGroupPaint;
     private SKFont? _treeMapGroupFont;
 
@@ -836,18 +826,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
             _debugBgPaint?.Dispose();
             _debugTextPaint?.Dispose();
             _debugFont?.Dispose();
-            _titlePaint?.Dispose();
-            _titleFont?.Dispose();
-            _tooltipBgPaint?.Dispose();
-            _tooltipBorderPaint?.Dispose();
-            _tooltipHeaderFont?.Dispose();
-            _tooltipLabelFont?.Dispose();
-            _tooltipValueFont?.Dispose();
-            _tooltipHeaderPaint?.Dispose();
-            _tooltipSeparatorPaint?.Dispose();
-            _tooltipIconPaint?.Dispose();
-            _tooltipLabelPaint?.Dispose();
-            _tooltipValuePaint?.Dispose();
             _treeMapGroupPaint?.Dispose();
             _treeMapGroupFont?.Dispose();
         }
@@ -881,7 +859,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         var point = new SKPoint((float)e.OffsetX * Density, (float)e.OffsetY * Density);
 
         if (Legend != null && Legend.Visible && Legend.Position != LegendPosition.None) {
-            var clickedItem = Legend.GetItemAtPoint(point, LastPlotArea, LastLegendDrawArea, Density);
+            var clickedItem = Legend.GetItemAtPoint(point, LastPlotArea, Legend.LastDrawArea, Density);
 
             if (clickedItem != null) {
                 if (clickedItem.Series != null) {
@@ -998,186 +976,86 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
 
         canvas.Clear(GetThemeColor(BackgroundColor));
 
-
-        var renderArea = new SKRect(left: Margin.Left * context.Density,
+        var renderArea = new SKRect(
+            left: Margin.Left * context.Density,
             top: Margin.Top * context.Density,
             right: info.Width - (Margin.Right * context.Density),
             bottom: info.Height - (Margin.Bottom * context.Density));
 
-        if (_title is not null) {
-            renderArea = _title.Render(context, renderArea);
+        foreach (var order in Enum.GetValues<RenderOrdered>()) {
+            if (order == RenderOrdered.Series) {
+                // By the time we get to series, the renderArea has been carved out by Title, Axes, and non-floating Legend
+                context.PlotArea = renderArea;
+                LastPlotArea = renderArea;
+                CalculateTreeMapAreas(renderArea);
+                PerformHitTesting(context, renderArea);
+
+                // Clip to plot area for series
+                canvas.Save();
+                var clipArea = renderArea;
+                clipArea.Inflate(2, 2);
+                canvas.ClipRect(clipArea);
+            }
+
+            foreach (var renderable in _renderablesByOrder[order]) {
+                renderArea = renderable.Render(context, renderArea);
+            }
+
+            if (order == RenderOrdered.Series) {
+                canvas.Restore();
+                RenderTreeMapGroupLabels(context);
+            }
         }
 
-        //var plotArea = renderArea;
-        //var accessibleArea = renderArea; // Area available for axes and legend
+        // Pass 9: Update cursor if needed
+        var currentHover = HoveredSeries != null || _isHoveringLegend || Series.Any(s => s.IsPanning);
+        if (_isHovering != currentHover) {
+            _isHovering = currentHover;
+            _ = InvokeAsync(StateHasChanged);
+        }
 
-        //// Pass 1: Measure legend and update plotArea/accessibleArea
-        //SKRect legendDrawArea = default;
-        //if (Legend?.Visible == true && Legend.Position is not LegendPosition.None and not LegendPosition.Floating) {
-        //    legendDrawArea = Legend.Measure(plotArea, context);
+        if (sw != null) {
+            sw.Stop();
+            _lastRenderTimeMs = sw.Elapsed.TotalMilliseconds;
+            RenderDebugInfo(context);
+        }
+    }
 
-        //    if (legendDrawArea != SKRect.Empty) {
-        //        // Adjust plotArea
-        //        if (Legend.Position == LegendPosition.Bottom) {
-        //            plotArea = new SKRect(plotArea.Left, plotArea.Top, plotArea.Right, legendDrawArea.Top);
-        //        }
-        //        else if (Legend.Position == LegendPosition.Top) {
-        //            plotArea = new SKRect(plotArea.Left, legendDrawArea.Bottom, plotArea.Right, plotArea.Bottom);
-        //        }
-        //        else if (Legend.Position == LegendPosition.Left) {
-        //            plotArea = new SKRect(legendDrawArea.Right, plotArea.Top, plotArea.Right, plotArea.Bottom);
-        //        }
-        //        else if (Legend.Position == LegendPosition.Right) {
-        //            plotArea = new SKRect(plotArea.Left, plotArea.Top, legendDrawArea.Left, plotArea.Bottom);
-        //        }
-        //    }
+    private void PerformHitTesting(NTRenderContext context, SKRect plotArea) {
+        if (!LastMousePosition.HasValue) {
+            return;
+        }
 
-        //    // Adjust accessibleArea for axes so they don't overlap legend
-        //    if (Legend.Position == LegendPosition.Bottom) {
-        //        accessibleArea = new SKRect(accessibleArea.Left, accessibleArea.Top, accessibleArea.Right, legendDrawArea.Top);
-        //    }
-        //    else if (Legend.Position == LegendPosition.Top) {
-        //        accessibleArea = new SKRect(accessibleArea.Left, legendDrawArea.Bottom, accessibleArea.Right, accessibleArea.Bottom);
-        //    }
-        //    else if (Legend.Position == LegendPosition.Left) {
-        //        accessibleArea = new SKRect(legendDrawArea.Right, accessibleArea.Top, accessibleArea.Right, accessibleArea.Bottom);
-        //    }
-        //    else if (Legend.Position == LegendPosition.Right) {
-        //        accessibleArea = new SKRect(accessibleArea.Left, accessibleArea.Top, legendDrawArea.Left, accessibleArea.Bottom);
-        //    }
-        //}
+        var mousePoint = LastMousePosition.Value;
 
-        //LastLegendDrawArea = legendDrawArea;
-        //context.PlotArea = plotArea;
+        // Check legend items for hover (if legend is present)
+        if (Legend != null && Legend.Visible && Legend.Position != LegendPosition.None) {
+            // Note: LastLegendDrawArea might still be useful if we want to hit test exactly where it was drawn
+            // but for now let's assume it's calculated during its Render pass. 
+            // In a more pure model, NTLegend would handle its own hit testing.
 
+            if (Legend.Position == LegendPosition.Floating) {
+                var rect = Legend.GetFloatingRect(plotArea, context.Density);
+                if (rect.Contains(mousePoint)) {
+                    _isHoveringLegend = true;
+                }
+            }
+            // Non-floating hit testing is usually handled in OnClick or via some other mechanism currently.
+        }
 
-        //// Pass 2: Measure series (axes etc) and update plotArea
-        //var measured = new HashSet<object>();
-        //if (_xAxisComponent != null && _xAxisComponent.Visible) {
-        //    plotArea = _xAxisComponent.Measure(plotArea, context, this);
-        //    measured.Add(_xAxisComponent);
-        //}
-        //if (_yAxisComponent != null && _yAxisComponent.Visible) {
-        //    plotArea = _yAxisComponent.Measure(plotArea, context, this);
-        //    measured.Add(_yAxisComponent);
-        //}
-        //if (_radialAxisComponent != null && _radialAxisComponent.Visible) {
-        //    plotArea = _radialAxisComponent.Measure(plotArea, context, this);
-        //    measured.Add(_radialAxisComponent);
-        //}
-
-
-        //foreach (var series in Series.Where(s => s.Visible)) {
-        //    plotArea = series.Measure(plotArea, context, measured);
-        //}
-
-        //LastPlotArea = plotArea;
-        //context.PlotArea = plotArea;
-        //CalculateTreeMapAreas(plotArea);
-
-        //// Pass 3: Render axes using the final plotArea and the adjusted accessibleArea
-        //var rendered = new HashSet<object>();
-        //if (_xAxisComponent != null && _xAxisComponent.Visible) {
-        //    _xAxisComponent.Render(context, this);
-        //    rendered.Add(_xAxisComponent);
-        //}
-        //if (_yAxisComponent != null && _yAxisComponent.Visible) {
-        //    _yAxisComponent.Render(context, this);
-        //    rendered.Add(_yAxisComponent);
-        //}
-        //if (_radialAxisComponent != null && _radialAxisComponent.Visible) {
-        //    _radialAxisComponent.Render(context, this);
-        //    rendered.Add(_radialAxisComponent);
-        //}
-
-        //foreach (var series in Series.Where(s => s.Visible)) {
-        //    series.RenderAxes(context, rendered);
-        //}
-
-        //// Pass 4: Hit testing and Tooltip Prep
-        //if (LastMousePosition.HasValue) {
-        //    var mousePoint = LastMousePosition.Value;
-
-        //    // Check legend items for hover first (so they take precedence over lines)
-        //    if (Legend != null && Legend.Visible && Legend.Position != LegendPosition.None) {
-        //        var item = Legend.GetItemAtPoint(mousePoint, plotArea, legendDrawArea, context.Density);
-        //        if (item != null) {
-        //            HoveredSeries = item.Series;
-        //            HoveredPointIndex = item.Index;
-        //        }
-        //        else if (Legend.Position == LegendPosition.Floating) {
-        //            var rect = Legend.GetFloatingRect(plotArea, context.Density);
-        //            if (rect.Contains(mousePoint)) {
-        //                _isHoveringLegend = true;
-        //            }
-        //        }
-        //    }
-
-        //    // Check series/points if legend wasn't hit
-        //    if (HoveredSeries == null && plotArea.Contains(mousePoint)) {
-        //        foreach (var series in Series.AsEnumerable().Reverse().Where(s => s.Visible)) {
-        //            var seriesRenderArea = GetSeriesRenderArea(series, plotArea, renderArea);
-        //            var hit = series.HitTest(mousePoint, seriesRenderArea);
-        //            if (hit != null) {
-        //                HoveredSeries = series;
-        //                HoveredPointIndex = hit.Value.Index;
-        //                HoveredDataPoint = hit.Value.Data;
-        //                break;
-        //            }
-        //        }
-        //    }
-        //}
-
-        //// Pass 5: Render Series
-        //canvas.Save();
-
-        //// Inflate the clip rect slightly so we don't cutoff line thickness or point markers
-        //var clipArea = plotArea;
-        //clipArea.Inflate(2, 2);
-        //canvas.ClipRect(clipArea);
-
-        //// Render inactive series first
-        //foreach (var series in Series.Where(s => s != HoveredSeries && s.IsEffectivelyVisible)) {
-        //    var seriesRenderArea = GetSeriesRenderArea(series, plotArea, renderArea);
-        //    series.Render(context, seriesRenderArea);
-        //}
-        //// Render active series last (on top)
-        //if (HoveredSeries != null && HoveredSeries.IsEffectivelyVisible) {
-        //    var seriesRenderArea = GetSeriesRenderArea(HoveredSeries, plotArea, renderArea);
-        //    HoveredSeries.Render(context, seriesRenderArea);
-        //}
-        //canvas.Restore();
-
-        //// Pass 6: Render TreeMap group labels if needed
-        //RenderTreeMapGroupLabels(context);
-
-        //// Pass 7: Render Tooltip
-        //if (HoveredDataPoint != null && LastMousePosition.HasValue && HoveredSeries != null && HoveredSeries.Visible) {
-        //    RenderTooltip(context, plotArea);
-        //}
-
-        //// Pass 8: Render legend (Now after hit testing so it can react to hovered series)
-        //if (Legend != null && Legend.Visible && Legend.Position != LegendPosition.None) {
-        //    if (Legend.Position == LegendPosition.Floating) {
-        //        Legend.Render(context, plotArea, renderArea);
-        //    }
-        //    else {
-        //        Legend.Render(context, plotArea, legendDrawArea);
-        //    }
-        //}
-
-        //// Pass 9: Update cursor if needed
-        //var currentHover = HoveredSeries != null || _isHoveringLegend || Series.Any(s => s.IsPanning);
-        //if (_isHovering != currentHover) {
-        //    _isHovering = currentHover;
-        //    _ = InvokeAsync(StateHasChanged);
-        //}
-
-        //if (sw != null) {
-        //    sw.Stop();
-        //    _lastRenderTimeMs = sw.Elapsed.TotalMilliseconds;
-        //    RenderDebugInfo(context);
-        //}
+        // Check series/points
+        if (HoveredSeries == null && plotArea.Contains(mousePoint)) {
+            foreach (var series in Series.AsEnumerable().Reverse().Where(s => s.Visible)) {
+                // In the decentralized model, each series should handle its own hit testing relative to plotArea
+                var hit = series.HitTest(mousePoint, plotArea);
+                if (hit != null) {
+                    HoveredSeries = series;
+                    HoveredPointIndex = hit.Value.Index;
+                    HoveredDataPoint = hit.Value.Data;
+                    break;
+                }
+            }
+        }
     }
 
 
@@ -1292,119 +1170,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
             var bottomArea = new SKRect(area.Left, area.Top + topHeight, area.Right, area.Bottom);
             PartitionArea(leftItems, topArea, leftValue, !horizontal);
             PartitionArea(rightItems, bottomArea, rightValue, !horizontal);
-        }
-    }
-
-    private void RenderTooltip(NTRenderContext context, SKRect plotArea) {
-        if (HoveredSeries == null || HoveredDataPoint == null || !LastMousePosition.HasValue) {
-            return;
-        }
-
-        if (_tooltipComponent != null && !_tooltipComponent.Enabled) {
-            return;
-        }
-
-        var canvas = context.Canvas;
-        var mousePoint = LastMousePosition.Value;
-        var tooltipInfo = HoveredSeries.GetTooltipInfo(HoveredDataPoint);
-
-        if (tooltipInfo.Lines.Count == 0) {
-            return;
-        }
-
-        var bgColor = GetThemeColor(_tooltipComponent?.BackgroundColor ?? HoveredSeries.TooltipBackgroundColor ?? TooltipBackgroundColor);
-        var textColor = GetThemeColor(_tooltipComponent?.TextColor ?? HoveredSeries.TooltipTextColor ?? TooltipTextColor);
-        var subTextColor = textColor.WithAlpha(200);
-
-        _tooltipHeaderFont ??= new SKFont { Typeface = context.RegularFont.Typeface };
-        _tooltipHeaderFont.Size = 11 * context.Density;
-
-        _tooltipLabelFont ??= new SKFont { Typeface = context.RegularFont.Typeface };
-        _tooltipLabelFont.Size = 12 * context.Density;
-
-        _tooltipValueFont ??= new SKFont { Typeface = context.DefaultFont.Typeface };
-        _tooltipValueFont.Size = 12 * context.Density;
-
-        var padding = 8f * context.Density;
-        var headerHeight = string.IsNullOrEmpty(tooltipInfo.Header) ? 0 : _tooltipHeaderFont.Size + (6 * context.Density);
-        var separatorHeight = string.IsNullOrEmpty(tooltipInfo.Header) ? 0 : 6 * context.Density;
-        var lineHeight = 18f * context.Density;
-        var iconSize = 8f * context.Density;
-        var iconSpacing = 8f * context.Density;
-
-        float maxWidth = 0;
-        if (!string.IsNullOrEmpty(tooltipInfo.Header)) {
-            maxWidth = _tooltipHeaderFont.MeasureText(tooltipInfo.Header);
-        }
-
-        foreach (var line in tooltipInfo.Lines) {
-            var lineWidth = iconSize + iconSpacing + _tooltipLabelFont.MeasureText(line.Label + ": ") + _tooltipValueFont.MeasureText(line.Value);
-            maxWidth = Math.Max(maxWidth, lineWidth);
-        }
-
-        var totalWidth = maxWidth + (padding * 2);
-        var totalHeight = headerHeight + separatorHeight + (tooltipInfo.Lines.Count * lineHeight) + (padding * 2) - (2 * context.Density);
-
-        var rect = new SKRect(mousePoint.X + (15 * context.Density), mousePoint.Y - totalHeight - (15 * context.Density), mousePoint.X + (15 * context.Density) + totalWidth, mousePoint.Y - (15 * context.Density));
-
-        if (rect.Right > _lastWidth - (Margin.Right * context.Density)) {
-            rect.Offset(-(totalWidth + (30 * context.Density)), 0);
-        }
-        if (rect.Top < Margin.Top * context.Density) {
-            rect.Offset(0, totalHeight + (30 * context.Density));
-        }
-
-        _tooltipBgPaint ??= new SKPaint {
-            Style = SKPaintStyle.Fill,
-            IsAntialias = true
-        };
-        _tooltipBgPaint.Color = bgColor.WithAlpha(250);
-        canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, _tooltipBgPaint);
-
-        _tooltipBorderPaint ??= new SKPaint {
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = 1,
-            IsAntialias = true
-        };
-        _tooltipBorderPaint.Color = GetThemeColor(TnTColor.OutlineVariant);
-        canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, _tooltipBorderPaint);
-
-        var currentY = rect.Top + padding;
-
-        if (!string.IsNullOrEmpty(tooltipInfo.Header)) {
-            _tooltipHeaderPaint ??= new SKPaint { IsAntialias = true };
-            _tooltipHeaderPaint.Color = subTextColor;
-            canvas.DrawText(tooltipInfo.Header, rect.Left + padding, currentY + _tooltipHeaderFont.Size - (2 * context.Density), SKTextAlign.Left, _tooltipHeaderFont, _tooltipHeaderPaint);
-            currentY += headerHeight;
-
-            _tooltipSeparatorPaint ??= new SKPaint { StrokeWidth = 1, IsAntialias = true };
-            _tooltipSeparatorPaint.Color = GetThemeColor(TnTColor.OutlineVariant);
-            canvas.DrawLine(rect.Left, currentY - (4 * context.Density), rect.Right, currentY - (4 * context.Density), _tooltipSeparatorPaint);
-            currentY += separatorHeight - (4 * context.Density);
-        }
-
-        foreach (var line in tooltipInfo.Lines) {
-            var centerX = rect.Left + padding + (iconSize / 2);
-            var centerY = currentY + (lineHeight / 2) - (1 * context.Density);
-
-            _tooltipIconPaint ??= new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = true };
-            _tooltipIconPaint.Color = line.Color;
-            canvas.DrawCircle(centerX, centerY, iconSize / 2, _tooltipIconPaint);
-
-            var textX = rect.Left + padding + iconSize + iconSpacing;
-            var textY = currentY + (14 * context.Density);
-
-            _tooltipLabelPaint ??= new SKPaint { IsAntialias = true };
-            _tooltipLabelPaint.Color = subTextColor;
-            canvas.DrawText(line.Label + ": ", textX, textY, SKTextAlign.Left, _tooltipLabelFont, _tooltipLabelPaint);
-
-            var labelWidth = _tooltipLabelFont.MeasureText(line.Label + ": ");
-
-            _tooltipValuePaint ??= new SKPaint { IsAntialias = true };
-            _tooltipValuePaint.Color = textColor;
-            canvas.DrawText(line.Value, textX + labelWidth, textY, SKTextAlign.Left, _tooltipValueFont, _tooltipValuePaint);
-
-            currentY += lineHeight;
         }
     }
 

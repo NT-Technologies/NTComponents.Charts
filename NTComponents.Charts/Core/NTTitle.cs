@@ -48,13 +48,10 @@ internal class NTTitle : IRenderable {
     }
 
     public SKRect Render(NTRenderContext context, SKRect renderArea) {
-        if (_point == SKPoint.Empty) {
-            var x = (_chart.Margin.Left * _chart.Density) + ((context.Info.Width - (_chart.Margin.Left * _chart.Density) - (_chart.Margin.Right * _chart.Density)) / 2);
-            var y = (_chart.Margin.Top * _chart.Density) + (20 * _chart.Density);
-            _point = new(x, y);
-        }
+        var x = renderArea.Left + (renderArea.Width / 2);
+        var y = renderArea.Top + (15 * context.Density); // Slightly above center of its allotted 30dp height
 
-        context.Canvas.DrawText(_chart.TitleOptions!.Title, _point.X, _point.Y, SKTextAlign.Center, _titleFont, _titlePaint);
+        context.Canvas.DrawText(_chart.TitleOptions!.Title, x, y, SKTextAlign.Center, _titleFont, _titlePaint);
         return new SKRect(renderArea.Left, renderArea.Top + (30 * context.Density), renderArea.Right, renderArea.Bottom);
     }
 

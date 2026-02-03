@@ -54,27 +54,13 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
    }
 
    /// <inheritdoc />
-   internal override SKRect Measure(SKRect renderArea, NTRenderContext context, HashSet<object> measured) {
-      if (EffectiveRadialAxis != null && EffectiveRadialAxis.Visible && measured.Add(EffectiveRadialAxis)) {
-         return EffectiveRadialAxis.Measure(renderArea, context, Chart);
-      }
-      return renderArea;
-   }
-
-   /// <inheritdoc />
-   internal override void RenderAxes(NTRenderContext context, HashSet<object> rendered) {
-      if (EffectiveRadialAxis != null && EffectiveRadialAxis.Visible && rendered.Add(EffectiveRadialAxis)) {
-         EffectiveRadialAxis.Render(context, Chart);
-      }
-   }
-
-   public override void Render(NTRenderContext context, SKRect renderArea) {
+   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
       var canvas = context.Canvas;
-      if (Data == null || !Data.Any()) return;
+      if (Data == null || !Data.Any()) return renderArea;
 
       var dataList = Data.ToList();
       int count = dataList.Count;
-      if (count < 3) return;
+      if (count < 3) return renderArea;
 
       float centerX = renderArea.MidX;
       float centerY = renderArea.MidY;
@@ -145,6 +131,8 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
             RenderDataLabel(context, p.X, p.Y - (10 * context.Density), ValueSelector(item), labelColor, labelSize);
          }
       }
+
+      return renderArea;
    }
 
    private void RenderDataLabel(NTRenderContext context, float x, float y, decimal value, SKColor color, float fontSize) {

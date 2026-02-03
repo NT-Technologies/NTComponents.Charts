@@ -22,7 +22,7 @@ public class NTRenderContext {
         DefaultFont = defaultFont;
         RegularFont = regularFont;
         TextColor = textColor;
-        PlotArea = totalArea; // Initial plot area is the total area
+        PlotArea = totalArea;
     }
 
     /// <summary>

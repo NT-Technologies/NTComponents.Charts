@@ -47,35 +47,29 @@ public class NTRadialAxisOptions : NTAxisOptions {
    public List<string>? Labels { get; set; }
 
    /// <inheritdoc />
-   internal override SKRect Measure(SKRect renderArea, NTRenderContext context, IAxisChart chart) {
+   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
+      if (!Visible) return renderArea;
+
       // Add padding for labels around the perimeter
-      float padding = 60 * context.Density; // More padding for labels
-      return new SKRect(
+      float padding = 60 * context.Density;
+      SKRect plotArea = new SKRect(
           renderArea.Left + padding,
           renderArea.Top + padding,
           renderArea.Right - padding,
           renderArea.Bottom - padding
       );
-   }
 
-   /// <inheritdoc />
-   internal override void Render(NTRenderContext context, IAxisChart chart) {
-      var plotArea = context.PlotArea;
       var canvas = context.Canvas;
       
       // We need to find the series. Radar charts usually have one series that defines the axis.
-      // Since we don't have TData here, we might need to rely on the chart to provide it or just use reflection/dynamic.
-      // But actually, we can just cast chart to dynamic or INTChart and get the series list.
-      
-      // Let's add a property to IAxisChart to get series.
-      // Or just cast to dynamic for now.
-      dynamic dChart = chart;
+      // We can just cast chart to dynamic for now.
+      dynamic dChart = Chart;
       IEnumerable<object> seriesList = dChart.Series;
       var radarSeries = seriesList.FirstOrDefault(s => s.GetType().Name.StartsWith("NTRadarSeries")) as dynamic;
-      if (radarSeries == null) return;
+      if (radarSeries == null) return plotArea;
 
       var dataList = Enumerable.ToList((IEnumerable<object>)radarSeries.Data);
-      if (dataList == null || !dataList.Any()) return;
+      if (dataList == null || !dataList.Any()) return plotArea;
 
       float centerX = plotArea.MidX;
       float centerY = plotArea.MidY;
@@ -92,7 +86,7 @@ public class NTRadialAxisOptions : NTAxisOptions {
       if (max <= 0) max = 1;
 
       using var linePaint = new SKPaint {
-         Color = chart.GetThemeColor(TnTColor.OutlineVariant),
+         Color = Chart.GetThemeColor(TnTColor.OutlineVariant),
          StrokeWidth = context.Density,
          Style = SKPaintStyle.Stroke,
          IsAntialias = true
@@ -156,6 +150,8 @@ public class NTRadialAxisOptions : NTAxisOptions {
 
          canvas.DrawText(label, labelX, labelY + (5 * context.Density), textAlign, textFont, textPaint);
       }
+
+      return plotArea;
    }
 
    private void DrawPolygon(NTRenderContext context, float cx, float cy, float r, int sides, SKPaint paint) {

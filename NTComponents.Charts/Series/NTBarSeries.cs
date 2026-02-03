@@ -34,10 +34,10 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     }
 
     /// <inheritdoc />
-    public override void Render(NTRenderContext context, SKRect renderArea) {
+    public override SKRect Render(NTRenderContext context, SKRect renderArea) {
         var canvas = context.Canvas;
         if (Data == null || !Data.Any()) {
-            return;
+            return renderArea;
         }
 
         var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
@@ -108,6 +108,8 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             }
 
         }
+
+        return renderArea;
     }
 
     /// <inheritdoc />

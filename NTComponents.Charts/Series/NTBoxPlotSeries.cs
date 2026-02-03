@@ -28,9 +28,9 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
    private SKPaint? _strokePaint;
    private SKPaint? _fillPaint;
 
-   public override void Render(NTRenderContext context, SKRect renderArea) {
+   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
       var canvas = context.Canvas;
-      if (Data == null || !Data.Any()) return;
+      if (Data == null || !Data.Any()) return renderArea;
 
       var dataList = Data.ToList();
       var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
@@ -125,6 +125,8 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
             }
          }
       }
+
+      return renderArea;
    }
 
    protected override void Dispose(bool disposing) {

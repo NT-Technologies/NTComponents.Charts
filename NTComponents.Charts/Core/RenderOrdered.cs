@@ -12,5 +12,6 @@ public enum RenderOrdered {
     Title,
     Axis,
     Series,
-    Legend
+    Legend,
+    Tooltip
 }
