@@ -2,9 +2,6 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using NTComponents.Charts.Core.Axes;
 using SkiaSharp;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace NTComponents.Charts.Core.Series;
 
@@ -54,7 +51,10 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
 
     /// <inheritdoc />
     internal override SKRect Measure(SKRect renderArea, NTRenderContext context, HashSet<object> measured) {
-        if (!IsEffectivelyVisible) return renderArea;
+        if (!IsEffectivelyVisible) {
+            return renderArea;
+        }
+
         var rect = renderArea;
         if (EffectiveXAxis != null && EffectiveXAxis.Visible && measured.Add(EffectiveXAxis)) {
             rect = EffectiveXAxis.Measure(rect, context, Chart);
@@ -67,7 +67,10 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
 
     /// <inheritdoc />
     internal override void RenderAxes(NTRenderContext context, HashSet<object> rendered) {
-        if (!IsEffectivelyVisible) return;
+        if (!IsEffectivelyVisible) {
+            return;
+        }
+
         if (EffectiveXAxis != null && EffectiveXAxis.Visible && rendered.Add(EffectiveXAxis)) {
             EffectiveXAxis.Render(context, Chart);
         }
@@ -78,8 +81,13 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
 
     /// <inheritdoc />
     public override (double Min, double Max)? GetXRange() {
-        if (Data == null || !Data.Any()) return null;
-        if (_cachedTotalXRange.HasValue) return _cachedTotalXRange;
+        if (Data == null || !Data.Any()) {
+            return null;
+        }
+
+        if (_cachedTotalXRange.HasValue) {
+            return _cachedTotalXRange;
+        }
 
         var values = Data.Select(item => Chart.GetScaledXValue(XValue.Invoke(item))).ToList();
         var min = values.Min();
@@ -91,7 +99,9 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
 
     /// <inheritdoc />
     public override (decimal Min, decimal Max)? GetYRange(double? xMin = null, double? xMax = null) {
-        if (Data == null || !Data.Any()) return null;
+        if (Data == null || !Data.Any()) {
+            return null;
+        }
 
         if (!xMin.HasValue && !xMax.HasValue && _cachedTotalYRange.HasValue) {
             return _cachedTotalYRange;
@@ -108,7 +118,9 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             });
         }
 
-        if (!dataToConsider.Any()) return null;
+        if (!dataToConsider.Any()) {
+            return null;
+        }
 
         if (this is NTBoxPlotSeries<TData> boxPlot) {
             foreach (var item in dataToConsider) {
@@ -140,17 +152,24 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     /// <inheritdoc />
     internal override void RegisterXValues(HashSet<object> values) {
 
-        if (Data == null) return;
+        if (Data == null) {
+            return;
+        }
+
         foreach (var item in Data) {
             var val = XValue.Invoke(item);
-            if (val != null) values.Add(val);
+            if (val != null) {
+                values.Add(val);
+            }
         }
     }
 
-
     /// <inheritdoc />
     internal override void RegisterYValues(HashSet<object> values) {
-        if (Data == null) return;
+        if (Data == null) {
+            return;
+        }
+
         foreach (var item in Data) {
             values.Add(YValueSelector(item));
         }
@@ -223,8 +242,8 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     private SKPaint? _labelBgPaint;
     private SKPaint? _labelBorderPaint;
     private SKFont? _labelFont;
-    private SKPath? _trianglePath;
-    private SKPath? _diamondPath;
+    private readonly SKPath? _trianglePath;
+    private readonly SKPath? _diamondPath;
 
     protected bool _isPanning;
     protected SKPoint _panStartPoint;
@@ -265,9 +284,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         }
     }
 
-    public override void HandleMouseUp(MouseEventArgs e) {
-        _isPanning = false;
-    }
+    public override void HandleMouseUp(MouseEventArgs e) => _isPanning = false;
 
     public override void HandleMouseWheel(WheelEventArgs e) {
         if ((!Interactions.HasFlag(ChartInteractions.XZoom) && !Interactions.HasFlag(ChartInteractions.YZoom)) || Chart.LastPlotArea == default) {

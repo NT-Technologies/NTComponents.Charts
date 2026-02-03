@@ -9,59 +9,68 @@ namespace NTComponents.Charts.Core;
 ///     Common interface for all charts.
 /// </summary>
 public interface IChart {
-   /// <summary>
-   ///     Gets the density of the screen.
-   /// </summary>
-   float Density { get; }
+    /// <summary>
+    ///     Gets the density of the screen.
+    /// </summary>
+    float Density { get; }
 
-   /// <summary>
-   ///     Gets the default font.
-   /// </summary>
-   SKFont DefaultFont { get; }
+    /// <summary>
+    ///     Gets the default font.
+    /// </summary>
+    SKFont DefaultFont { get; }
 
-   /// <summary>
-   ///     Gets the regular font.
-   /// </summary>
-   SKFont RegularFont { get; }
+    /// <summary>
+    ///     Gets the regular font.
+    /// </summary>
+    SKFont RegularFont { get; }
 
-   /// <summary>
-   ///     Resolves a theme color.
-   /// </summary>
-   SKColor GetThemeColor(TnTColor color);
+    ChartMargin Margin { get; }
+
+    void RegisterRenderable(IRenderable renderable);
+    void UnregisterRenderable(IRenderable renderable);
+
+    /// <summary>
+    ///     Resolves a theme color.
+    /// </summary>
+    SKColor GetThemeColor(TnTColor color);
+
+    TnTColor TextColor { get; }
+
+    NTTitleOptions? TitleOptions { get; }
 }
 
 /// <summary>
 ///    Interface for charts that support axes.
 /// </summary>
 public interface IAxisChart : IChart {
-   void SetXAxisOptions(NTAxisOptions options);
-   void SetYAxisOptions(NTAxisOptions options);
-   void SetRadialAxisOptions(NTAxisOptions options);
-   void SetTooltip(NTTooltip tooltip);
+    void SetXAxisOptions(NTAxisOptions options);
+    void SetYAxisOptions(NTAxisOptions options);
+    void SetRadialAxisOptions(NTAxisOptions options);
+    void SetTooltip(NTTooltip tooltip);
 
-   List<NTXAxisOptions> GetUniqueXAxes();
-   List<NTYAxisOptions> GetUniqueYAxes();
+    List<NTXAxisOptions> GetUniqueXAxes();
+    List<NTYAxisOptions> GetUniqueYAxes();
 
-   (double Min, double Max) GetXRange(NTAxisOptions? axis, bool padded);
-   (decimal Min, decimal Max) GetYRange(NTAxisOptions? axis, bool padded);
+    (double Min, double Max) GetXRange(NTAxisOptions? axis, bool padded);
+    (decimal Min, decimal Max) GetYRange(NTAxisOptions? axis, bool padded);
 
-   float ScaleX(double x, SKRect plotArea, NTAxisOptions? axis = null);
-   float ScaleY(decimal y, NTAxisOptions? axis, SKRect plotArea);
+    float ScaleX(double x, SKRect plotArea, NTAxisOptions? axis = null);
+    float ScaleY(decimal y, NTAxisOptions? axis, SKRect plotArea);
 
-   bool IsCategoricalX { get; }
-   bool IsCategoricalY { get; }
+    bool IsCategoricalX { get; }
+    bool IsCategoricalY { get; }
 
-   List<object> GetAllXValues();
-   List<object> GetAllYValues();
+    List<object> GetAllXValues();
+    List<object> GetAllYValues();
 
-   NTXAxisOptions? PrimaryXAxis { get; }
-   NTYAxisOptions? PrimaryYAxis { get; }
-   NTRadialAxisOptions? PrimaryRadialAxis { get; }
+    NTXAxisOptions? PrimaryXAxis { get; }
+    NTYAxisOptions? PrimaryYAxis { get; }
+    NTRadialAxisOptions? PrimaryRadialAxis { get; }
 
-   double GetScaledXValue(object? originalX);
-   decimal GetScaledYValue(object? originalY);
+    double GetScaledXValue(object? originalX);
+    decimal GetScaledYValue(object? originalY);
 
-   bool IsXAxisDateTime { get; }
+    bool IsXAxisDateTime { get; }
 
-   bool HasViewRange(NTAxisOptions axis);
+    bool HasViewRange(NTAxisOptions axis);
 }

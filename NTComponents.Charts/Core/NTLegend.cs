@@ -1,9 +1,5 @@
 using Microsoft.AspNetCore.Components;
 using SkiaSharp;
-using NTComponents.Charts.Core.Series;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace NTComponents.Charts.Core;
 
@@ -68,8 +64,9 @@ public class NTLegend<TData> : ComponentBase, IDisposable where TData : class {
 
     public void Dispose() {
         Chart?.RemoveLegend(this);
-    }
+        _font?.Dispose();
 
+    }
     internal SKRect GetFloatingRect(SKRect plotArea, float density = 1f) {
         if (Position != LegendPosition.Floating) {
             return SKRect.Empty;
@@ -162,48 +159,58 @@ public class NTLegend<TData> : ComponentBase, IDisposable where TData : class {
         return null;
     }
 
+    private SKFont _font = default!;
+
+    /// <summary>
+    /// Calculates the area required to display the legend based on its position and the available space within the
+    /// chart.
+    /// </summary>
+    /// <remarks>The measured area is adjusted according to the legend's position (top, bottom, left, or
+    /// right) and the available space, ensuring the legend is properly sized and positioned within the chart. If the
+    /// legend is not visible or its position is not supported, an empty rectangle is returned.</remarks>
+    /// <param name="currentArea">The rectangle that defines the current available area for the legend within the chart layout.</param>
+    /// <param name="context">The rendering context that provides font settings, density scaling, and other information necessary for accurate
+    /// measurement.</param>
+    /// <returns>A rectangle representing the measured area for the legend. Returns <see cref="SKRect.Empty"/> if the legend is
+    /// not visible or its position is set to None or Floating.</returns>
     public SKRect Measure(SKRect currentArea, NTRenderContext context) {
         if (!Visible || Position == LegendPosition.None || Position == LegendPosition.Floating) {
             return SKRect.Empty;
         }
 
-        using var font = new SKFont {
+        _font ??= new SKFont {
             Size = FontSize * context.Density,
             Embolden = true,
             Typeface = context.DefaultFont.Typeface
         };
 
+        switch (Position) {
+            case LegendPosition.Top:
+            case LegendPosition.Bottom:
+                var maxWidth = currentArea.Width - (40 * context.Density);
+                var rows = GetLegendRows(_font, maxWidth, context.Density);
+                var legendHeight = (rows.Count * ((FontSize + 10) * context.Density)) + (10 * context.Density);
 
-        if (Position is LegendPosition.Top or LegendPosition.Bottom) {
-            var maxWidth = currentArea.Width - (40 * context.Density);
-            var rows = GetLegendRows(font, maxWidth, context.Density);
-            var legendHeight = rows.Count * ((FontSize + 10) * context.Density) + (10 * context.Density);
+                return Position == LegendPosition.Top
+                    ? new SKRect(currentArea.Left, currentArea.Top, currentArea.Right, currentArea.Top + legendHeight)
+                    : new SKRect(currentArea.Left, currentArea.Bottom - legendHeight, currentArea.Right, currentArea.Bottom);
 
-            if (Position == LegendPosition.Top) {
-                return new SKRect(currentArea.Left, currentArea.Top, currentArea.Right, currentArea.Top + legendHeight);
-            }
-            else {
-                return new SKRect(currentArea.Left, currentArea.Bottom - legendHeight, currentArea.Right, currentArea.Bottom);
-            }
+            case LegendPosition.Left:
+            case LegendPosition.Right:
+                float legendWidth = 0;
+                var items = Chart.Series.SelectMany(s => s.GetLegendItems()).ToList();
+                foreach (var item in items) {
+                    var label = item.Label;
+                    legendWidth = Math.Max(legendWidth, _font.MeasureText(label) + (IconSize * context.Density) + (15 * context.Density));
+                }
+                legendWidth += 10 * context.Density; // padding
+                return Position == LegendPosition.Left
+                    ? new SKRect(currentArea.Left, currentArea.Top, currentArea.Left + legendWidth, currentArea.Bottom)
+                    : new SKRect(currentArea.Right - legendWidth, currentArea.Top, currentArea.Right, currentArea.Bottom);
+            
+            default:
+                return SKRect.Empty;
         }
-        else if (Position is LegendPosition.Left or LegendPosition.Right) {
-            float legendWidth = 0;
-            var items = Chart.Series.SelectMany(s => s.GetLegendItems()).ToList();
-            foreach (var item in items) {
-                var label = item.Label;
-                legendWidth = Math.Max(legendWidth, font.MeasureText(label) + (IconSize * context.Density) + (15 * context.Density));
-            }
-            legendWidth += 10 * context.Density; // padding
-
-            if (Position == LegendPosition.Left) {
-                return new SKRect(currentArea.Left, currentArea.Top, currentArea.Left + legendWidth, currentArea.Bottom);
-            }
-            else {
-                return new SKRect(currentArea.Right - legendWidth, currentArea.Top, currentArea.Right, currentArea.Bottom);
-            }
-        }
-
-        return SKRect.Empty;
     }
 
     public void Render(NTRenderContext context, SKRect plotArea, SKRect targetArea) {
@@ -261,7 +268,7 @@ public class NTLegend<TData> : ComponentBase, IDisposable where TData : class {
                 IsAntialias = true
             };
             context.Canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, bgPaint);
-            
+
             using var borderPaint = new SKPaint {
                 Color = Chart.GetThemeColor(TnTColor.OutlineVariant),
                 Style = SKPaintStyle.Stroke,
@@ -280,7 +287,7 @@ public class NTLegend<TData> : ComponentBase, IDisposable where TData : class {
     private void RenderItem(NTRenderContext context, SKFont font, LegendItemInfo<TData> item, float x, float y) {
         var canvas = context.Canvas;
         var density = context.Density;
-        
+
         var itemWidth = font.MeasureText(item.Label) + (IconSize * density) + (10 * density);
         var itemRect = new SKRect(x, y - (FontSize * density), x + itemWidth, y + (5 * density));
 
