@@ -32,19 +32,23 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
 
     private NTTitle? _title;
     private bool _invalidate;
-    private HashSet<IRenderable> _renderables = [];
+    private readonly Dictionary<RenderOrdered, List<IRenderable>> _renderablesByOrder = Enum.GetValues<RenderOrdered>().ToDictionary(r => r, _ => new List<IRenderable>());
     public void RegisterRenderable(IRenderable renderable) {
         ArgumentNullException.ThrowIfNull(renderable, nameof(renderable));
-        _renderables.Add(renderable);
-        _invalidate = true;
+        var list =
+        _renderablesByOrder[renderable.RenderOrder];
+        if (!list.Contains(renderable)) {
+            list.Add(renderable);
+            _invalidate = true;
+        }
     }
     public void UnregisterRenderable(IRenderable renderable) {
-        _renderables.Remove(renderable);
+        _renderablesByOrder[renderable.RenderOrder].Remove(renderable);
         _invalidate = true;
     }
 
     public void Invalidate() {
-        foreach (var renderable in _renderables) {
+        foreach (var renderable in _renderablesByOrder.SelectMany(kvp => kvp.Value)) {
             renderable.Invalidate();
         }
         _invalidate = false;
@@ -591,6 +595,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         if (!Series.Contains(series)) {
             Series.Add(series);
         }
+
 
         ValidateState();
     }

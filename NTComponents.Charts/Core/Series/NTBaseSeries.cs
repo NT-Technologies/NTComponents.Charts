@@ -4,7 +4,7 @@ using SkiaSharp;
 
 namespace NTComponents.Charts.Core.Series;
 
-public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TData : class {
+public abstract class NTBaseSeries<TData> : ComponentBase, IRenderable where TData : class {
 
     /// <summary>
     ///     Gets or sets the duration of the animation.
@@ -184,6 +184,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TDa
     protected virtual void Dispose(bool disposing) {
         if (disposing) {
             Chart?.RemoveSeries(this);
+            Chart.UnregisterRenderable(this);
         }
     }
 
@@ -295,6 +296,8 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TDa
     /// </summary>
     public virtual bool IsPanning => false;
 
+    public RenderOrdered RenderOrder => RenderOrdered.Series;
+
     /// <summary>
     ///     Applies an overshoot effect to the progress.
     /// </summary>
@@ -341,6 +344,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TDa
             OnDataChanged();
             PreviousData = Data;
         }
+        Invalidate();
     }
 
     private void OnVisibilityChanged() {
@@ -352,4 +356,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, IDisposable where TDa
             ResetAnimation();
         }
     }
+
+    SKRect IRenderable.Render(NTRenderContext context, SKRect renderArea) => throw new NotImplementedException();
+    public void Invalidate() { }
 }

@@ -1,4 +1,5 @@
 using SkiaSharp;
+using System.ComponentModel;
 using System.Diagnostics;
 
 namespace NTComponents.Charts.Core;
@@ -13,11 +14,14 @@ internal class NTTitle : IRenderable {
         ArgumentNullException.ThrowIfNull(chart, nameof(chart));
         _chart = chart;
 
-        if(_chart.TitleOptions is null) {
+        if (_chart.TitleOptions is null) {
             throw new InvalidOperationException("Cannot instantiate a Title without TitleOptions.");
         }
         _chart.RegisterRenderable(this);
     }
+
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public RenderOrdered RenderOrder => RenderOrdered.Title;
 
     public void Dispose() {
         _titlePaint?.Dispose();
@@ -53,4 +57,5 @@ internal class NTTitle : IRenderable {
         context.Canvas.DrawText(_chart.TitleOptions!.Title, _point.X, _point.Y, SKTextAlign.Center, _titleFont, _titlePaint);
         return new SKRect(renderArea.Left, renderArea.Top + (30 * context.Density), renderArea.Right, renderArea.Bottom);
     }
+
 }

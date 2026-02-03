@@ -6,19 +6,15 @@ namespace NTComponents.Charts.Core;
 ///     Provides context for rendering a chart component.
 /// </summary>
 public class NTRenderContext {
-    /// <summary>
-    /// Initializes a new instance of the NTRenderContext class with the specified rendering surface, image information,
-    /// drawing area, density, fonts, and text color.
-    /// </summary>
-    /// <remarks>The initial plot area is set to the total area provided during initialization.</remarks>
-    /// <param name="canvas">The SKCanvas on which graphics will be rendered.</param>
-    /// <param name="info">The SKImageInfo that specifies the format and dimensions of the rendering surface.</param>
-    /// <param name="totalArea">The SKRect that defines the total area available for rendering operations.</param>
-    /// <param name="density">The density factor, typically in dots per inch (DPI), used to scale rendered output appropriately.</param>
-    /// <param name="defaultFont">The SKFont to use as the default font for text rendering.</param>
-    /// <param name="regularFont">The SKFont to use for rendering regular text.</param>
-    /// <param name="textColor">The SKColor that specifies the color to use for rendered text.</param>
-    public NTRenderContext(SKCanvas canvas, SKImageInfo info, SKRect totalArea, float density, SKFont defaultFont, SKFont regularFont, SKColor textColor) {
+
+    public NTRenderContext(
+        SKCanvas canvas,
+        SKImageInfo info,
+        SKRect totalArea,
+        float density,
+        SKFont defaultFont,
+        SKFont regularFont,
+        SKColor textColor) {
         Canvas = canvas;
         Info = info;
         TotalArea = totalArea;

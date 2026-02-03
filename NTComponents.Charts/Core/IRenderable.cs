@@ -8,7 +8,8 @@ using System.Threading.Tasks;
 namespace NTComponents.Charts.Core;
 
 public interface IRenderable : IDisposable {
+    RenderOrdered RenderOrder { get; }
 
-    public SKRect Render(NTRenderContext context, SKRect renderArea);
-    public void Invalidate();
+    SKRect Render(NTRenderContext context, SKRect renderArea);
+    void Invalidate();
 }
