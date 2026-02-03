@@ -4,114 +4,88 @@ This document describes the architectural structure of the NTComponents.Charts l
 
 ## Overview
 
-NTComponents.Charts is built on top of [SkiaSharp](https://github.com/mono/SkiaSharp) for high-performance rendering in Blazor. It follows a modular design where a central `NTChart` component coordinates various "series" and "options" components.
+NTComponents.Charts is a high-performance rendering library for Blazor built on [SkiaSharp](https://github.com/mono/SkiaSharp). It follows a decentralized, interface-driven design where visual components are self-contained "renderables" coordinated by a central chart orchestrator.
 
-## Core Components
+## Core Concepts
 
-### `NTChart<TData>`
-The top-level orchestrator and central coordinator for the charting system. It manages the lifecycle and high-level structure of the chart while delegating most drawing to specific components. Its primary responsibilities include:
-- **Orchestration & Validation**: Handles the registration and strict validation of series as they are added (ensuring consistent coordinate systems, e.g., you cannot mix Cartesian and Circular series). Validation occurs immediately upon series registration.
-- **Style Defaults**: Houses common defaults for colors, palettes, and typography used across all series.
-- **Layout Foundation**: Providing each child series with the total rendering area available, calculated by subtracting chart-level margins from the total canvas size.
-- **Strict Validation**: Enforcing compatibility rules as series are added. The chart ensures that all registered series share the same coordinate system (e.g., you cannot mix Cartesian and Circular series). Validation occurs immediately upon series registration.
-- **Legend Management**: Managing and rendering the chart's legend.
-- **Input Coordination**: Handling mouse and touch events (including panning and zooming) and dispatching them to the relevant series or components. The chart tracks interaction states using enum flags (X/Y Pan/Zoom) but delegates the actual coordinate transformation logic to the child series.
+### `IRenderable` Interface
+Every visual element of the chart—including series, axes, legends, and tooltips—implements the `IRenderable` interface. This standardization allows the chart to handle all visual components through a unified pipeline.
 
-### `NTBaseSeries<TData>`
-The implementation layer for data visualization. Series are "smart" components that manage their own mapping from data space to screen space. Each series is responsible for its own rendering logic within the area provided by the `NTChart`. It handles:
-- **Self-Drawing**: Directly responsible for rendering their specific visualization (e.g. lines, bars) using the provided `NTRenderContext`.
-- **Layout & Scale**: Calculates how much space they have to render (after margins) and determines the appropriate scales.
-- **Area Partitioning**: For series with axes (like Cartesian), the series itself is responsible for determining how to split its assigned area into space for axes (labels, titles) and the actual plot area for data.
-- **Axis Ownership**: Owns and manages one or more `NTAxisOptions` components to define their dimensions.
-- **Tooltip Responsibility**: Responsible for their own tooltips, defining what data is shown and how it is presented when a user interacts with a data point.
-- **Interaction Processing**: Handling pan and zoom events dispatched by the `NTChart` to calculate data-space transformations.
-- **Hit Testing**: Determining which data point (if any) is under a given coordinate.
-- **Animation**: Managing visibility and data change transitions.
-
-### `NTCartesianSeries<TData>`
-A base class for series that operate within a Cartesian coordinate system, serving as the foundation for line, bar, area, and scatter charts.
-- **Axis Requirements**: Requires both an X and Y axis to map data.
-- **Value Types**: The Y-axis values are strictly handled as `decimal` type, while the X-axis type is inherited from `NTBaseSeries` and can be any object (e.g., `DateTime`, `string`, or `double`).
-- **Scale Management**: Manages axis references and provides range calculations for linear, categorical, and logarithmic scales.
-
-### `NTCircularSeries<TData>`
-A base class for series that use circular coordinates, such as Pie or Donut charts. It calculates slice angles and manages the rendering logic for radial data.
-
-### `NTTreeMapSeries<TData>`
-A specialized series component that visualizes hierarchical data as nested rectangles using a treemap layout algorithm.
-
-### `NTAxisOptions`
-The definition of a data dimension and an abstract base class for configuring and rendering chart axes. Axes are independent components that:
-- **Self-Render**: Responsible for rendering its own scale, ticks, and labels.
-- **Optional Visibility**: Some derivations (like those used in Pie or TreeMap charts) may not render at all, though they still participate in range calculations.
-- **Grid Lines**: Optionally responsible for rendering grid lines across the entire plot area of the chart.
-- **Scale & Range Management**: Receives data ranges (min/max) or a set of categorical values from the series and is responsible for calculating "nice" tick intervals and labels to fill the axis appropriately.
-- **Formatting**: Receives an optional format parameter from the user to format rendered values (e.g., currency, dates, or custom numeric formats).
-- **Calculate Scale**: Translate data values to screen coordinates (and vice versa) for the series they serve.
-- **Area Participation**: Participate in the measurement phase to inform the series of the margin required for labels and titles.
+- **`RenderOrder`**: Defines the sequence in which components are drawn (e.g., background > grid lines > series > overlays).
+- **`Render(NTRenderContext context, SKRect renderArea)`**: The primary drawing method. It receives the current context and available space, and returns the *remaining* area after the component has "consumed" its required space (critical for axes and legends).
+- **`Invalidate()`**: Signals the component to clear cached measurements or data transformations in preparation for a new render cycle.
 
 ### `NTRenderContext`
-A helper class that encapsulates the SkiaSharp canvas and provides environment information (screen density, default fonts, theme colors) to simplify the drawing logic within components.
+A state-carrying object that encapsulates the rendering environment.
+- **Base Context**: Provides access to the `SKCanvas`, screen density, image information, and shared theme properties (fonts, colors).
+- **Type-Specific Extensions**: `NTRenderContext` is designed to be extended for specific chart types (e.g., `NTCartesianRenderContext`). These extensions hold shared logic, scales, and coordinate transformation data that are calculated once per frame and shared among multiple `IRenderable` components.
 
-### `NTLegend<TData>`
-Manages the display and layout of legend items. It supports multiple positions (Top, Bottom, Left, Right, Floating) and interactive toggling of series visibility.
+### `NTChart<TData>`
+The `NTChart` component serves as a simplified orchestrator and data provider. Its responsibilities are focused on lifecycle management rather than drawing logic:
+- **Registry**: Maintains a collection of registered `IRenderable` components.
+- **Orchestration**: Triggers the `Invalidate` and `Render` cycles across all components.
+- **Data & Config Provider**: Acts as the central source of truth for the dataset and global style configurations (palettes, etc.).
+- **Input Routing**: Captures interaction events (panning, zooming, hovering) and dispatches them to the relevant renderable components.
 
-### `NTTooltip`
-Configures and renders the interactive tooltip that appears when hovering over data points, providing detailed information about the selected data.
+## Rendering Pipeline
 
-## Rendering & Coordination Pipeline
+The rendering process is a sequential flow where components collaborate to partition the available canvas:
 
-The `NTChart` component coordinates the process, but rendering is highly decentralized:
-
-1.  **Registration & Validation**: As series components are initialized, they register themselves with the `NTChart`. The chart validates that the new series is compatible with existing ones (e.g., matching coordinate systems).
-2.  **Range Calculation**: Series determine their combined data ranges (min/max or categorical values) and provide this information to the relevant axes.
-3.  **Measurement & Partitioning**:
-    - The `NTChart` calculates the initial area available (total minus chart margins).
-    - **Series** evaluate their children (axes). The **Axes** use the provided data ranges to calculate tick intervals and labels, then inform the series of their space requirements.
-    - The **Series** then partitions the total available area into an axis area and a final plot area.
-4.  **Area Allocation**: The `NTChart` provides the initial area, and the series coordinates the sub-allocation for its axes and its data plot.
-5.  **Decentralized Rendering**:
-    - **Self-Rendering Axes**: Each axis renders its own structure. It can also render grid lines spanning the entire plot area.
-    - **Self-Rendering Series**: Each series renders its data into its allocated plot area using the scale calculations provided by its axes.
-    - **Legend/Tooltip**: Rendered by the `NTChart` or dedicated overlay components.
-6.  **Interaction**: User inputs (hover, click, pan, zoom) are received by the chart and delegated to the series.
-    - **Control**: The `NTChart` maintains interaction permissions via enum flags (`XZoom`, `YZoom`, `XPan`, `YPan`, and combined convenience values).
-    - **Logic**: The series are responsible for processing these events and calculating the resulting views or scales.
-    - **Stability**: The `NTChart` render area remains constant during panning and zooming; only the series' mapping of data to that area is transformed.
+1.  **Registration**: Visual components register themselves as `IRenderable` with the parent `NTChart` during initialization.
+2.  **Invalidation**: When data or state changes occur, the chart calls `Invalidate()` on all renderables to reset their internal state.
+3.  **The Render Pass**:
+    - The `NTChart` initializes the appropriate `NTRenderContext` (e.g., a Cartesian context if Cartesian series are present).
+    - All registered `IRenderable` objects are sorted by their `RenderOrder`.
+    - The chart iterates through the sorted list, calling `Render` on each.
+    - Each component performs its drawing and returns the remaining `SKRect`. For example, a `LeftAxis` might draw itself and return an area with the left margin removed, which the next component then uses as its bounds.
+4.  **Interaction**: User inputs are processed by components to update scales or views, followed by a new invalidation/render cycle.
 
 ## Class Diagram
 
 ```mermaid
 classDiagram
-    class NTChart {
-        +List Series
-        +NTLegend Legend
-        +RegisterSeries(series)
-    }
-    class NTBaseSeries {
-        +NTChart Chart
-        +List Axes
-        +Render(context, area)
-        +SetScale(panning, zooming)
-    }
-    class NTAxisOptions {
-        +NTBaseSeries Series
-        +Render(context, area)
-        +CalculateScale()
-    }
-    class NTCartesianSeries {
-        +NTAxisOptions XAxis
-        +NTAxisOptions YAxis
-    }
-    class NTCircularSeries {
-    }
-    class NTTreeMapSeries {
+    class IRenderable {
+        <<interface>>
+        +RenderOrder RenderOrder
+        +Invalidate()
+        +SKRect Render(NTRenderContext context, SKRect renderArea)
     }
 
-    NTChart "1" *-- "many" NTBaseSeries : coordinates
-    NTBaseSeries "1" *-- "many" NTAxisOptions : owns
-    NTBaseSeries <|-- NTCartesianSeries
-    NTBaseSeries <|-- NTCircularSeries
-    NTBaseSeries <|-- NTTreeMapSeries
-    NTCartesianSeries --> NTAxisOptions : uses
+    class NTRenderContext {
+        +SKCanvas Canvas
+        +SKFont DefaultFont
+        +SKColor TextColor
+        +SKRect TotalArea
+        +SKRect PlotArea
+    }
+
+    class NTCartesianRenderContext {
+        +XScale
+        +YScale
+    }
+
+    class NTChart {
+        +List<IRenderable> Renderables
+        +TData Data
+        +Register(IRenderable)
+        +InvalidateAll()
+    }
+
+    class NTBaseSeries {
+        +Render(context, area)
+        +Invalidate()
+    }
+
+    class NTAxisOptions {
+        +Render(context, area)
+        +Invalidate()
+    }
+
+    NTChart "1" o-- "*" IRenderable : orchestrates
+    IRenderable <|.. NTBaseSeries
+    IRenderable <|.. NTAxisOptions
+    IRenderable <|.. NTLegend
+    IRenderable <|.. NTTooltip
+    NTRenderContext <|-- NTCartesianRenderContext
+    IRenderable ..> NTRenderContext : receives
 ```
