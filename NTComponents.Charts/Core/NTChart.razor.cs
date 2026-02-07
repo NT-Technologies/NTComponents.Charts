@@ -33,6 +33,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     private NTTitle? _title;
     private bool _invalidate;
     private readonly Dictionary<RenderOrdered, List<IRenderable>> _renderablesByOrder = Enum.GetValues<RenderOrdered>().ToDictionary(r => r, _ => new List<IRenderable>());
+    private bool _defaultAxesAttached;
     public void RegisterRenderable(IRenderable renderable) {
         ArgumentNullException.ThrowIfNull(renderable, nameof(renderable));
         var list =
@@ -389,10 +390,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         return result;
     }
 
-    /// <summary>
-    ///     Gets the scale used for the X axis.
-    /// </summary>
-    public NTAxisScale GetXScale() => GetUniqueXAxes().FirstOrDefault()?.Scale ?? NTAxisScale.Linear;
 
     public (decimal Min, decimal Max) GetYRange(NTAxisOptions? axis, bool padded = false) {
         var uniqueAxes = GetUniqueYAxes();
@@ -490,8 +487,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         StateHasChanged();
     }
 
-    public float ScaleX(double x, SKRect plotArea, NTAxisOptions? axis = null) {
-        axis ??= GetUniqueXAxes().FirstOrDefault();
+    public float ScaleX(double x, SKRect plotArea) {
         var (min, max) = GetXRange(axis, true);
         var scale = axis?.Scale ?? NTAxisScale.Linear;
 
@@ -516,10 +512,9 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         return (float)(left + (t * width));
     }
 
-    public double ScaleXInverse(float coord, SKRect plotArea, NTAxisOptions? axis = null) {
-        axis ??= GetUniqueXAxes().FirstOrDefault();
-        var (min, max) = GetXRange(axis, true);
-        var scale = axis?.Scale ?? NTAxisScale.Linear;
+    public double ScaleXInverse(float coord, SKRect plotArea) {
+        var (min, max) = GetXRange(null, true);
+        var scale = XAxis.Scale;
 
         const float p = 3f;
         double t;
@@ -535,9 +530,9 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         return min + (t * (max - min));
     }
 
-    public float ScaleY(decimal y, NTAxisOptions? axis, SKRect plotArea) {
-        var (min, max) = GetYRange(axis, true);
-        var scale = axis?.Scale ?? NTAxisScale.Linear;
+    public float ScaleY(decimal y, SKRect plotArea) {
+        var (min, max) = GetYRange(YAxis, true);
+        var scale = YAxis.Scale;
 
         double t;
         if (scale == NTAxisScale.Logarithmic) {
@@ -563,9 +558,9 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     /// <summary>
     ///     Converts a screen coordinate back to a data Y value.
     /// </summary>
-    public decimal ScaleYInverse(float coord, NTAxisOptions? axis, SKRect plotArea) {
-        var (min, max) = GetYRange(axis, true);
-        var scale = axis?.Scale ?? NTAxisScale.Linear;
+    public decimal ScaleYInverse(float coord, SKRect plotArea) {
+        var (min, max) = GetYRange(YAxis, true);
+        var scale = YAxis.Scale;
 
         const float p = 3f;
         double t;
@@ -590,34 +585,54 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         ValidateState();
     }
 
-    internal void SetXAxisOptions(NTAxisOptions options) {
-        _xAxisComponent = options;
+    public NTXAxisOptions XAxis { get; private set; } = NTXAxisOptions.Default;
+    public NTYAxisOptions YAxis { get; private set; } = NTYAxisOptions.Default;
+    public NTYAxisOptions? SecondaryYAxis { get; private set; }
+
+    public void RegisterAxis(NTXAxisOptions axis) {
+        if (!ReferenceEquals(XAxis, NTXAxisOptions.Default)) {
+            throw new InvalidOperationException("Only one primary X axis is currently supported.");
+        }
+        XAxis = axis;
     }
 
-    internal void SetYAxisOptions(NTAxisOptions options) {
-        _yAxisComponent = options;
+    public void UnregisterAxis(NTXAxisOptions axis) {
+        if (ReferenceEquals(axis, XAxis)) {
+            XAxis = NTXAxisOptions.Default;
+        }
     }
 
-    internal void SetRadialAxisOptions(NTAxisOptions options) {
-        _radialAxisComponent = options;
+    public void RegisterAxis(NTYAxisOptions axis) {
+        if (!ReferenceEquals(YAxis, NTYAxisOptions.Default) && SecondaryYAxis is not null) {
+            throw new InvalidOperationException("Only two Y axes are currently supported.");
+        }
+
+        if (ReferenceEquals(YAxis, NTYAxisOptions.Default)) {
+            YAxis = axis;
+        }
+        else {
+            SecondaryYAxis = axis;
+        }
+
+    }
+
+    public void UnregisterAxis(NTYAxisOptions axis) {
+        if (ReferenceEquals(YAxis, axis)) {
+            if (SecondaryYAxis is not null) {
+                YAxis = SecondaryYAxis;
+                SecondaryYAxis = null;
+            }
+            else {
+                YAxis = NTYAxisOptions.Default;
+            }
+        }
+        else if (SecondaryYAxis is not null && ReferenceEquals(SecondaryYAxis, axis)) {
+            SecondaryYAxis = null;
+        }
     }
 
     // IAxisChart implementation
-    void IAxisChart.SetXAxisOptions(NTAxisOptions options) => SetXAxisOptions(options);
-    void IAxisChart.SetYAxisOptions(NTAxisOptions options) => SetYAxisOptions(options);
-    void IAxisChart.SetRadialAxisOptions(NTAxisOptions options) => SetRadialAxisOptions(options);
     void IAxisChart.SetTooltip(NTTooltip tooltip) => SetTooltip(tooltip);
-
-    public NTXAxisOptions? PrimaryXAxis => _xAxisComponent as NTXAxisOptions;
-    public NTYAxisOptions? PrimaryYAxis => _yAxisComponent as NTYAxisOptions;
-    public NTRadialAxisOptions? PrimaryRadialAxis => _radialAxisComponent as NTRadialAxisOptions;
-
-    NTXAxisOptions? IAxisChart.PrimaryXAxis => PrimaryXAxis;
-    NTYAxisOptions? IAxisChart.PrimaryYAxis => PrimaryYAxis;
-    NTRadialAxisOptions? IAxisChart.PrimaryRadialAxis => PrimaryRadialAxis;
-
-    List<NTXAxisOptions> IAxisChart.GetUniqueXAxes() => GetUniqueXAxes();
-    List<NTYAxisOptions> IAxisChart.GetUniqueYAxes() => GetUniqueYAxes();
 
     (double Min, double Max) IAxisChart.GetXRange(NTAxisOptions? axis, bool padded) => GetXRange(axis, padded);
     (decimal Min, decimal Max) IAxisChart.GetYRange(NTAxisOptions? axis, bool padded) => GetYRange(axis, padded);
@@ -632,9 +647,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         return false;
     }
 
-    float IAxisChart.ScaleX(double x, SKRect plotArea, NTAxisOptions? axis) => ScaleX(x, plotArea, axis);
-    float IAxisChart.ScaleY(decimal y, NTAxisOptions? axis, SKRect plotArea) => ScaleY(y, axis, plotArea);
-
     SKFont IChart.DefaultFont => DefaultFont;
     SKFont IChart.RegularFont => RegularFont;
     SKColor IChart.GetThemeColor(TnTColor color) => GetThemeColor(color);
@@ -647,8 +659,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         _tooltipComponent = tooltip;
     }
 
-    private NTAxisOptions? _xAxisComponent;
-    private NTAxisOptions? _yAxisComponent;
     private NTAxisOptions? _radialAxisComponent;
     private NTTooltip? _tooltipComponent;
 
@@ -766,44 +776,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     }
 
     internal SKColor GetThemeColor(TnTColor color) => _resolvedColors.TryGetValue(color, out var skColor) ? skColor : SKColors.Black;
-
-    internal List<NTXAxisOptions> GetUniqueXAxes() {
-        var axes = Series.OfType<NTCartesianSeries<TData>>()
-            .Where(s => s.IsEffectivelyVisible)
-            .Select(s => s.XAxis)
-            .OfType<NTXAxisOptions>()
-            .Distinct()
-            .ToList();
-
-        if (_xAxisComponent != null && _xAxisComponent is NTXAxisOptions x && !axes.Contains(x)) {
-            axes.Add(x);
-        }
-
-        if (axes.Count == 0) {
-            axes.Add(NTXAxisOptions.Default);
-        }
-
-        return axes;
-    }
-
-    internal List<NTYAxisOptions> GetUniqueYAxes() {
-        var axes = Series.OfType<NTCartesianSeries<TData>>()
-            .Where(s => s.IsEffectivelyVisible)
-            .Select(s => s.YAxis)
-            .OfType<NTYAxisOptions>()
-            .Distinct()
-            .ToList();
-
-        if (_yAxisComponent != null && _yAxisComponent is NTYAxisOptions y && !axes.Contains(y)) {
-            axes.Add(y);
-        }
-
-        if (axes.Count == 0) {
-            axes.Add(NTYAxisOptions.Default);
-        }
-
-        return axes;
-    }
 
     internal void RemoveLegend(NTLegend<TData> legend) {
         if (Legend == legend) {
@@ -964,13 +936,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         _cachedAllX = null;
         _cachedAllY = null;
 
-        foreach (var axis in GetUniqueXAxes()) {
-            axis.ClearCache();
-        }
-        foreach (var axis in GetUniqueYAxes()) {
-            axis.ClearCache();
-        }
-
         var totalArea = new SKRect(0, 0, info.Width, info.Height);
         var context = new NTRenderContext(canvas, info, totalArea, Density, _defaultFont, _regularFont, GetThemeColor(TextColor));
 
@@ -983,36 +948,41 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
             bottom: info.Height - (Margin.Bottom * context.Density));
 
         foreach (var order in Enum.GetValues<RenderOrdered>()) {
-            if (order == RenderOrdered.Series) {
-                // By the time we get to series, the renderArea has been carved out by Title, Axes, and non-floating Legend
-                context.PlotArea = renderArea;
-                LastPlotArea = renderArea;
-                CalculateTreeMapAreas(renderArea);
-                PerformHitTesting(context, renderArea);
+            if (order == RenderOrdered.Axis) {
 
-                // Clip to plot area for series
-                canvas.Save();
-                var clipArea = renderArea;
-                clipArea.Inflate(2, 2);
-                canvas.ClipRect(clipArea);
+                var axisRenderArea = renderArea;
+                foreach (var axis in _renderablesByOrder[order].OfType<NTAxisOptions>()) {
+                    axisRenderArea = axis.Measure(context, axisRenderArea);
+
+                    using var p1 = new SKPaint() {
+                        Color = SKColors.Red
+                    };
+
+                    canvas.DrawRect(axisRenderArea, p1);
+                }
+                context.PlotArea = axisRenderArea;
+                LastPlotArea = axisRenderArea;
             }
+
 
             foreach (var renderable in _renderablesByOrder[order]) {
                 renderArea = renderable.Render(context, renderArea);
             }
-
-            if (order == RenderOrdered.Series) {
-                canvas.Restore();
-                RenderTreeMapGroupLabels(context);
-            }
         }
 
+
+        using var p2 = new SKPaint() {
+            Color = SKColors.Green
+        };
+
+        canvas.DrawRect(renderArea, p2);
         // Pass 9: Update cursor if needed
-        var currentHover = HoveredSeries != null || _isHoveringLegend || Series.Any(s => s.IsPanning);
-        if (_isHovering != currentHover) {
-            _isHovering = currentHover;
-            _ = InvokeAsync(StateHasChanged);
-        }
+        //var currentHover = HoveredSeries != null || _isHoveringLegend || Series.Any(s => s.IsPanning);
+        //if (_isHovering != currentHover)
+        //{
+        //    _isHovering = currentHover;
+        //    _ = InvokeAsync(StateHasChanged);
+        //}
 
         if (sw != null) {
             sw.Stop();

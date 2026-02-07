@@ -25,18 +25,17 @@ public class NTXAxisOptions : NTAxisOptions {
       _linePaint?.Dispose();
       _textFont?.Dispose();
       _titleFont?.Dispose();
+      Chart.UnregisterAxis(this);
       base.Dispose();
    }
 
-   protected override void OnInitialized() {
-      base.OnInitialized();
-      Chart?.SetXAxisOptions(this);
-   }
+    protected override void OnInitialized() {
+        base.OnInitialized();
+        Chart.RegisterAxis(this);
+    }
 
    /// <inheritdoc />
-
-   /// <inheritdoc />
-   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
+   internal override SKRect Measure(NTRenderContext context, SKRect renderArea) {
       if (!Visible) return renderArea;
 
       float labelHeight = 16;
@@ -45,8 +44,7 @@ public class NTXAxisOptions : NTAxisOptions {
 
       // Add a 10px margin on the right to prevent data points from being cut off,
       // but only if there isn't a secondary Y-axis providing its own space.
-      var yAxes = Chart.GetUniqueYAxes();
-      float rightMargin = (yAxes.Count > 1 ? 0 : 10) * context.Density;
+      float rightMargin = (Chart.SecondaryYAxis != null ? 0 : 10) * context.Density;
 
       // Determine nice range once during measurement based on available space
       if (!Chart.IsCategoricalX && Scale == NTAxisScale.Linear && !Chart.HasViewRange(this)) {
@@ -56,10 +54,22 @@ public class NTXAxisOptions : NTAxisOptions {
          CachedXRange = (niceMin, niceMax);
       }
 
-      var newArea = new SKRect(renderArea.Left, renderArea.Top, renderArea.Right - rightMargin, renderArea.Bottom - totalAxisHeight);
+      return new SKRect(renderArea.Left, renderArea.Top, renderArea.Right - rightMargin, renderArea.Bottom - totalAxisHeight);
+   }
+
+   /// <inheritdoc />
+   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
+      if (!Visible) return renderArea;
+
+      var newArea = Measure(context, renderArea);
+
+      float labelHeight = 16;
+      float titleHeight = string.IsNullOrEmpty(Title) ? 0 : 20;
+      var totalAxisHeight = (labelHeight + titleHeight + 4) * context.Density;
+      float rightMargin = (Chart.SecondaryYAxis != null ? 0 : 10) * context.Density;
 
       // Now draw the axis
-      var plotArea = context.PlotArea; // This might need to be calculated or passed
+      var plotArea = context.PlotArea; 
       // In the new architecture, axes are drawn AFTER the final plotArea is determined?
       // ARCHITECTURE.md says: "Each component performs its drawing and returns the remaining SKRect.
       // For example, a LeftAxis might draw itself and return an area with the left margin removed,

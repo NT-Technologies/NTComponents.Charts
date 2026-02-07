@@ -1,5 +1,7 @@
+using System;
 using Microsoft.AspNetCore.Components;
 using SkiaSharp;
+using NTComponents.Charts.Core;
 
 namespace NTComponents.Charts.Core.Axes;
 
@@ -85,12 +87,36 @@ public abstract class NTAxisOptions : ComponentBase, IRenderable {
     /// <inheritdoc />
     public virtual void Invalidate() => ClearCache();
 
+    /// <summary>
+    ///     Estimates the area that will remain after this axis is rendered.
+    /// </summary>
+    /// <param name="context">The render context used to scale the measurement.</param>
+    /// <param name="renderArea">The available area for rendering.</param>
+    /// <returns>The remaining area.</returns>
+    internal virtual SKRect Measure(NTRenderContext context, SKRect renderArea) => renderArea;
+
     internal (double Min, double Max)? CachedXRange { get; set; }
     internal (decimal Min, decimal Max)? CachedYRange { get; set; }
 
     internal void ClearCache() {
         CachedXRange = null;
         CachedYRange = null;
+    }
+
+    internal void AddOwner(IAxisChart chart) {
+        ArgumentNullException.ThrowIfNull(chart);
+        if (ReferenceEquals(Chart, chart)) {
+            return;
+        }
+
+        Chart?.UnregisterRenderable(this);
+        Chart = chart;
+        Chart.RegisterRenderable(this);
+    }
+
+    internal void RemoveOwner() {
+        Chart?.UnregisterRenderable(this);
+        Chart = default!;
     }
 
     internal (double niceMin, double niceMax, double spacing) CalculateNiceScaling(double min, double max, int maxTicks = 10) {

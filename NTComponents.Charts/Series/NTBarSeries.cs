@@ -40,8 +40,8 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             return renderArea;
         }
 
-        var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
-        var (yMin, yMax) = Chart.GetYRange(EffectiveYAxis, true);
+        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+        var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
         // If vertical, bars start from 0 on Y axis. If horizontal, bars start from 0 on X axis.
         var yBase = Orientation == NTChartOrientation.Vertical ? Math.Max(yMin, 0m) : Math.Max((decimal)xMin, 0m);
 
@@ -199,7 +199,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var easedProgress = (decimal)BackEase(progress);
 
         // Multi-series info for side-by-side layout with animation weights
-        var barSeriesWeightTotal = Math.Max(0.001f, Chart.GetBarSeriesTotalWeight(EffectiveYAxis));
+        var barSeriesWeightTotal = Math.Max(0.001f, Chart.GetBarSeriesTotalWeight(Chart.YAxis));
         var barSeriesOffsetWeight = Chart.GetBarSeriesOffsetWeight(this);
         var myVisibilityFactor = VisibilityFactor;
 
@@ -209,8 +209,8 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var categoricalRange = (float)(Orientation == NTChartOrientation.Vertical ? (xMax - xMin) : (double)(yMax - yMin));
 
         if (Orientation == NTChartOrientation.Vertical ? Chart.IsCategoricalX : Chart.IsCategoricalY) {
-            var x0 = Orientation == NTChartOrientation.Vertical ? Chart.ScaleX(0, renderArea, EffectiveXAxis) : Chart.ScaleY(0, EffectiveYAxis, renderArea);
-            var x1 = Orientation == NTChartOrientation.Vertical ? Chart.ScaleX(1, renderArea, EffectiveXAxis) : Chart.ScaleY(1, EffectiveYAxis, renderArea);
+            var x0 = Orientation == NTChartOrientation.Vertical ? Chart.ScaleX(0, renderArea, Chart.XAxis) : Chart.ScaleY(0, Chart.YAxis, renderArea);
+            var x1 = Orientation == NTChartOrientation.Vertical ? Chart.ScaleX(1, renderArea, Chart.XAxis) : Chart.ScaleY(1, Chart.YAxis, renderArea);
             slotWidth = Math.Abs(x1 - x0);
         }
         else {
@@ -249,22 +249,22 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             AnimationCurrentValues[i] = currentYValue;
 
             if (Orientation == NTChartOrientation.Vertical) {
-                var centerPos = Chart.ScaleX(categoryValue, renderArea, EffectiveXAxis);
+                var centerPos = Chart.ScaleX(categoryValue, renderArea, Chart.XAxis);
                 var groupStart = centerPos - (groupWidth / 2);
-                var barPos = groupStart + (Chart.GetBarSeriesOffsetWeight(this) * (groupWidth / Chart.GetBarSeriesTotalWeight(EffectiveYAxis))) + (barWidth / 2);
+                var barPos = groupStart + (Chart.GetBarSeriesOffsetWeight(this) * (groupWidth / Chart.GetBarSeriesTotalWeight(Chart.YAxis))) + (barWidth / 2);
 
-                var topPos = Chart.ScaleY(currentYValue, EffectiveYAxis, renderArea);
-                var bottomPos = Chart.ScaleY(yBase, EffectiveYAxis, renderArea);
+                var topPos = Chart.ScaleY(currentYValue, Chart.YAxis, renderArea);
+                var bottomPos = Chart.ScaleY(yBase, Chart.YAxis, renderArea);
                 rects.Add(new SKRect(barPos - (barWidth / 2), Math.Min(topPos, bottomPos), barPos + (barWidth / 2), Math.Max(topPos, bottomPos)));
             }
             else {
-                var centerPos = Chart.ScaleY((decimal)categoryValue, EffectiveYAxis, renderArea);
+                var centerPos = Chart.ScaleY((decimal)categoryValue, Chart.YAxis, renderArea);
                 var groupStart = centerPos - (groupWidth / 2);
-                var barPos = groupStart + (Chart.GetBarSeriesOffsetWeight(this) * (groupWidth / Chart.GetBarSeriesTotalWeight(EffectiveYAxis))) + (barWidth / 2);
+                var barPos = groupStart + (Chart.GetBarSeriesOffsetWeight(this) * (groupWidth / Chart.GetBarSeriesTotalWeight(Chart.YAxis))) + (barWidth / 2);
 
                 // Horizontal: barPos is Y coordinate, topPos/bottomPos are X coordinates
-                var topPos = Chart.ScaleX((double)currentYValue, renderArea, EffectiveXAxis);
-                var bottomPos = Chart.ScaleX((double)yBase, renderArea, EffectiveXAxis);
+                var topPos = Chart.ScaleX((double)currentYValue, renderArea, Chart.XAxis);
+                var bottomPos = Chart.ScaleX((double)yBase, renderArea, Chart.XAxis);
                 rects.Add(new SKRect(Math.Min(topPos, bottomPos), barPos - (barWidth / 2), Math.Max(topPos, bottomPos), barPos + (barWidth / 2)));
             }
         }
@@ -278,8 +278,8 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             return null;
         }
 
-        var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
-        var (yMin, yMax) = Chart.GetYRange(EffectiveYAxis, true);
+        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+        var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
         var yBase = Orientation == NTChartOrientation.Vertical ? Math.Max(yMin, 0m) : Math.Max((decimal)xMin, 0m);
 
         var rects = GetBarRects(renderArea, xMin, xMax, yMin, yMax, yBase);

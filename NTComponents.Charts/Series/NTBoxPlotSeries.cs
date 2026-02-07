@@ -33,8 +33,8 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
       if (Data == null || !Data.Any()) return renderArea;
 
       var dataList = Data.ToList();
-      var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
-      var (yMin, yMax) = Chart.GetYRange(EffectiveYAxis, true);
+      var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+      var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
 
       var isHovered = Chart.HoveredSeries == this;
       var hasHover = Chart.HoveredSeries != null;
@@ -76,7 +76,7 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
          var boxValues = BoXValue(item);
 
 
-         float centerPos = Chart.ScaleX(xVal, renderArea, EffectiveXAxis);
+         float centerPos = Chart.ScaleX(xVal, renderArea, Chart.XAxis);
 
          var vFactor = (decimal)visibilityFactor;
 
@@ -87,11 +87,11 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
          decimal animMax = boxValues.Median + (boxValues.Max - boxValues.Median) * easedProgress;
          decimal animMedian = boxValues.Median;
 
-         float minPos = Chart.ScaleY(animMin * vFactor, EffectiveYAxis, renderArea);
-         float q1Pos = Chart.ScaleY(animQ1 * vFactor, EffectiveYAxis, renderArea);
-         float medianPos = Chart.ScaleY(animMedian * vFactor, EffectiveYAxis, renderArea);
-         float q3Pos = Chart.ScaleY(animQ3 * vFactor, EffectiveYAxis, renderArea);
-         float maxPos = Chart.ScaleY(animMax * vFactor, EffectiveYAxis, renderArea);
+         float minPos = Chart.ScaleY(animMin * vFactor, Chart.YAxis, renderArea);
+         float q1Pos = Chart.ScaleY(animQ1 * vFactor, Chart.YAxis, renderArea);
+         float medianPos = Chart.ScaleY(animMedian * vFactor, Chart.YAxis, renderArea);
+         float q3Pos = Chart.ScaleY(animQ3 * vFactor, Chart.YAxis, renderArea);
+         float maxPos = Chart.ScaleY(animMax * vFactor, Chart.YAxis, renderArea);
 
          var isPointHovered = Chart.HoveredSeries == this && Chart.HoveredPointIndex == i;
          var hoverFactor = HoverFactor;
@@ -120,7 +120,7 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
          // Outliers
          if (boxValues.Outliers != null) {
             foreach (var outlier in boxValues.Outliers) {
-               float oy = Chart.ScaleY(outlier * vFactor, EffectiveYAxis, renderArea);
+               float oy = Chart.ScaleY(outlier * vFactor, Chart.YAxis, renderArea);
                RenderPoint(context, centerPos, oy, color);
             }
          }
@@ -152,10 +152,10 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
          var xVal = Chart.GetScaledXValue(XValue.Invoke(item));
          var boxValues = BoXValue(item);
 
-         float centerPos = Chart.ScaleX(xVal, renderArea, EffectiveXAxis);
+         float centerPos = Chart.ScaleX(xVal, renderArea, Chart.XAxis);
 
-         float minPos = Chart.ScaleY(boxValues.Min, EffectiveYAxis, renderArea);
-         float maxPos = Chart.ScaleY(boxValues.Max, EffectiveYAxis, renderArea);
+         float minPos = Chart.ScaleY(boxValues.Min, Chart.YAxis, renderArea);
+         float maxPos = Chart.ScaleY(boxValues.Max, Chart.YAxis, renderArea);
 
          var hitRect = new SKRect(centerPos - boxWidth / 2, Math.Min(minPos, maxPos), centerPos + boxWidth / 2, Math.Max(minPos, maxPos));
 

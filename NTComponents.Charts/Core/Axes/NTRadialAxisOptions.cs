@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Components;
 using SkiaSharp;
 using System.Collections.Generic;
 using NTComponents.Charts.Core.Series;
@@ -23,44 +22,43 @@ public class NTRadialAxisOptions : NTAxisOptions {
 
    public static NTRadialAxisOptions Default => new();
 
-   protected override void OnInitialized() {
-      base.OnInitialized();
-      Chart?.SetRadialAxisOptions(this);
-   }
-
    /// <summary>
    ///    Gets or sets the number of concentric circles to draw.
    /// </summary>
-   [Parameter]
    public int Levels { get; set; } = 5;
 
    /// <summary>
    ///    Gets or sets whether to draw circles or polygons.
    /// </summary>
-   [Parameter]
    public RadialAxisShape Shape { get; set; } = RadialAxisShape.Polygon;
 
    /// <summary>
    ///    Gets or sets the labels for each spoke. If null, the series LabelSelector will be used.
    /// </summary>
-   [Parameter]
    public List<string>? Labels { get; set; }
 
    /// <inheritdoc />
-   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
+   internal override SKRect Measure(NTRenderContext context, SKRect renderArea) {
       if (!Visible) return renderArea;
 
       // Add padding for labels around the perimeter
       float padding = 60 * context.Density;
-      SKRect plotArea = new SKRect(
+      return new SKRect(
           renderArea.Left + padding,
           renderArea.Top + padding,
           renderArea.Right - padding,
           renderArea.Bottom - padding
       );
+   }
+
+   /// <inheritdoc />
+   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
+      if (!Visible) return renderArea;
+
+      var plotArea = Measure(context, renderArea);
 
       var canvas = context.Canvas;
-      
+
       // We need to find the series. Radar charts usually have one series that defines the axis.
       // We can just cast chart to dynamic for now.
       dynamic dChart = Chart;
@@ -77,11 +75,12 @@ public class NTRadialAxisOptions : NTAxisOptions {
 
       decimal max = 1;
       if (radarSeries.MaxValue != null) {
-          max = radarSeries.MaxValue;
-      } else {
-          foreach (var item in dataList) {
-              max = Math.Max(max, radarSeries.ValueSelector(item));
-          }
+         max = radarSeries.MaxValue;
+      }
+      else {
+         foreach (var item in dataList) {
+            max = Math.Max(max, radarSeries.ValueSelector(item));
+         }
       }
       if (max <= 0) max = 1;
 

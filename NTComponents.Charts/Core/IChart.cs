@@ -47,19 +47,28 @@ public interface IChart {
     TnTColor TextColor { get; }
 
     NTTitleOptions? TitleOptions { get; }
+
+
+    public NTXAxisOptions XAxis { get; }
+
+    void RegisterAxis(NTXAxisOptions axis);
+
+    void UnregisterAxis(NTXAxisOptions axis);
+
+    NTYAxisOptions YAxis { get; }
+    NTYAxisOptions? SecondaryYAxis { get; }
+
+    void RegisterAxis(NTYAxisOptions axis);
+
+    void UnregisterAxis(NTYAxisOptions axis);
+
 }
 
 /// <summary>
 ///    Interface for charts that support axes.
 /// </summary>
 public interface IAxisChart : IChart {
-    void SetXAxisOptions(NTAxisOptions options);
-    void SetYAxisOptions(NTAxisOptions options);
-    void SetRadialAxisOptions(NTAxisOptions options);
     void SetTooltip(NTTooltip tooltip);
-
-    List<NTXAxisOptions> GetUniqueXAxes();
-    List<NTYAxisOptions> GetUniqueYAxes();
 
     object? HoveredDataPoint { get; }
     int? HoveredPointIndex { get; }
@@ -80,10 +89,6 @@ public interface IAxisChart : IChart {
 
     List<object> GetAllXValues();
     List<object> GetAllYValues();
-
-    NTXAxisOptions? PrimaryXAxis { get; }
-    NTYAxisOptions? PrimaryYAxis { get; }
-    NTRadialAxisOptions? PrimaryRadialAxis { get; }
 
     double GetScaledXValue(object? originalX);
     decimal GetScaledYValue(object? originalY);

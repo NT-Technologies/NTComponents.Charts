@@ -73,8 +73,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             return renderArea;
         }
 
-        var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
-        var (yMin, yMax) = Chart.GetYRange(EffectiveYAxis, true);
+        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+        var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
 
         var points = GetPoints(renderArea, xMin, xMax, yMin, yMax);
 
@@ -238,8 +238,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             currentYValue *= vFactor * vFactor;
             AnimationCurrentValues[i] = currentYValue;
 
-            var screenXCoord = Chart.ScaleX(xValue, renderArea, EffectiveXAxis);
-            var screenYCoord = Chart.ScaleY(currentYValue, EffectiveYAxis, renderArea);
+            var screenXCoord = Chart.ScaleX(xValue, renderArea, Chart.XAxis);
+            var screenYCoord = Chart.ScaleY(currentYValue, Chart.YAxis, renderArea);
 
             points.Add(new SKPoint(screenXCoord, screenYCoord));
         }
@@ -302,8 +302,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
             aggregatedY *= vFactor * vFactor;
 
-            var screenX = Chart.ScaleX(aggregatedX, renderArea, EffectiveXAxis);
-            var screenY = Chart.ScaleY(aggregatedY, EffectiveYAxis, renderArea);
+            var screenX = Chart.ScaleX(aggregatedX, renderArea, Chart.XAxis);
+            var screenY = Chart.ScaleY(aggregatedY, Chart.YAxis, renderArea);
             points.Add(new SKPoint(screenX, screenY));
         }
 
@@ -388,8 +388,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             return null;
         }
 
-        var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
-        var (yMin, yMax) = Chart.GetYRange(EffectiveYAxis, true);
+        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+        var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
         var points = GetPoints(renderArea, xMin, xMax, yMin, yMax);
         var dataList = Data.ToList();
 

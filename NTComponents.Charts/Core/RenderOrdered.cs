@@ -10,8 +10,8 @@ namespace NTComponents.Charts.Core;
 [EditorBrowsable(EditorBrowsableState.Never)]
 public enum RenderOrdered {
     Title,
+    Legend,
     Axis,
     Series,
-    Legend,
     Tooltip
 }

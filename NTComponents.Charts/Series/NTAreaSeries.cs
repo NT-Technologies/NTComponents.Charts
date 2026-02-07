@@ -29,8 +29,8 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
       var canvas = context.Canvas;
       if (Data == null || !Data.Any()) return renderArea;
 
-      var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
-      var (yMin, yMax) = Chart.GetYRange(EffectiveYAxis, true);
+      var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+      var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
 
       var points = GetAreaPoints(renderArea, xMin, xMax, yMin, yMax);
       if (points.Count < 2) {
@@ -88,8 +88,8 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
          var vFactor = (decimal)VisibilityFactor;
          currentYValue *= vFactor * vFactor;
 
-         var screenXCoord = Chart.ScaleX(xValue, renderArea, EffectiveXAxis);
-         var screenYCoord = Chart.ScaleY(currentYValue, EffectiveYAxis, renderArea);
+         var screenXCoord = Chart.ScaleX(xValue, renderArea, Chart.XAxis);
+         var screenYCoord = Chart.ScaleY(currentYValue, Chart.YAxis, renderArea);
 
          points.Add(new SKPoint(screenXCoord, screenYCoord));
       }
@@ -101,7 +101,7 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
       if (points.Count < 2) return path;
 
       // Close the path to the baseline
-      float baselineCoord = Chart.ScaleY(BaselineValue, EffectiveYAxis, renderArea);
+      float baselineCoord = Chart.ScaleY(BaselineValue, Chart.YAxis, renderArea);
 
       path.LineTo(points.Last().X, baselineCoord);
       path.LineTo(points.First().X, baselineCoord);

@@ -26,15 +26,14 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
    [Parameter]
    public decimal? MaxValue { get; set; }
 
-   /// <summary>
-   ///    Gets or sets the radial axis options for this series.
-   /// </summary>
-   [Parameter]
-   public NTRadialAxisOptions? RadialAxis { get; set; }
 
-   public NTRadialAxisOptions EffectiveRadialAxis => RadialAxis ?? Chart?.PrimaryRadialAxis ?? _defaultRadialAxis;
+   protected override void OnInitialized() {
+      base.OnInitialized();
+   }
 
-   private static readonly NTRadialAxisOptions _defaultRadialAxis = new();
+   protected override void OnParametersSet() {
+      base.OnParametersSet();
+   }
 
    private SKPaint? _fillPaint;
    private SKPaint? _strokePaint;

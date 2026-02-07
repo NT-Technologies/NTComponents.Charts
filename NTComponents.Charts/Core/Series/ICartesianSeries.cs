@@ -32,14 +32,4 @@ public interface ICartesianSeries
    ///    Gets whether the series is effectively visible.
    /// </summary>
    bool IsEffectivelyVisible { get; }
-
-   /// <summary>
-   ///    Gets the X axis options assigned to this series.
-   /// </summary>
-   Axes.NTXAxisOptions EffectiveXAxis { get; }
-
-   /// <summary>
-   ///    Gets the Y axis options assigned to this series.
-   /// </summary>
-   Axes.NTYAxisOptions EffectiveYAxis { get; }
 }

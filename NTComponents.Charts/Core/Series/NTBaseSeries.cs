@@ -336,7 +336,6 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
             OnDataChanged();
             PreviousData = Data;
         }
-        Invalidate();
     }
 
     private void OnVisibilityChanged() {

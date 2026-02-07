@@ -14,22 +14,34 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     public Func<TData, decimal> YValueSelector { get; set; } = default!;
 
     /// <summary>
-    ///     Gets or sets the X axis options.
+    ///    Gets or sets whether to use the secondary Y axis if available.
+    /// </summary>
+    [Parameter]
+    public bool UseSecondaryYAxis { get; set; }
+
+    /// <summary>
+    ///    Gets or sets the X axis to use for this series.
     /// </summary>
     [Parameter]
     public NTXAxisOptions? XAxis { get; set; }
 
     /// <summary>
-    ///    Gets or sets the Y axis options.
+    ///    Gets or sets the Y axis to use for this series.
     /// </summary>
     [Parameter]
     public NTYAxisOptions? YAxis { get; set; }
 
-    public NTXAxisOptions EffectiveXAxis => XAxis ?? Chart?.PrimaryXAxis ?? NTXAxisOptions.Default;
-    public NTYAxisOptions EffectiveYAxis => YAxis ?? Chart?.PrimaryYAxis ?? NTYAxisOptions.Default;
+    public NTXAxisOptions? EffectiveXAxis => XAxis ?? Chart.XAxis;
+    public NTYAxisOptions? EffectiveYAxis => YAxis ?? (UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis);
 
-    NTXAxisOptions ICartesianSeries.EffectiveXAxis => EffectiveXAxis;
-    NTYAxisOptions ICartesianSeries.EffectiveYAxis => EffectiveYAxis;
+
+    protected override void OnInitialized() {
+        base.OnInitialized();
+    }
+
+    protected override void OnParametersSet() {
+        base.OnParametersSet();
+    }
 
     /// <inheritdoc />
     internal override TooltipInfo GetTooltipInfo(TData data) {
@@ -225,8 +237,9 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         if (Interactions.HasFlag(ChartInteractions.XPan) || Interactions.HasFlag(ChartInteractions.YPan)) {
             _isPanning = true;
             _panStartPoint = point;
-            _panStartXRange = Chart.GetXRange(EffectiveXAxis, true);
-            _panStartYRange = Chart.GetYRange(EffectiveYAxis, true);
+            _panStartXRange = Chart.GetXRange(Chart.XAxis, true);
+            var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
+            _panStartYRange = Chart.GetYRange(yAxis, true);
         }
     }
 
@@ -241,7 +254,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
                 var dataDx = dx / Chart.LastPlotArea.Width * xRangeSize;
                 _viewXMin = _panStartXRange.Value.Min + dataDx;
                 _viewXMax = _panStartXRange.Value.Max + dataDx;
-                EffectiveXAxis?.ClearCache();
+                Chart.XAxis?.ClearCache();
             }
 
             if (_panStartYRange.HasValue && Interactions.HasFlag(ChartInteractions.YPan)) {
@@ -249,7 +262,8 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
                 var dataDy = (decimal)(dy / Chart.LastPlotArea.Height) * yRangeSize;
                 _viewYMin = _panStartYRange.Value.Min + dataDy;
                 _viewYMax = _panStartYRange.Value.Max + dataDy;
-                EffectiveYAxis?.ClearCache();
+                var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
+                yAxis?.ClearCache();
             }
         }
     }
@@ -268,18 +282,19 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
 
         var zoomFactor = e.DeltaY > 0 ? 1.1 : 0.9;
 
-        var xVal = Chart.ScaleXInverse(point.X, Chart.LastPlotArea, EffectiveXAxis);
-        var yVal = Chart.ScaleYInverse(point.Y, EffectiveYAxis, Chart.LastPlotArea);
+        var xVal = Chart.ScaleXInverse(point.X, Chart.LastPlotArea, Chart.XAxis);
+        var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
+        var yVal = Chart.ScaleYInverse(point.Y, yAxis, Chart.LastPlotArea);
 
-        var (xMin, xMax) = Chart.GetXRange(EffectiveXAxis, true);
-        var (yMin, yMax) = Chart.GetYRange(EffectiveYAxis, true);
+        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+        var (yMin, yMax) = Chart.GetYRange(yAxis, true);
 
         if (Interactions.HasFlag(ChartInteractions.XZoom)) {
             var newXRange = (xMax - xMin) * zoomFactor;
             var xPct = (xVal - xMin) / (xMax - xMin);
             _viewXMin = xVal - (newXRange * xPct);
             _viewXMax = xVal + (newXRange * (1 - xPct));
-            EffectiveXAxis?.ClearCache();
+            Chart.XAxis?.ClearCache();
         }
 
         if (Interactions.HasFlag(ChartInteractions.YZoom)) {
@@ -287,7 +302,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             var yPct = (decimal)((double)(yVal - yMin) / (double)(yMax - yMin));
             _viewYMin = yVal - (newYRange * yPct);
             _viewYMax = yVal + (newYRange * (1 - yPct));
-            EffectiveYAxis?.ClearCache();
+            yAxis?.ClearCache();
         }
     }
 
@@ -296,8 +311,6 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         _viewXMax = null;
         _viewYMin = null;
         _viewYMax = null;
-        EffectiveXAxis?.ClearCache();
-        EffectiveYAxis?.ClearCache();
     }
 
     public override (double Min, double Max)? GetViewXRange() => (_viewXMin.HasValue && _viewXMax.HasValue) ? (_viewXMin.Value, _viewXMax.Value) : null;
@@ -330,8 +343,6 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         AnimationCurrentValues = null;
         _cachedTotalXRange = null;
         _cachedTotalYRange = null;
-        EffectiveXAxis?.ClearCache();
-        EffectiveYAxis?.ClearCache();
         base.OnDataChanged();
     }
 

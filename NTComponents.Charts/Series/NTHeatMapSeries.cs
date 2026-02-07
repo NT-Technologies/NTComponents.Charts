@@ -79,8 +79,8 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
          float currentHoverFactor = isPointHovered ? 1f : hoverFactor;
          color = color.WithAlpha((byte)(color.Alpha * visibilityFactor * currentHoverFactor));
 
-         float screenXCoord = Chart.ScaleX(xVal, renderArea, EffectiveXAxis);
-         float screenYCoord = Chart.ScaleY(yVal, EffectiveYAxis, renderArea);
+         float screenXCoord = Chart.ScaleX(xVal, renderArea, Chart.XAxis);
+         float screenYCoord = Chart.ScaleY(yVal, Chart.YAxis, renderArea);
 
          float x = screenXCoord;
          float y = screenYCoord;
@@ -132,8 +132,8 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
          var xVal = Chart.GetScaledXValue(XValue.Invoke(item));
          var yVal = Chart.GetScaledYValue(YValueSelector(item));
 
-         float screenXCoord = Chart.ScaleX(xVal, renderArea, EffectiveXAxis);
-         float screenYCoord = Chart.ScaleY(yVal, EffectiveYAxis, renderArea);
+         float screenXCoord = Chart.ScaleX(xVal, renderArea, Chart.XAxis);
+         float screenYCoord = Chart.ScaleY(yVal, Chart.YAxis, renderArea);
 
 
          float x = screenXCoord;
