@@ -34,7 +34,7 @@ public class NTYAxisOptions : NTAxisOptions {
         Chart.RegisterAxis(this);
     }
 
-    private bool IsSecondary(IAxisChart chart) {
+    private bool IsSecondary(IChart chart) {
         return ReferenceEquals(chart.SecondaryYAxis, this);
     }
 

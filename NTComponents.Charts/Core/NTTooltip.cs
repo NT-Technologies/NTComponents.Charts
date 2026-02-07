@@ -10,7 +10,7 @@ namespace NTComponents.Charts.Core;
 public class NTTooltip : ComponentBase, IRenderable, IDisposable {
 
     [CascadingParameter]
-    protected IAxisChart Chart { get; set; } = default!;
+    protected IChart Chart { get; set; } = default!;
 
     /// <summary>
     ///     Gets or sets whether tooltips are enabled.

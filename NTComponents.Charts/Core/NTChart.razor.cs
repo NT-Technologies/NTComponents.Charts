@@ -15,7 +15,7 @@ namespace NTComponents.Charts.Core;
 ///     The base class for all charts in the NTComponents.Charts library.
 /// </summary>
 [CascadingTypeParameter(nameof(TData))]
-public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart where TData : class {
+public partial class NTChart<TData> : TnTDisposableComponentBase, IChart where TData : class {
 
     protected override void OnParametersSet() {
         base.OnParametersSet();
@@ -154,8 +154,8 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     public int? HoveredPointIndex { get; private set; }
     public NTBaseSeries<TData>? HoveredSeries { get; private set; }
 
-    object? IAxisChart.HoveredDataPoint => HoveredDataPoint;
-    ISeries? IAxisChart.HoveredSeries => HoveredSeries;
+    object? IChart.HoveredDataPoint => HoveredDataPoint;
+    ISeries? IChart.HoveredSeries => HoveredSeries;
 
     public bool IsXAxisDateTime {
         get {
@@ -321,19 +321,16 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     }
 
     public (double Min, double Max) GetXRange(NTAxisOptions? axis, bool padded = false) {
-        var uniqueAxes = GetUniqueXAxes();
-        var effectiveAxis = axis ?? uniqueAxes.FirstOrDefault();
-
-        if (effectiveAxis != null && effectiveAxis.CachedXRange.HasValue && padded) {
-            return effectiveAxis.CachedXRange.Value;
+        if (XAxis.CachedXRange.HasValue == true && padded) {  
+            return XAxis.CachedXRange.Value;
         }
 
         foreach (var s in Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible)) {
-            if (ReferenceEquals(s.EffectiveXAxis, effectiveAxis)) {
+            if (ReferenceEquals(s.EffectiveXAxis, XAxis)) {
                 var v = s.GetViewXRange();
                 if (v.HasValue) {
-                    if (effectiveAxis != null && padded)
-                        effectiveAxis.CachedXRange = v.Value;
+                    if (XAxis != null && padded)
+                        XAxis.CachedXRange = v.Value;
                     return v.Value;
                 }
             }
@@ -351,22 +348,22 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
 
             var catRange = Math.Max(1, allX.Count - 1);
             var resultCat = (-catRange * RangePadding, catRange + (catRange * RangePadding));
-            if (effectiveAxis != null)
-                effectiveAxis.CachedXRange = resultCat;
+            if (XAxis != null)
+                XAxis.CachedXRange = resultCat;
             return resultCat;
         }
 
-        var min = (double?)(effectiveAxis?.Min) ?? double.MaxValue;
-        var max = (double?)(effectiveAxis?.Max) ?? double.MinValue;
+        var min = (double?)(XAxis?.Min) ?? double.MaxValue;
+        var max = (double?)(XAxis?.Max) ?? double.MinValue;
 
-        var seriesToConsider = Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible && ReferenceEquals(s.EffectiveXAxis, effectiveAxis));
+        var seriesToConsider = Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible && ReferenceEquals(s.EffectiveXAxis, XAxis));
 
         foreach (var s in seriesToConsider) {
             var seriesRange = s.GetXRange();
             if (seriesRange.HasValue) {
-                if (effectiveAxis?.Min == null)
+                if (XAxis?.Min == null)
                     min = Math.Min(min, seriesRange.Value.Min);
-                if (effectiveAxis?.Max == null)
+                if (XAxis?.Max == null)
                     max = Math.Max(max, seriesRange.Value.Max);
             }
         }
@@ -376,24 +373,24 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         if (max == double.MinValue)
             max = 1;
 
-        if (!padded || (effectiveAxis?.Min != null && effectiveAxis?.Max != null)) {
+        if (!padded || (XAxis?.Min != null && XAxis?.Max != null)) {
             var resultNoPad = (min, max);
-            if (effectiveAxis != null && padded)
-                effectiveAxis.CachedXRange = resultNoPad;
+            if (XAxis != null && padded)
+                XAxis.CachedXRange = resultNoPad;
             return resultNoPad;
         }
 
-        var (niceMin, niceMax, _) = (effectiveAxis ?? NTXAxisOptions.Default).CalculateNiceScaling(min, max, (effectiveAxis ?? NTXAxisOptions.Default).MaxTicks);
-        var result = (niceMin, niceMax);
-        if (effectiveAxis != null)
-            effectiveAxis.CachedXRange = result;
+        var axisForScaling = XAxis ?? NTXAxisOptions.Default;
+        var scaling = axisForScaling.CalculateNiceScaling(min, max, axisForScaling.MaxTicks);
+        var result = (scaling.niceMin, scaling.niceMax);
+        if (XAxis != null)
+            XAxis.CachedXRange = result;
         return result;
     }
 
 
     public (decimal Min, decimal Max) GetYRange(NTAxisOptions? axis, bool padded = false) {
-        var uniqueAxes = GetUniqueYAxes();
-        var effectiveAxis = axis ?? uniqueAxes.FirstOrDefault();
+        var effectiveAxis = axis ?? YAxis;
 
         if (effectiveAxis != null && effectiveAxis.CachedYRange.HasValue && padded) {
             return effectiveAxis.CachedYRange.Value;
@@ -464,8 +461,9 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
             return range;
         }
 
-        var (niceMinY, niceMaxY, _) = (effectiveAxis ?? NTYAxisOptions.Default).CalculateNiceScaling((double)min, (double)max, (effectiveAxis ?? NTYAxisOptions.Default).MaxTicks);
-        var result = ((decimal)niceMinY, (decimal)niceMaxY);
+        var axisForScalingY = effectiveAxis ?? NTYAxisOptions.Default;
+        var scalingY = axisForScalingY.CalculateNiceScaling((double)min, (double)max, axisForScalingY.MaxTicks);
+        var result = ((decimal)scalingY.niceMin, (decimal)scalingY.niceMax);
         if (effectiveAxis != null)
             effectiveAxis.CachedYRange = result;
         return result;
@@ -487,7 +485,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         StateHasChanged();
     }
 
-    public float ScaleX(double x, SKRect plotArea) {
+    public float ScaleX(double x, SKRect plotArea, NTAxisOptions? axis = null) {
         var (min, max) = GetXRange(axis, true);
         var scale = axis?.Scale ?? NTAxisScale.Linear;
 
@@ -512,9 +510,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         return (float)(left + (t * width));
     }
 
-    public double ScaleXInverse(float coord, SKRect plotArea) {
-        var (min, max) = GetXRange(null, true);
-        var scale = XAxis.Scale;
+    public double ScaleXInverse(float coord, SKRect plotArea, NTAxisOptions? axis = null) {
+        axis ??= XAxis;
+        var (min, max) = GetXRange(axis, true);
+        var scale = axis.Scale;
 
         const float p = 3f;
         double t;
@@ -530,9 +529,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         return min + (t * (max - min));
     }
 
-    public float ScaleY(decimal y, SKRect plotArea) {
-        var (min, max) = GetYRange(YAxis, true);
-        var scale = YAxis.Scale;
+    public float ScaleY(decimal y, NTAxisOptions? axis, SKRect plotArea) {
+        axis ??= YAxis;
+        var (min, max) = GetYRange(axis, true);
+        var scale = axis.Scale;
 
         double t;
         if (scale == NTAxisScale.Logarithmic) {
@@ -558,9 +558,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
     /// <summary>
     ///     Converts a screen coordinate back to a data Y value.
     /// </summary>
-    public decimal ScaleYInverse(float coord, SKRect plotArea) {
-        var (min, max) = GetYRange(YAxis, true);
-        var scale = YAxis.Scale;
+    public decimal ScaleYInverse(float coord, NTAxisOptions? axis, SKRect plotArea) {
+        axis ??= YAxis;
+        var (min, max) = GetYRange(axis, true);
+        var scale = axis.Scale;
 
         const float p = 3f;
         double t;
@@ -631,13 +632,13 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
         }
     }
 
-    // IAxisChart implementation
-    void IAxisChart.SetTooltip(NTTooltip tooltip) => SetTooltip(tooltip);
+    // IChart implementation
+    void IChart.SetTooltip(NTTooltip tooltip) => SetTooltip(tooltip);
 
-    (double Min, double Max) IAxisChart.GetXRange(NTAxisOptions? axis, bool padded) => GetXRange(axis, padded);
-    (decimal Min, decimal Max) IAxisChart.GetYRange(NTAxisOptions? axis, bool padded) => GetYRange(axis, padded);
+    (double Min, double Max) IChart.GetXRange(NTAxisOptions? axis, bool padded) => GetXRange(axis, padded);
+    (decimal Min, decimal Max) IChart.GetYRange(NTAxisOptions? axis, bool padded) => GetYRange(axis, padded);
 
-    bool IAxisChart.HasViewRange(NTAxisOptions axis) {
+    bool IChart.HasViewRange(NTAxisOptions axis) {
         foreach (var s in Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible)) {
             if (ReferenceEquals(s.EffectiveXAxis, axis) && s.GetViewXRange().HasValue)
                 return true;
@@ -661,7 +662,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
 
     private NTAxisOptions? _radialAxisComponent;
     private NTTooltip? _tooltipComponent;
-
+    private ChartCoordinateSystem _chartCoordinateSystem;
     /// <summary>
     ///    Validates the current state of the chart and its components.
     /// </summary>
@@ -676,12 +677,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
             throw new InvalidOperationException("All series in the chart must use the same coordinate system.");
         }
 
-        var coordinateSystem = Series[0].CoordinateSystem;
-        if (!Series.All(s => s.CoordinateSystem == coordinateSystem)) {
+        _chartCoordinateSystem = Series[0].CoordinateSystem;
+        if (!Series.All(s => s.CoordinateSystem == _chartCoordinateSystem)) {
             throw new InvalidOperationException("All series in the chart must use the same coordinate system.");
         }
 
-        if (coordinateSystem == ChartCoordinateSystem.Cartesian) {
+        if (_chartCoordinateSystem == ChartCoordinateSystem.Cartesian) {
             var cartesianSeries = Series.Select(s => s as NTCartesianSeries<TData>).Where(s => s is not null).ToArray();
             if (cartesianSeries.Length != Series.Count) {
                 throw new InvalidOperationException("All series must be of type NTCartesianSeries when using Cartesian coordinate system.");
@@ -947,26 +948,30 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
             right: info.Width - (Margin.Right * context.Density),
             bottom: info.Height - (Margin.Bottom * context.Density));
 
-        foreach (var order in Enum.GetValues<RenderOrdered>()) {
-            if (order == RenderOrdered.Axis) {
+        foreach (var order in Enum.GetValues<RenderOrdered>().Where(o => o is RenderOrdered.Title or RenderOrdered.Legend or RenderOrdered.Axis or RenderOrdered.Series)) {
+
+            if (order == RenderOrdered.Axis && _chartCoordinateSystem == ChartCoordinateSystem.Cartesian) {
 
                 var axisRenderArea = renderArea;
-                foreach (var axis in _renderablesByOrder[order].OfType<NTAxisOptions>()) {
+                foreach (var axis in _renderablesByOrder[order].OfType<NTAxisOptions>().OrderBy(AxisRenderOrder)) {
                     axisRenderArea = axis.Measure(context, axisRenderArea);
-
-                    using var p1 = new SKPaint() {
-                        Color = SKColors.Red
-                    };
-
-                    canvas.DrawRect(axisRenderArea, p1);
                 }
-                context.PlotArea = axisRenderArea;
-                LastPlotArea = axisRenderArea;
+                var xAxisArea = new SKRect(axisRenderArea.Left, renderArea.Top, axisRenderArea.Right, renderArea.Bottom);
+                XAxis.Render(context, xAxisArea);
+                var yAxisArea = new SKRect(renderArea.Left, axisRenderArea.Top, renderArea.Right, axisRenderArea.Bottom);
+                YAxis.Render(context, yAxisArea);
+
+                if (SecondaryYAxis is not null) {
+                    var secondaryYAxisArea = new SKRect(renderArea.Left, axisRenderArea.Top, axisRenderArea.Right, axisRenderArea.Bottom);
+                    SecondaryYAxis.Render(context, secondaryYAxisArea);
+                }
+
+                renderArea = axisRenderArea;
             }
-
-
-            foreach (var renderable in _renderablesByOrder[order]) {
-                renderArea = renderable.Render(context, renderArea);
+            else {
+                foreach (var renderable in _renderablesByOrder[order]) {
+                    renderArea = renderable.Render(context, renderArea);
+                }
             }
         }
 
@@ -975,7 +980,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
             Color = SKColors.Green
         };
 
-        canvas.DrawRect(renderArea, p2);
+        //canvas.DrawRect(renderArea, p2);
         // Pass 9: Update cursor if needed
         //var currentHover = HoveredSeries != null || _isHoveringLegend || Series.Any(s => s.IsPanning);
         //if (_isHovering != currentHover)
@@ -990,6 +995,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IAxisChart whe
             RenderDebugInfo(context);
         }
     }
+
+    private int AxisRenderOrder(NTAxisOptions axis) => axis switch {
+        NTXAxisOptions => 0,
+        NTYAxisOptions => 1,
+        _ => 2
+    };
 
     private void PerformHitTesting(NTRenderContext context, SKRect plotArea) {
         if (!LastMousePosition.HasValue) {

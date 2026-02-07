@@ -62,12 +62,6 @@ public interface IChart {
 
     void UnregisterAxis(NTYAxisOptions axis);
 
-}
-
-/// <summary>
-///    Interface for charts that support axes.
-/// </summary>
-public interface IAxisChart : IChart {
     void SetTooltip(NTTooltip tooltip);
 
     object? HoveredDataPoint { get; }
@@ -83,6 +77,9 @@ public interface IAxisChart : IChart {
 
     float ScaleX(double x, SKRect plotArea, NTAxisOptions? axis = null);
     float ScaleY(decimal y, NTAxisOptions? axis, SKRect plotArea);
+
+    double ScaleXInverse(float coord, SKRect plotArea, NTAxisOptions? axis = null);
+    decimal ScaleYInverse(float coord, NTAxisOptions? axis, SKRect plotArea);
 
     bool IsCategoricalX { get; }
     bool IsCategoricalY { get; }

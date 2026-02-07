@@ -69,11 +69,12 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     /// <inheritdoc />
     public override SKRect Render(NTRenderContext context, SKRect renderArea) {
         var canvas = context.Canvas;
-        if (Data == null || !Data.Any()) {
+        if (Data?.Any() != true) {
             return renderArea;
         }
 
         var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+        Console.WriteLine($"X Range: {xMin} to {xMax}");
         var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
 
         var points = GetPoints(renderArea, xMin, xMax, yMin, yMax);

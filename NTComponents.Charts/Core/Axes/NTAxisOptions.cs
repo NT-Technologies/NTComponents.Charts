@@ -11,7 +11,7 @@ namespace NTComponents.Charts.Core.Axes;
 public abstract class NTAxisOptions : ComponentBase, IRenderable {
 
     [CascadingParameter]
-    protected IAxisChart Chart { get; set; } = default!;
+    protected IChart Chart { get; set; } = default!;
 
     public virtual void Dispose() {
         Chart?.UnregisterRenderable(this);
@@ -103,7 +103,7 @@ public abstract class NTAxisOptions : ComponentBase, IRenderable {
         CachedYRange = null;
     }
 
-    internal void AddOwner(IAxisChart chart) {
+    internal void AddOwner(IChart chart) {
         ArgumentNullException.ThrowIfNull(chart);
         if (ReferenceEquals(Chart, chart)) {
             return;
