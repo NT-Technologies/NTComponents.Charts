@@ -194,121 +194,72 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     }
 
     protected List<SKPoint> GetPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {
-        var dataList = Data.ToList();
-        var points = new List<SKPoint>();
-        var progress = GetAnimationProgress();
-        var easedProgress = (decimal)BackEase(progress);
-
-        // Filter and aggregate if needed
-        if (EnableAggregation && dataList.Count > AggregationThreshold) {
-            var visibleData = new List<(TData Data, int Index)>();
-            for (int i = 0; i < dataList.Count; i++) {
-                var xVal = Chart.GetScaledXValue(XValue.Invoke(dataList[i]));
-                if (xVal >= xMin - (xMax - xMin) * 0.1 && xVal <= xMax + (xMax - xMin) * 0.1) {
-                    visibleData.Add((dataList[i], i));
-                }
-            }
-
-            if (visibleData.Count > AggregationThreshold) {
-                return GetAggregatedPoints(visibleData, renderArea, xMin, xMax, yMin, yMax);
-            }
-
-            // If visible count is small, fall back to normal rendering for those points
-            dataList = visibleData.Select(x => x.Data).ToList();
-        }
-
-        if (AnimationCurrentValues == null || AnimationCurrentValues.Length != dataList.Count) {
-            AnimationCurrentValues = new decimal[dataList.Count];
-        }
-
-        for (var i = 0; i < dataList.Count; i++) {
-            var originalX = XValue.Invoke(dataList[i]);
-            var xValue = Chart.GetScaledXValue(originalX);
-            var targetYValue = YValueSelector(dataList[i]);
-
-
-            var startYValue = (AnimationStartValues != null && i < AnimationStartValues.Length)
-                ? AnimationStartValues[i]
-                : yMin;
-
-            var currentYValue = startYValue + ((targetYValue - startYValue) * easedProgress);
-
-            // We use VisibilityFactor^2 for the value to ensure it shrinks to zero 
-            // even as the axis range (which uses linear VisibilityFactor) also shrinks.
-            var vFactor = (decimal)VisibilityFactor;
-            currentYValue *= vFactor * vFactor;
-            AnimationCurrentValues[i] = currentYValue;
-
-            var screenXCoord = Chart.ScaleX(xValue, renderArea, Chart.XAxis);
-            var screenYCoord = Chart.ScaleY(currentYValue, Chart.YAxis, renderArea);
-
-            points.Add(new SKPoint(screenXCoord, screenYCoord));
-        }
-        return points;
+        
+        return [];
     }
 
     private List<SKPoint> GetAggregatedPoints(List<(TData Data, int Index)> visibleData, SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {
-        var points = new List<SKPoint>();
-        if (AggregationThreshold <= 0) return points;
+        //var points = new List<SKPoint>();
+        //if (AggregationThreshold <= 0) return points;
 
-        var buckets = new List<(TData Data, int Index)>[AggregationThreshold];
-        for (int i = 0; i < buckets.Length; i++) buckets[i] = [];
+        //var buckets = new List<(TData Data, int Index)>[AggregationThreshold];
+        //for (int i = 0; i < buckets.Length; i++) buckets[i] = [];
 
-        double range = xMax - xMin;
-        if (range <= 0) range = 1;
+        //double range = xMax - xMin;
+        //if (range <= 0) range = 1;
 
-        foreach (var item in visibleData) {
-            var xVal = Chart.GetScaledXValue(XValue?.Invoke(item.Data));
-            int bucketIndex = (int)((xVal - xMin) / range * (AggregationThreshold - 1));
-            bucketIndex = Math.Clamp(bucketIndex, 0, AggregationThreshold - 1);
-            buckets[bucketIndex].Add(item);
-        }
+        //foreach (var item in visibleData) {
+        //    var xVal = Chart.GetScaledXValue(XValue?.Invoke(item.Data));
+        //    int bucketIndex = (int)((xVal - xMin) / range * (AggregationThreshold - 1));
+        //    bucketIndex = Math.Clamp(bucketIndex, 0, AggregationThreshold - 1);
+        //    buckets[bucketIndex].Add(item);
+        //}
 
-        var vFactor = (decimal)VisibilityFactor;
+        //var vFactor = (decimal)VisibilityFactor;
 
-        foreach (var bucket in buckets) {
-            if (bucket.Count == 0) continue;
+        //foreach (var bucket in buckets) {
+        //    if (bucket.Count == 0) continue;
 
-            decimal aggregatedY = 0;
-            double aggregatedX = 0;
+        //    decimal aggregatedY = 0;
+        //    double aggregatedX = 0;
 
-            if (AggregationMode == AggregationMode.Average) {
-                aggregatedY = bucket.Average(x => YValueSelector!(x.Data));
-                aggregatedX = bucket.Average(x => Chart.GetScaledXValue(XValue?.Invoke(x.Data)));
-            }
+        //    if (AggregationMode == AggregationMode.Average) {
+        //        aggregatedY = bucket.Average(x => YValueSelector!(x.Data));
+        //        aggregatedX = bucket.Average(x => Chart.GetScaledXValue(XValue?.Invoke(x.Data)));
+        //    }
 
-            else if (AggregationMode == AggregationMode.Sum) {
-                aggregatedY = bucket.Sum(x => YValueSelector!(x.Data));
-                aggregatedX = bucket.Average(x => Chart.GetScaledXValue(XValue?.Invoke(x.Data)));
-            }
+        //    else if (AggregationMode == AggregationMode.Sum) {
+        //        aggregatedY = bucket.Sum(x => YValueSelector!(x.Data));
+        //        aggregatedX = bucket.Average(x => Chart.GetScaledXValue(XValue?.Invoke(x.Data)));
+        //    }
 
-            else if (AggregationMode == AggregationMode.Min) {
-                aggregatedY = bucket.Min(x => YValueSelector!(x.Data));
-                var best = bucket.First(x => YValueSelector!(x.Data) == aggregatedY);
-                aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(best.Data));
-            }
+        //    else if (AggregationMode == AggregationMode.Min) {
+        //        aggregatedY = bucket.Min(x => YValueSelector!(x.Data));
+        //        var best = bucket.First(x => YValueSelector!(x.Data) == aggregatedY);
+        //        aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(best.Data));
+        //    }
 
-            else if (AggregationMode == AggregationMode.Max) {
-                aggregatedY = bucket.Max(x => YValueSelector!(x.Data));
-                var best = bucket.First(x => YValueSelector!(x.Data) == aggregatedY);
-                aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(best.Data));
-            }
+        //    else if (AggregationMode == AggregationMode.Max) {
+        //        aggregatedY = bucket.Max(x => YValueSelector!(x.Data));
+        //        var best = bucket.First(x => YValueSelector!(x.Data) == aggregatedY);
+        //        aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(best.Data));
+        //    }
 
-            else {
-                var mid = bucket[bucket.Count / 2];
-                aggregatedY = YValueSelector!(mid.Data);
-                aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(mid.Data));
-            }
+        //    else {
+        //        var mid = bucket[bucket.Count / 2];
+        //        aggregatedY = YValueSelector!(mid.Data);
+        //        aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(mid.Data));
+        //    }
 
 
-            aggregatedY *= vFactor * vFactor;
+        //    aggregatedY *= vFactor * vFactor;
 
-            var screenX = Chart.ScaleX(aggregatedX, renderArea, Chart.XAxis);
-            var screenY = Chart.ScaleY(aggregatedY, Chart.YAxis, renderArea);
-            points.Add(new SKPoint(screenX, screenY));
-        }
+        //    var screenX = Chart.ScaleX(aggregatedX, renderArea, Chart.XAxis);
+        //    var screenY = Chart.ScaleY(aggregatedY, Chart.YAxis, renderArea);
+        //    points.Add(new SKPoint(screenX, screenY));
+        //}
 
-        return points;
+        return [];
     }
 
     protected SKPath BuildPath(List<SKPoint> points) {

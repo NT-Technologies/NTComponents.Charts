@@ -28,75 +28,7 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
    private SKPaint? _cellPaint;
 
    public override SKRect Render(NTRenderContext context, SKRect renderArea) {
-      var canvas = context.Canvas;
-      if (Data == null || !Data.Any()) return renderArea;
-
-      var dataList = Data.ToList();
-      var allX = Chart.GetAllXValues();
-      var allY = Chart.GetAllYValues();
-
-      if (!allX.Any() || !allY.Any()) return renderArea;
-
-      float cellWidth = renderArea.Width / allX.Count;
-      float cellHeight = renderArea.Height / allY.Count;
-
-      decimal minWeight = dataList.Min(WeightSelector);
-      decimal maxWeight = dataList.Max(WeightSelector);
-      decimal weightRange = maxWeight - minWeight;
-
-      var skMinColor = Chart.GetThemeColor(MinColor);
-      var skMaxColor = Chart.GetThemeColor(MaxColor);
-
-      var visibilityFactor = VisibilityFactor;
-      var hoverFactor = HoverFactor;
-
-      _cellPaint ??= new SKPaint {
-         Style = SKPaintStyle.Fill,
-         IsAntialias = true
-      };
-
-      for (int i = 0; i < dataList.Count; i++) {
-         var item = dataList[i];
-         var xVal = Chart.GetScaledXValue(XValue.Invoke(item));
-         var yVal = Chart.GetScaledYValue(YValueSelector(item));
-         var weight = WeightSelector(item);
-
-
-         float t = weightRange > 0 ? (float)((weight - minWeight) / weightRange) : 1.0f;
-         var baseColor = InterpolateColor(skMinColor, skMaxColor, t);
-
-         var args = new NTDataPointRenderArgs<TData> {
-            Data = item,
-            Index = i,
-            Color = baseColor,
-            GetThemeColor = Chart.GetThemeColor
-         };
-         OnDataPointRender?.Invoke(args);
-
-         var color = args.Color ?? baseColor;
-         var isPointHovered = Chart.HoveredSeries == this && Chart.HoveredPointIndex == i;
-
-         float currentHoverFactor = isPointHovered ? 1f : hoverFactor;
-         color = color.WithAlpha((byte)(color.Alpha * visibilityFactor * currentHoverFactor));
-
-         float screenXCoord = Chart.ScaleX(xVal, renderArea, Chart.XAxis);
-         float screenYCoord = Chart.ScaleY(yVal, Chart.YAxis, renderArea);
-
-         float x = screenXCoord;
-         float y = screenYCoord;
-
-         var cellRect = new SKRect(x - cellWidth / 2, y - cellHeight / 2, x + cellWidth / 2, y + cellHeight / 2);
-         cellRect.Inflate(-cellWidth * CellPadding / 2, -cellHeight * CellPadding / 2);
-
-         _cellPaint.Color = color;
-         canvas.DrawRect(cellRect, _cellPaint);
-
-         if (ShowDataLabels) {
-            var labelColor = args.DataLabelColor;
-            var labelSize = args.DataLabelSize ?? DataLabelSize;
-            RenderDataLabel(context, x, y + (5 * context.Density), weight, renderArea, labelColor, labelSize);
-         }
-      }
+    
 
       return renderArea;
    }
@@ -118,30 +50,7 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
    }
 
    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
-      if (Data == null || !Data.Any()) return null;
-      var dataList = Data.ToList();
-      var allX = Chart.GetAllXValues();
-      var allY = Chart.GetAllYValues();
-      if (!allX.Any() || !allY.Any()) return null;
-
-      float cellWidth = renderArea.Width / allX.Count;
-      float cellHeight = renderArea.Height / allY.Count;
-
-      for (int i = 0; i < dataList.Count; i++) {
-         var item = dataList[i];
-         var xVal = Chart.GetScaledXValue(XValue.Invoke(item));
-         var yVal = Chart.GetScaledYValue(YValueSelector(item));
-
-         float screenXCoord = Chart.ScaleX(xVal, renderArea, Chart.XAxis);
-         float screenYCoord = Chart.ScaleY(yVal, Chart.YAxis, renderArea);
-
-
-         float x = screenXCoord;
-         float y = screenYCoord;
-
-         var cellRect = new SKRect(x - cellWidth / 2, y - cellHeight / 2, x + cellWidth / 2, y + cellHeight / 2);
-         if (cellRect.Contains(point)) return (i, item);
-      }
+  
 
       return null;
    }

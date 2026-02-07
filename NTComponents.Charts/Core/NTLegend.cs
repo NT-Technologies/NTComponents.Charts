@@ -59,13 +59,13 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
         if (Chart is null) {
             throw new ArgumentNullException(nameof(Chart), $"Legend must be used within a {nameof(NTChart<TData>)}.");
         }
-        Chart.SetLegend(this);
+        Chart.RegisterLegend(this);
         Chart.RegisterRenderable(this);
     }
 
     public void Dispose() {
         _font?.Dispose();
-        Chart?.RemoveLegend(this);
+        Chart?.UnregisterLegend(this);
         Chart?.UnregisterRenderable(this);
     }
 

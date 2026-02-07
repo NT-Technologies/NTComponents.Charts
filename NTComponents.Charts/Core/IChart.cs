@@ -1,7 +1,8 @@
+using NTComponents.Charts.Core.Axes;
+using NTComponents.Charts.Core.Series;
+using NTComponents.Core;
 using SkiaSharp;
 using System.Collections.Generic;
-using NTComponents.Charts.Core.Axes;
-using NTComponents.Core;
 
 namespace NTComponents.Charts.Core;
 
@@ -18,7 +19,7 @@ public interface ISeries : IRenderable {
 /// <summary>
 ///     Common interface for all charts.
 /// </summary>
-public interface IChart {
+public interface IChart<TData> where TData : class {
     /// <summary>
     ///     Gets the density of the screen.
     /// </summary>
@@ -49,37 +50,35 @@ public interface IChart {
     NTTitleOptions? TitleOptions { get; }
 
 
-    public NTXAxisOptions XAxis { get; }
+    public NTXAxisOptions<TData> XAxis { get; }
 
-    void RegisterAxis(NTXAxisOptions axis);
+    void RegisterAxis(NTXAxisOptions<TData> axis);
 
-    void UnregisterAxis(NTXAxisOptions axis);
+    void UnregisterAxis(NTXAxisOptions<TData> axis);
 
-    NTYAxisOptions YAxis { get; }
-    NTYAxisOptions? SecondaryYAxis { get; }
+    NTYAxisOptions<TData> YAxis { get; }
+    NTYAxisOptions<TData>? SecondaryYAxis { get; }
 
-    void RegisterAxis(NTYAxisOptions axis);
+    void RegisterAxis(NTYAxisOptions<TData> axis);
 
-    void UnregisterAxis(NTYAxisOptions axis);
+    void UnregisterAxis(NTYAxisOptions<TData> axis);
 
-    void SetTooltip(NTTooltip tooltip);
-
-    object? HoveredDataPoint { get; }
+    TData? HoveredDataPoint { get; }
     int? HoveredPointIndex { get; }
-    ISeries? HoveredSeries { get; }
+    NTBaseSeries<TData>? HoveredSeries { get; }
     SKPoint? LastMousePosition { get; }
 
     TnTColor TooltipBackgroundColor { get; }
     TnTColor TooltipTextColor { get; }
 
-    (double Min, double Max) GetXRange(NTAxisOptions? axis, bool padded);
-    (decimal Min, decimal Max) GetYRange(NTAxisOptions? axis, bool padded);
+    (double Min, double Max) GetXRange(NTAxisOptions<TData>? axis, bool padded);
+    (decimal Min, decimal Max) GetYRange(NTAxisOptions<TData>? axis, bool padded);
 
-    float ScaleX(double x, SKRect plotArea, NTAxisOptions? axis = null);
-    float ScaleY(decimal y, NTAxisOptions? axis, SKRect plotArea);
+    float ScaleX(double x, SKRect plotArea);
+    float ScaleY(decimal y,  SKRect plotArea);
 
-    double ScaleXInverse(float coord, SKRect plotArea, NTAxisOptions? axis = null);
-    decimal ScaleYInverse(float coord, NTAxisOptions? axis, SKRect plotArea);
+    double ScaleXInverse(float coord, SKRect plotArea);
+    decimal ScaleYInverse(float coord, SKRect plotArea);
 
     bool IsCategoricalX { get; }
     bool IsCategoricalY { get; }
@@ -92,5 +91,5 @@ public interface IChart {
 
     bool IsXAxisDateTime { get; }
 
-    bool HasViewRange(NTAxisOptions axis);
+    bool HasViewRange(NTAxisOptions<TData> axis);
 }

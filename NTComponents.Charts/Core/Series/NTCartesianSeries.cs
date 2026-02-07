@@ -19,30 +19,6 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     [Parameter]
     public bool UseSecondaryYAxis { get; set; }
 
-    /// <summary>
-    ///    Gets or sets the X axis to use for this series.
-    /// </summary>
-    [Parameter]
-    public NTXAxisOptions? XAxis { get; set; }
-
-    /// <summary>
-    ///    Gets or sets the Y axis to use for this series.
-    /// </summary>
-    [Parameter]
-    public NTYAxisOptions? YAxis { get; set; }
-
-    public NTXAxisOptions? EffectiveXAxis => XAxis ?? Chart.XAxis;
-    public NTYAxisOptions? EffectiveYAxis => YAxis ?? (UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis);
-
-
-    protected override void OnInitialized() {
-        base.OnInitialized();
-    }
-
-    protected override void OnParametersSet() {
-        base.OnParametersSet();
-    }
-
     /// <inheritdoc />
     internal override TooltipInfo GetTooltipInfo(TData data) {
         var xValue = XValue.Invoke(data);
@@ -271,39 +247,39 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     public override void HandleMouseUp(MouseEventArgs e) => _isPanning = false;
 
     public override void HandleMouseWheel(WheelEventArgs e) {
-        if ((!Interactions.HasFlag(ChartInteractions.XZoom) && !Interactions.HasFlag(ChartInteractions.YZoom)) || Chart.LastPlotArea == default) {
-            return;
-        }
+        //if ((!Interactions.HasFlag(ChartInteractions.XZoom) && !Interactions.HasFlag(ChartInteractions.YZoom)) || Chart.LastPlotArea == default) {
+        //    return;
+        //}
 
-        var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
-        if (!Chart.LastPlotArea.Contains(point)) {
-            return;
-        }
+        //var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
+        //if (!Chart.LastPlotArea.Contains(point)) {
+        //    return;
+        //}
 
-        var zoomFactor = e.DeltaY > 0 ? 1.1 : 0.9;
+        //var zoomFactor = e.DeltaY > 0 ? 1.1 : 0.9;
 
-        var xVal = Chart.ScaleXInverse(point.X, Chart.LastPlotArea, Chart.XAxis);
-        var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
-        var yVal = Chart.ScaleYInverse(point.Y, yAxis, Chart.LastPlotArea);
+        //var xVal = Chart.ScaleXInverse(point.X, Chart.LastPlotArea, Chart.XAxis);
+        //var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
+        //var yVal = Chart.ScaleYInverse(point.Y, yAxis, Chart.LastPlotArea);
 
-        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
-        var (yMin, yMax) = Chart.GetYRange(yAxis, true);
+        //var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+        //var (yMin, yMax) = Chart.GetYRange(yAxis, true);
 
-        if (Interactions.HasFlag(ChartInteractions.XZoom)) {
-            var newXRange = (xMax - xMin) * zoomFactor;
-            var xPct = (xVal - xMin) / (xMax - xMin);
-            _viewXMin = xVal - (newXRange * xPct);
-            _viewXMax = xVal + (newXRange * (1 - xPct));
-            Chart.XAxis?.ClearCache();
-        }
+        //if (Interactions.HasFlag(ChartInteractions.XZoom)) {
+        //    var newXRange = (xMax - xMin) * zoomFactor;
+        //    var xPct = (xVal - xMin) / (xMax - xMin);
+        //    _viewXMin = xVal - (newXRange * xPct);
+        //    _viewXMax = xVal + (newXRange * (1 - xPct));
+        //    Chart.XAxis?.ClearCache();
+        //}
 
-        if (Interactions.HasFlag(ChartInteractions.YZoom)) {
-            var newYRange = (yMax - yMin) * (decimal)zoomFactor;
-            var yPct = (decimal)((double)(yVal - yMin) / (double)(yMax - yMin));
-            _viewYMin = yVal - (newYRange * yPct);
-            _viewYMax = yVal + (newYRange * (1 - yPct));
-            yAxis?.ClearCache();
-        }
+        //if (Interactions.HasFlag(ChartInteractions.YZoom)) {
+        //    var newYRange = (yMax - yMin) * (decimal)zoomFactor;
+        //    var yPct = (decimal)((double)(yVal - yMin) / (double)(yMax - yMin));
+        //    _viewYMin = yVal - (newYRange * yPct);
+        //    _viewYMax = yVal + (newYRange * (1 - yPct));
+        //    yAxis?.ClearCache();
+        //}
     }
 
     public override void ResetView() {

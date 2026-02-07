@@ -88,8 +88,8 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
          var vFactor = (decimal)VisibilityFactor;
          currentYValue *= vFactor * vFactor;
 
-         var screenXCoord = Chart.ScaleX(xValue, renderArea, Chart.XAxis);
-         var screenYCoord = Chart.ScaleY(currentYValue, Chart.YAxis, renderArea);
+         var screenXCoord = Chart.ScaleX(xValue, renderArea);
+         var screenYCoord = Chart.ScaleY(currentYValue, renderArea);
 
          points.Add(new SKPoint(screenXCoord, screenYCoord));
       }
@@ -101,7 +101,7 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
       if (points.Count < 2) return path;
 
       // Close the path to the baseline
-      float baselineCoord = Chart.ScaleY(BaselineValue, Chart.YAxis, renderArea);
+      float baselineCoord = Chart.ScaleY(BaselineValue, renderArea);
 
       path.LineTo(points.Last().X, baselineCoord);
       path.LineTo(points.First().X, baselineCoord);

@@ -7,10 +7,10 @@ namespace NTComponents.Charts.Core;
 /// <summary>
 ///     Component for configuring chart tooltips.
 /// </summary>
-public class NTTooltip : ComponentBase, IRenderable, IDisposable {
+public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TData : class {
 
     [CascadingParameter]
-    protected IChart Chart { get; set; } = default!;
+    protected IChart<TData> Chart { get; set; } = default!;
 
     /// <summary>
     ///     Gets or sets whether tooltips are enabled.
@@ -49,7 +49,6 @@ public class NTTooltip : ComponentBase, IRenderable, IDisposable {
         if (Chart is null) {
             return;
         }
-        Chart.SetTooltip(this);
         Chart.RegisterRenderable(this);
     }
 

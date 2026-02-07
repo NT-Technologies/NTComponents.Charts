@@ -183,7 +183,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
 
     protected virtual void Dispose(bool disposing) {
         if (disposing) {
-            Chart?.RemoveSeries(this);
+            Chart?.UnregisterSeries(this);
             Chart?.UnregisterRenderable(this);
         }
     }

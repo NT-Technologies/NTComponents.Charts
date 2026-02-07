@@ -4,13 +4,13 @@ using System.Diagnostics;
 
 namespace NTComponents.Charts.Core;
 
-internal class NTTitle : IRenderable {
-    private readonly IChart _chart;
+internal class NTTitle<TData> : IRenderable where TData : class {
+    private readonly IChart<TData> _chart;
     private SKPoint _point = SKPoint.Empty;
     private SKFont _titleFont = default!;
     private SKPaint _titlePaint = default!;
 
-    public NTTitle(IChart chart) {
+    public NTTitle(IChart<TData> chart) {
         ArgumentNullException.ThrowIfNull(chart, nameof(chart));
         _chart = chart;
 

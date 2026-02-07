@@ -18,9 +18,9 @@ public enum RadialAxisShape {
 /// <summary>
 ///     Options for a radial axis (used in radar charts).
 /// </summary>
-public class NTRadialAxisOptions : NTAxisOptions {
+public class NTRadialAxisOptions<TData> : NTAxisOptions<TData> where TData : class {
 
-   public static NTRadialAxisOptions Default => new();
+   public static readonly NTRadialAxisOptions<TData> Default = new();
 
    /// <summary>
    ///    Gets or sets the number of concentric circles to draw.
@@ -38,7 +38,7 @@ public class NTRadialAxisOptions : NTAxisOptions {
    public List<string>? Labels { get; set; }
 
    /// <inheritdoc />
-   internal override SKRect Measure(NTRenderContext context, SKRect renderArea) {
+   public override SKRect Measure(NTRenderContext context, SKRect renderArea) {
       if (!Visible) return renderArea;
 
       // Add padding for labels around the perimeter
