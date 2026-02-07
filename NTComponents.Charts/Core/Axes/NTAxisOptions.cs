@@ -10,6 +10,67 @@ namespace NTComponents.Charts.Core.Axes;
 /// </summary>
 public abstract class NTAxisOptions : ComponentBase, IRenderable {
 
+    /// <summary>
+    ///     Gets or sets the format string for axis labels.
+    /// </summary>
+    [Parameter]
+    public string? LabelFormat { get; set; }
+
+    /// <summary>
+    ///     Gets or sets the maximum value for the axis. If null, the maximum will be calculated from the data.
+    /// </summary>
+    [Parameter]
+    public decimal? Max { get; set; }
+
+    /// <summary>
+    ///     Gets or sets the padding at the maximum end of the axis.
+    /// </summary>
+    [Parameter]
+    public decimal MaxPadding { get; set; } = 0.05m;
+
+    /// <summary>
+    ///     Gets or sets the maximum number of ticks on the axis. Default is 10.
+    /// </summary>
+    [Parameter]
+    public int MaxTicks { get; set; } = 10;
+
+    /// <summary>
+    ///     Gets or sets the minimum value for the axis. If null, the minimum will be calculated from the data.
+    /// </summary>
+    [Parameter]
+    public decimal? Min { get; set; }
+
+    /// <summary>
+    ///     Gets or sets the padding at the minimum end of the axis.
+    /// </summary>
+    [Parameter]
+    public decimal MinPadding { get; set; } = 0.05m;
+
+    /// <inheritdoc />
+    public RenderOrdered RenderOrder => RenderOrdered.Axis;
+
+    /// <summary>
+    ///     Gets or sets the scale used by the axis.
+    /// </summary>
+    [Parameter]
+    public NTAxisScale Scale { get; set; } = NTAxisScale.Linear;
+
+    /// <summary>
+    ///     Gets or sets the title of the axis.
+    /// </summary>
+    [Parameter]
+    public string? Title { get; set; }
+
+    /// <summary>
+    ///     Gets or sets whether the axis is visible.
+    /// </summary>
+    [Parameter]
+    public bool Visible { get; set; } = true;
+
+    internal (double Min, double Max)? CachedXRange { get; set; }
+
+    internal (decimal Min, decimal Max)? CachedYRange { get; set; }
+
     [CascadingParameter]
     protected IChart Chart { get; set; } = default!;
 
@@ -18,90 +79,11 @@ public abstract class NTAxisOptions : ComponentBase, IRenderable {
         GC.SuppressFinalize(this);
     }
 
-    protected override void OnInitialized() {
-        base.OnInitialized();
-        Chart?.RegisterRenderable(this);
-    }
-
-    /// <summary>
-    ///    Gets or sets the title of the axis.
-    /// </summary>
-    [Parameter]
-    public string? Title { get; set; }
-
-    /// <summary>
-    ///    Gets or sets the format string for axis labels.
-    /// </summary>
-    [Parameter]
-    public string? LabelFormat { get; set; }
-
-    /// <summary>
-    ///    Gets or sets whether the axis is visible.
-    /// </summary>
-    [Parameter]
-    public bool Visible { get; set; } = true;
-
-
-    /// <summary>
-    ///    Gets or sets the scale used by the axis.
-    /// </summary>
-    [Parameter]
-    public NTAxisScale Scale { get; set; } = NTAxisScale.Linear;
-
-    /// <summary>
-    ///    Gets or sets the padding at the minimum end of the axis.
-    /// </summary>
-    [Parameter]
-    public decimal MinPadding { get; set; } = 0.05m;
-
-    /// <summary>
-    ///    Gets or sets the padding at the maximum end of the axis.
-    /// </summary>
-    [Parameter]
-    public decimal MaxPadding { get; set; } = 0.05m;
-
-    /// <summary>
-    ///    Gets or sets the minimum value for the axis. If null, the minimum will be calculated from the data.
-    /// </summary>
-    [Parameter]
-    public decimal? Min { get; set; }
-
-    /// <summary>
-    ///    Gets or sets the maximum value for the axis. If null, the maximum will be calculated from the data.
-    /// </summary>
-    [Parameter]
-    public decimal? Max { get; set; }
-
-    /// <summary>
-    ///    Gets or sets the maximum number of ticks on the axis. Default is 10.
-    /// </summary>
-    [Parameter]
-    public int MaxTicks { get; set; } = 10;
-
-    /// <inheritdoc />
-    public RenderOrdered RenderOrder => RenderOrdered.Axis;
-
-    /// <inheritdoc />
-    public abstract SKRect Render(NTRenderContext context, SKRect renderArea);
-
     /// <inheritdoc />
     public virtual void Invalidate() => ClearCache();
 
-    /// <summary>
-    ///     Estimates the area that will remain after this axis is rendered.
-    /// </summary>
-    /// <param name="context">The render context used to scale the measurement.</param>
-    /// <param name="renderArea">The available area for rendering.</param>
-    /// <returns>The remaining area.</returns>
-    internal virtual SKRect Measure(NTRenderContext context, SKRect renderArea) => renderArea;
-
-    internal (double Min, double Max)? CachedXRange { get; set; }
-    internal (decimal Min, decimal Max)? CachedYRange { get; set; }
-
-    internal void ClearCache() {
-        CachedXRange = null;
-        CachedYRange = null;
-    }
+    /// <inheritdoc />
+    public abstract SKRect Render(NTRenderContext context, SKRect renderArea);
 
     internal void AddOwner(IChart chart) {
         ArgumentNullException.ThrowIfNull(chart);
@@ -112,11 +94,6 @@ public abstract class NTAxisOptions : ComponentBase, IRenderable {
         Chart?.UnregisterRenderable(this);
         Chart = chart;
         Chart.RegisterRenderable(this);
-    }
-
-    internal void RemoveOwner() {
-        Chart?.UnregisterRenderable(this);
-        Chart = default!;
     }
 
     internal (double niceMin, double niceMax, double spacing) CalculateNiceScaling(double min, double max, int maxTicks = 10) {
@@ -145,6 +122,29 @@ public abstract class NTAxisOptions : ComponentBase, IRenderable {
         var niceMax = Math.Ceiling(max / tickSpacing) * tickSpacing;
 
         return (niceMin, niceMax, tickSpacing);
+    }
+
+    internal void ClearCache() {
+        CachedXRange = null;
+        CachedYRange = null;
+    }
+
+    /// <summary>
+    ///     Estimates the area that will remain after this axis is rendered.
+    /// </summary>
+    /// <param name="context">   The render context used to scale the measurement.</param>
+    /// <param name="renderArea">The available area for rendering.</param>
+    /// <returns>The remaining area.</returns>
+    internal virtual SKRect Measure(NTRenderContext context, SKRect renderArea) => renderArea;
+
+    internal void RemoveOwner() {
+        Chart?.UnregisterRenderable(this);
+        Chart = default!;
+    }
+
+    protected override void OnInitialized() {
+        base.OnInitialized();
+        Chart?.RegisterRenderable(this);
     }
 
     private double CalculateNiceNumber(double range, bool round) {
