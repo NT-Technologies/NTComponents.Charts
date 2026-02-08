@@ -50,18 +50,18 @@ public interface IChart<TData> where TData : class {
     NTTitleOptions? TitleOptions { get; }
 
 
-    public NTXAxisOptions<TData> XAxis { get; }
+    public INTXAxis<TData> XAxis { get; }
 
-    void RegisterAxis(NTXAxisOptions<TData> axis);
+    void RegisterAxis(INTXAxis<TData> axis);
 
-    void UnregisterAxis(NTXAxisOptions<TData> axis);
+    void UnregisterAxis(INTXAxis<TData> axis);
 
-    NTYAxisOptions<TData> YAxis { get; }
-    NTYAxisOptions<TData>? SecondaryYAxis { get; }
+    INTYAxis<TData> YAxis { get; }
+    INTYAxis<TData>? SecondaryYAxis { get; }
 
-    void RegisterAxis(NTYAxisOptions<TData> axis);
+    void RegisterAxis(INTYAxis<TData> axis);
 
-    void UnregisterAxis(NTYAxisOptions<TData> axis);
+    void UnregisterAxis(INTYAxis<TData> axis);
 
     TData? HoveredDataPoint { get; }
     int? HoveredPointIndex { get; }

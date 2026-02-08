@@ -209,39 +209,39 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     protected (decimal Min, decimal Max)? _panStartYRange;
 
     public override void HandleMouseDown(MouseEventArgs e) {
-        var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
-        if (Interactions.HasFlag(ChartInteractions.XPan) || Interactions.HasFlag(ChartInteractions.YPan)) {
-            _isPanning = true;
-            _panStartPoint = point;
-            _panStartXRange = Chart.GetXRange(Chart.XAxis, true);
-            var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
-            _panStartYRange = Chart.GetYRange(yAxis, true);
-        }
+        //var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
+        //if (Interactions.HasFlag(ChartInteractions.XPan) || Interactions.HasFlag(ChartInteractions.YPan)) {
+        //    _isPanning = true;
+        //    _panStartPoint = point;
+        //    _panStartXRange = Chart.GetXRange(Chart.XAxis, true);
+        //    var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
+        //    _panStartYRange = Chart.GetYRange(yAxis, true);
+        //}
     }
 
     public override void HandleMouseMove(MouseEventArgs e) {
-        var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
-        if (_isPanning && Chart.LastPlotArea != default) {
-            var dx = _panStartPoint.X - point.X;
-            var dy = point.Y - _panStartPoint.Y; // Y is inverted in screen coords
+        //var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
+        //if (_isPanning && Chart.LastPlotArea != default) {
+        //    var dx = _panStartPoint.X - point.X;
+        //    var dy = point.Y - _panStartPoint.Y; // Y is inverted in screen coords
 
-            if (_panStartXRange.HasValue && Interactions.HasFlag(ChartInteractions.XPan)) {
-                var xRangeSize = _panStartXRange.Value.Max - _panStartXRange.Value.Min;
-                var dataDx = dx / Chart.LastPlotArea.Width * xRangeSize;
-                _viewXMin = _panStartXRange.Value.Min + dataDx;
-                _viewXMax = _panStartXRange.Value.Max + dataDx;
-                Chart.XAxis?.ClearCache();
-            }
+        //    if (_panStartXRange.HasValue && Interactions.HasFlag(ChartInteractions.XPan)) {
+        //        var xRangeSize = _panStartXRange.Value.Max - _panStartXRange.Value.Min;
+        //        var dataDx = dx / Chart.LastPlotArea.Width * xRangeSize;
+        //        _viewXMin = _panStartXRange.Value.Min + dataDx;
+        //        _viewXMax = _panStartXRange.Value.Max + dataDx;
+        //        Chart.XAxis?.ClearCache();
+        //    }
 
-            if (_panStartYRange.HasValue && Interactions.HasFlag(ChartInteractions.YPan)) {
-                var yRangeSize = _panStartYRange.Value.Max - _panStartYRange.Value.Min;
-                var dataDy = (decimal)(dy / Chart.LastPlotArea.Height) * yRangeSize;
-                _viewYMin = _panStartYRange.Value.Min + dataDy;
-                _viewYMax = _panStartYRange.Value.Max + dataDy;
-                var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
-                yAxis?.ClearCache();
-            }
-        }
+        //    if (_panStartYRange.HasValue && Interactions.HasFlag(ChartInteractions.YPan)) {
+        //        var yRangeSize = _panStartYRange.Value.Max - _panStartYRange.Value.Min;
+        //        var dataDy = (decimal)(dy / Chart.LastPlotArea.Height) * yRangeSize;
+        //        _viewYMin = _panStartYRange.Value.Min + dataDy;
+        //        _viewYMax = _panStartYRange.Value.Max + dataDy;
+        //        var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
+        //        yAxis?.ClearCache();
+        //    }
+        //}
     }
 
     public override void HandleMouseUp(MouseEventArgs e) => _isPanning = false;

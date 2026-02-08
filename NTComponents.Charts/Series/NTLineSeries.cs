@@ -68,127 +68,127 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
     /// <inheritdoc />
     public override SKRect Render(NTRenderContext context, SKRect renderArea) {
-        var canvas = context.Canvas;
-        if (Data?.Any() != true) {
-            return renderArea;
-        }
+        //var canvas = context.Canvas;
+        //if (Data?.Any() != true) {
+        //    return renderArea;
+        //}
 
-        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
-        Console.WriteLine($"X Range: {xMin} to {xMax}");
-        var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
+        //var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+        //Console.WriteLine($"X Range: {xMin} to {xMax}");
+        //var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
 
-        var points = GetPoints(renderArea, xMin, xMax, yMin, yMax);
+        //var points = GetPoints(renderArea, xMin, xMax, yMin, yMax);
 
-        var isHovered = Chart.HoveredSeries == this;
-        var color = Chart.GetSeriesColor(this);
-        var visibilityFactor = VisibilityFactor;
-        var hoverFactor = HoverFactor;
+        //var isHovered = Chart.HoveredSeries == this;
+        //var color = Chart.GetSeriesColor(this);
+        //var visibilityFactor = VisibilityFactor;
+        //var hoverFactor = HoverFactor;
 
-        color = color.WithAlpha((byte)(color.Alpha * hoverFactor * visibilityFactor));
+        //color = color.WithAlpha((byte)(color.Alpha * hoverFactor * visibilityFactor));
 
-        _linePaint ??= new SKPaint {
-            Style = SKPaintStyle.Stroke,
-            IsAntialias = true,
-            StrokeCap = SKStrokeCap.Round,
-            StrokeJoin = SKStrokeJoin.Round
-        };
-        _linePaint.Color = color;
-        _linePaint.StrokeWidth = StrokeWidth;
+        //_linePaint ??= new SKPaint {
+        //    Style = SKPaintStyle.Stroke,
+        //    IsAntialias = true,
+        //    StrokeCap = SKStrokeCap.Round,
+        //    StrokeJoin = SKStrokeJoin.Round
+        //};
+        //_linePaint.Color = color;
+        //_linePaint.StrokeWidth = StrokeWidth;
 
-        if (LineStyle == LineStyle.Dashed) {
-            _linePaint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
-        }
-        else {
-            _linePaint.PathEffect = null;
-        }
+        //if (LineStyle == LineStyle.Dashed) {
+        //    _linePaint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
+        //}
+        //else {
+        //    _linePaint.PathEffect = null;
+        //}
 
-        if (LineStyle != LineStyle.None && points.Count > 1) {
-            if (OnDataPointRender == null) {
-                _linePath?.Dispose();
-                _linePath = BuildPath(points);
-                canvas.DrawPath(_linePath, _linePaint);
-            }
-            else {
-                // Draw segment by segment to allow for per-point line styling
-                var dataList = Data.ToList();
-                for (var i = 1; i < points.Count; i++) {
-                    var args = new NTDataPointRenderArgs<TData> {
-                        Data = dataList[i],
-                        Index = i,
-                        Color = color,
-                        LineStyle = LineStyle,
-                        StrokeWidth = StrokeWidth,
-                        GetThemeColor = Chart.GetThemeColor
-                    };
-                    OnDataPointRender.Invoke(args);
+        //if (LineStyle != LineStyle.None && points.Count > 1) {
+        //    if (OnDataPointRender == null) {
+        //        _linePath?.Dispose();
+        //        _linePath = BuildPath(points);
+        //        canvas.DrawPath(_linePath, _linePaint);
+        //    }
+        //    else {
+        //        // Draw segment by segment to allow for per-point line styling
+        //        var dataList = Data.ToList();
+        //        for (var i = 1; i < points.Count; i++) {
+        //            var args = new NTDataPointRenderArgs<TData> {
+        //                Data = dataList[i],
+        //                Index = i,
+        //                Color = color,
+        //                LineStyle = LineStyle,
+        //                StrokeWidth = StrokeWidth,
+        //                GetThemeColor = Chart.GetThemeColor
+        //            };
+        //            OnDataPointRender.Invoke(args);
 
-                    var segmentColor = args.Color ?? color;
-                    var segmentStyle = args.LineStyle ?? LineStyle;
-                    var segmentWidth = args.StrokeWidth ?? StrokeWidth;
+        //            var segmentColor = args.Color ?? color;
+        //            var segmentStyle = args.LineStyle ?? LineStyle;
+        //            var segmentWidth = args.StrokeWidth ?? StrokeWidth;
 
-                    if (segmentStyle == LineStyle.None) continue;
+        //            if (segmentStyle == LineStyle.None) continue;
 
-                    _segmentPaint ??= new SKPaint {
-                        Style = SKPaintStyle.Stroke,
-                        IsAntialias = true,
-                        StrokeCap = SKStrokeCap.Round,
-                        StrokeJoin = SKStrokeJoin.Round
-                    };
-                    _segmentPaint.Color = segmentColor;
-                    _segmentPaint.StrokeWidth = segmentWidth;
+        //            _segmentPaint ??= new SKPaint {
+        //                Style = SKPaintStyle.Stroke,
+        //                IsAntialias = true,
+        //                StrokeCap = SKStrokeCap.Round,
+        //                StrokeJoin = SKStrokeJoin.Round
+        //            };
+        //            _segmentPaint.Color = segmentColor;
+        //            _segmentPaint.StrokeWidth = segmentWidth;
 
-                    if (segmentStyle == LineStyle.Dashed) {
-                        _segmentPaint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
-                    }
-                    else {
-                        _segmentPaint.PathEffect = null;
-                    }
+        //            if (segmentStyle == LineStyle.Dashed) {
+        //                _segmentPaint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
+        //            }
+        //            else {
+        //                _segmentPaint.PathEffect = null;
+        //            }
 
-                    // For now, segment-based styling only supports straight lines
-                    canvas.DrawLine(points[i - 1], points[i], _segmentPaint);
-                }
-            }
-        }
+        //            // For now, segment-based styling only supports straight lines
+        //            canvas.DrawLine(points[i - 1], points[i], _segmentPaint);
+        //        }
+        //    }
+        //}
 
-        if (PointStyle != PointStyle.None || ShowDataLabels) {
-            var dataList = Data.ToList();
-            for (var i = 0; i < points.Count; i++) {
-                var item = dataList[i];
-                var args = new NTDataPointRenderArgs<TData> {
-                    Data = item,
-                    Index = i,
-                    Color = color,
-                    PointSize = PointSize,
-                    PointShape = PointShape,
-                    GetThemeColor = Chart.GetThemeColor
-                };
-                OnDataPointRender?.Invoke(args);
+        //if (PointStyle != PointStyle.None || ShowDataLabels) {
+        //    var dataList = Data.ToList();
+        //    for (var i = 0; i < points.Count; i++) {
+        //        var item = dataList[i];
+        //        var args = new NTDataPointRenderArgs<TData> {
+        //            Data = item,
+        //            Index = i,
+        //            Color = color,
+        //            PointSize = PointSize,
+        //            PointShape = PointShape,
+        //            GetThemeColor = Chart.GetThemeColor
+        //        };
+        //        OnDataPointRender?.Invoke(args);
 
-                var point = points[i];
-                var isPointHovered = Chart.HoveredSeries == this && Chart.HoveredPointIndex == i;
+        //        var point = points[i];
+        //        var isPointHovered = Chart.HoveredSeries == this && Chart.HoveredPointIndex == i;
 
-                var pointColor = args.Color ?? color;
-                var pointStrokeColor = args.StrokeColor ?? pointColor;
-                var currentPointSize = args.PointSize ?? PointSize;
-                var currentPointShape = args.PointShape ?? PointShape;
+        //        var pointColor = args.Color ?? color;
+        //        var pointStrokeColor = args.StrokeColor ?? pointColor;
+        //        var currentPointSize = args.PointSize ?? PointSize;
+        //        var currentPointShape = args.PointShape ?? PointShape;
 
-                if (isPointHovered) {
-                    pointColor = pointColor.WithAlpha(255);
-                    pointStrokeColor = pointStrokeColor.WithAlpha(255);
-                    currentPointSize *= 1.5f;
-                }
+        //        if (isPointHovered) {
+        //            pointColor = pointColor.WithAlpha(255);
+        //            pointStrokeColor = pointStrokeColor.WithAlpha(255);
+        //            currentPointSize *= 1.5f;
+        //        }
 
-                if (PointStyle != PointStyle.None) {
-                    RenderPoint(context, point.X, point.Y, pointColor, currentPointSize, currentPointShape, pointStrokeColor);
-                }
+        //        if (PointStyle != PointStyle.None) {
+        //            RenderPoint(context, point.X, point.Y, pointColor, currentPointSize, currentPointShape, pointStrokeColor);
+        //        }
 
-                if (ShowDataLabels || isPointHovered) {
-                    var labelColor = args.DataLabelColor;
-                    var labelSize = args.DataLabelSize ?? DataLabelSize;
-                    RenderDataLabel(context, point.X, point.Y, YValueSelector(dataList[i]), renderArea, labelColor, labelSize);
-                }
-            }
-        }
+        //        if (ShowDataLabels || isPointHovered) {
+        //            var labelColor = args.DataLabelColor;
+        //            var labelSize = args.DataLabelSize ?? DataLabelSize;
+        //            RenderDataLabel(context, point.X, point.Y, YValueSelector(dataList[i]), renderArea, labelColor, labelSize);
+        //        }
+        //    }
+        //}
 
         return renderArea;
     }
@@ -336,43 +336,43 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
     /// <inheritdoc />
     public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
-        if (Data == null || !Data.Any()) {
-            return null;
-        }
+        //if (Data == null || !Data.Any()) {
+        //    return null;
+        //}
 
-        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
-        var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
-        var points = GetPoints(renderArea, xMin, xMax, yMin, yMax);
-        var dataList = Data.ToList();
+        //var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+        //var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
+        //var points = GetPoints(renderArea, xMin, xMax, yMin, yMax);
+        //var dataList = Data.ToList();
 
-        for (var i = 0; i < points.Count; i++) {
-            var p = points[i];
-            var distance = Math.Sqrt(Math.Pow(p.X - point.X, 2) + Math.Pow(p.Y - point.Y, 2));
-            if (distance < PointSize + 5) {
-                return (i, dataList[i]);
-            }
-        }
+        //for (var i = 0; i < points.Count; i++) {
+        //    var p = points[i];
+        //    var distance = Math.Sqrt(Math.Pow(p.X - point.X, 2) + Math.Pow(p.Y - point.Y, 2));
+        //    if (distance < PointSize + 5) {
+        //        return (i, dataList[i]);
+        //    }
+        //}
 
-        if (points.Count > 1 && LineStyle != LineStyle.None) {
-            _hitTestPath?.Dispose();
-            _hitTestPath = BuildPath(points);
+        //if (points.Count > 1 && LineStyle != LineStyle.None) {
+        //    _hitTestPath?.Dispose();
+        //    _hitTestPath = BuildPath(points);
 
-            _hitTestPaint ??= new SKPaint {
-                Style = SKPaintStyle.Stroke,
-                StrokeCap = SKStrokeCap.Round,
-                StrokeJoin = SKStrokeJoin.Round
-            };
-            _hitTestPaint.StrokeWidth = StrokeWidth + 10; // Wider tolerance for hovering
+        //    _hitTestPaint ??= new SKPaint {
+        //        Style = SKPaintStyle.Stroke,
+        //        StrokeCap = SKStrokeCap.Round,
+        //        StrokeJoin = SKStrokeJoin.Round
+        //    };
+        //    _hitTestPaint.StrokeWidth = StrokeWidth + 10; // Wider tolerance for hovering
 
-            _hitTestStrokePath ??= new SKPath();
-            _hitTestStrokePath.Reset();
+        //    _hitTestStrokePath ??= new SKPath();
+        //    _hitTestStrokePath.Reset();
 
-            _hitTestPaint.GetFillPath(_hitTestPath, _hitTestStrokePath);
+        //    _hitTestPaint.GetFillPath(_hitTestPath, _hitTestStrokePath);
 
-            if (_hitTestStrokePath.Contains(point.X, point.Y)) {
-                return (-1, null);
-            }
-        }
+        //    if (_hitTestStrokePath.Contains(point.X, point.Y)) {
+        //        return (-1, null);
+        //    }
+        //}
 
         return null;
     }

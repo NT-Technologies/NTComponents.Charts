@@ -26,36 +26,36 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
    private SKPath? _areaPath;
 
    public override SKRect Render(NTRenderContext context, SKRect renderArea) {
-      var canvas = context.Canvas;
-      if (Data == null || !Data.Any()) return renderArea;
+      //var canvas = context.Canvas;
+      //if (Data == null || !Data.Any()) return renderArea;
 
-      var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
-      var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
+      //var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
+      //var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
 
-      var points = GetAreaPoints(renderArea, xMin, xMax, yMin, yMax);
-      if (points.Count < 2) {
-         return base.Render(context, renderArea);
-      }
+      //var points = GetAreaPoints(renderArea, xMin, xMax, yMin, yMax);
+      //if (points.Count < 2) {
+      //   return base.Render(context, renderArea);
+      //}
 
-      var isHovered = Chart.HoveredSeries == this;
-      var color = Chart.GetSeriesColor(this);
-      var visibilityFactor = VisibilityFactor;
-      var hoverFactor = HoverFactor;
+      //var isHovered = Chart.HoveredSeries == this;
+      //var color = Chart.GetSeriesColor(this);
+      //var visibilityFactor = VisibilityFactor;
+      //var hoverFactor = HoverFactor;
 
-      var strokeColor = color.WithAlpha((byte)(color.Alpha * hoverFactor * visibilityFactor));
+      //var strokeColor = color.WithAlpha((byte)(color.Alpha * hoverFactor * visibilityFactor));
 
-      var fillColor = strokeColor.WithAlpha((byte)(strokeColor.Alpha * AreaOpacity));
+      //var fillColor = strokeColor.WithAlpha((byte)(strokeColor.Alpha * AreaOpacity));
 
-      // Draw Area Fill
-      _areaPaint ??= new SKPaint {
-         Style = SKPaintStyle.Fill,
-         IsAntialias = true
-      };
-      _areaPaint.Color = fillColor;
+      //// Draw Area Fill
+      //_areaPaint ??= new SKPaint {
+      //   Style = SKPaintStyle.Fill,
+      //   IsAntialias = true
+      //};
+      //_areaPaint.Color = fillColor;
 
-      _areaPath?.Dispose();
-      _areaPath = BuildAreaPath(points, renderArea);
-      canvas.DrawPath(_areaPath, _areaPaint);
+      //_areaPath?.Dispose();
+      //_areaPath = BuildAreaPath(points, renderArea);
+      //canvas.DrawPath(_areaPath, _areaPaint);
 
       // Use base.Render to draw the line and points
       return base.Render(context, renderArea);

@@ -1,16 +1,22 @@
+using Microsoft.AspNetCore.Components;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 
 namespace NTComponents.Charts.Core.Axes;
+
+
+public interface INTYAxis<TData> : INTAxis<TData> where TData : class {
+    static abstract INTYAxis<TData> Default { get; }
+
+}
 
 /// <summary>
 ///     Options for the Y axis of a cartesian chart.
 /// </summary>
-public class NTYAxisOptions<TData> : NTAxisOptions<TData> where TData : class {
-
-    public readonly static NTYAxisOptions<TData> Default = new();
+public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<TData> where TData : class where TAxisValue : INumberBase<TAxisValue> {
 
     private SKPaint? _textPaint;
     private SKPaint? _titlePaint;
@@ -18,6 +24,12 @@ public class NTYAxisOptions<TData> : NTAxisOptions<TData> where TData : class {
     private SKFont? _textFont;
     private SKFont? _titleFont;
 
+    public static INTYAxis<TData> Default { get; } = new NTYAxisOptions<TData, TAxisValue>() {
+        ValueSelector = _ => TAxisValue.Zero
+    };
+
+    [Parameter, EditorRequired]
+    public Func<TData, TAxisValue> ValueSelector { get; set; }
     public override void Dispose() {
         _textPaint?.Dispose();
         _titlePaint?.Dispose();
