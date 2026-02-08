@@ -7,61 +7,43 @@ namespace NTComponents.Charts.Core;
 /// </summary>
 public class NTRenderContext {
 
-    public NTRenderContext(
-        SKCanvas canvas,
-        SKImageInfo info,
-        SKRect totalArea,
-        float density,
-        SKFont defaultFont,
-        SKFont regularFont,
-        SKColor textColor) {
-        Canvas = canvas;
-        Info = info;
-        TotalArea = totalArea;
-        Density = density;
-        DefaultFont = defaultFont;
-        RegularFont = regularFont;
-        TextColor = textColor;
-        PlotArea = totalArea;
-    }
-
     /// <summary>
     ///     Gets the canvas to render on.
     /// </summary>
-    public SKCanvas Canvas { get; }
+    public required SKCanvas Canvas { get; init; }
 
     /// <summary>
     ///    Gets the default font.
     /// </summary>
-    public SKFont DefaultFont { get; }
+    public required SKFont DefaultFont { get; init; }
 
     /// <summary>
     ///     Gets the device pixel ratio.
     /// </summary>
-    public float Density { get; }
+    public required float Density { get; init; }
 
     /// <summary>
     ///     Gets the image info.
     /// </summary>
-    public SKImageInfo Info { get; }
+    public required SKImageInfo Info { get; init; }
 
     /// <summary>
     ///     Gets or sets the current plot area. This is updated during the measurement pass.
     /// </summary>
-    public SKRect PlotArea { get; set; }
+    public required SKRect PlotArea { get; set; }
 
     /// <summary>
     ///    Gets the regular font.
     /// </summary>
-    public SKFont RegularFont { get; }
+    public required SKFont RegularFont { get; init; }
 
     /// <summary>
     ///    Gets the default text color.
     /// </summary>
-    public SKColor TextColor { get; }
+    public required SKColor TextColor { get; init; }
 
     /// <summary>
     ///     Gets the total area available for the chart.
     /// </summary>
-    public SKRect TotalArea { get; }
+    public required SKRect TotalArea { get; init; }
 }

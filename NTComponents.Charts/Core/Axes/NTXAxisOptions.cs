@@ -66,6 +66,9 @@ public class NTXAxisOptions<TData> : NTAxisOptions<TData>, INTXAxis<TData> where
 
     /// <inheritdoc />
     public override SKRect Render(NTRenderContext context, SKRect renderArea) {
+        if(!Visible) {
+            return renderArea;
+        }
         return renderArea;
         //if (!Visible) return renderArea;
 

@@ -880,15 +880,25 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         _cachedAllY = null;
 
         var totalArea = new SKRect(0, 0, info.Width, info.Height);
-        var context = new NTRenderContext(canvas, info, totalArea, Density, _defaultFont, _regularFont, GetThemeColor(TextColor));
+        var renderArea = new SKRect(
+            left: Margin.Left * Density,
+            top: Margin.Top * Density,
+            right: info.Width - (Margin.Right * Density),
+            bottom: info.Height - (Margin.Bottom * Density));
+
+        var context = new NTRenderContext {
+            Canvas = canvas,
+            Info = info,
+            TotalArea = totalArea,
+            Density = Density,
+            DefaultFont = _defaultFont,
+            RegularFont = _regularFont,
+            TextColor = GetThemeColor(TextColor),
+            PlotArea = renderArea
+        };
 
         canvas.Clear(GetThemeColor(BackgroundColor));
 
-        var renderArea = new SKRect(
-            left: Margin.Left * context.Density,
-            top: Margin.Top * context.Density,
-            right: info.Width - (Margin.Right * context.Density),
-            bottom: info.Height - (Margin.Bottom * context.Density));
 
         foreach (var order in Enum.GetValues<RenderOrdered>().Where(x => x is RenderOrdered.Title or RenderOrdered.Legend or RenderOrdered.Axis)) {
 

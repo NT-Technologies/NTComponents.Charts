@@ -16,6 +16,11 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
     [Parameter]
     public string? LabelFormat { get; set; }
 
+    [Parameter]
+    public float TitleFontSize { get; set; } = 16;
+    [Parameter]
+    public float AxisFontSize { get; set; } = 12;
+
     /// <inheritdoc />
     public RenderOrdered RenderOrder => RenderOrdered.Axis;
 
@@ -56,32 +61,4 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
         base.OnInitialized();
         Chart.RegisterRenderable(this);
     }
-
-    // internal (double niceMin, double niceMax, double spacing) CalculateNiceScaling(double min, double max, int maxTicks = 10) { if (min == max) { max = min + 1; }
-
-    // var range = CalculateNiceNumber(max - min, false); var tickSpacing = CalculateNiceNumber(range / (maxTicks - 1), true);
-
-    // var niceMin = Math.Floor(min / tickSpacing) * tickSpacing; var niceMax = Math.Ceiling(max / tickSpacing) * tickSpacing;
-
-    // return (niceMin, niceMax, tickSpacing); }
-
-    // internal (decimal niceMin, decimal niceMax, decimal spacing) CalculateNiceScaling(decimal min, decimal max, int maxTicks = 10) { if (min == max) { max = min + 1; }
-
-    // var range = CalculateNiceNumber(max - min, false); var tickSpacing = CalculateNiceNumber(range / (maxTicks - 1), true);
-
-    // var niceMin = Math.Floor(min / tickSpacing) * tickSpacing; var niceMax = Math.Ceiling(max / tickSpacing) * tickSpacing;
-
-    // return (niceMin, niceMax, tickSpacing); }
-
-    // private double CalculateNiceNumber(double range, bool round) { var exponent = Math.Floor(Math.Log10(range)); var fraction = range / Math.Pow(10, exponent); double niceFraction;
-
-    // if (round) { niceFraction = fraction < 1.5 ? 1 : fraction < 3 ? 2 : fraction < 7 ? 5 : 10; } else { niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10; }
-
-    // return niceFraction * Math.Pow(10, exponent); }
-
-    // private decimal CalculateNiceNumber(decimal range, bool round) { var exponent = Math.Floor(Math.Log10((double)range)); var fraction = (double)range / Math.Pow(10, exponent); double niceFraction;
-
-    // if (round) { niceFraction = fraction < 1.5 ? 1 : fraction < 3 ? 2 : fraction < 7 ? 5 : 10; } else { niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10; }
-
-    // return (decimal)(niceFraction * Math.Pow(10, exponent)); }
 }
