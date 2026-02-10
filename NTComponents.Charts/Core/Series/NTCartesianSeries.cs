@@ -6,6 +6,7 @@ using SkiaSharp;
 namespace NTComponents.Charts.Core.Series;
 
 public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesianSeries where TData : class {
+    protected readonly record struct VisiblePoint(TData Data, int Index, double X);
 
     /// <inheritdoc />
     public override ChartCoordinateSystem CoordinateSystem => ChartCoordinateSystem.Cartesian;
@@ -39,7 +40,8 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
 
     /// <inheritdoc />
     public override (double Min, double Max)? GetXRange() {
-        if (Data == null || !Data.Any()) {
+        var points = GetSortedVisiblePoints();
+        if (points.Count == 0) {
             return null;
         }
 
@@ -47,17 +49,14 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             return _cachedTotalXRange;
         }
 
-        var values = Data.Select(item => Chart.GetScaledXValue(XValue.Invoke(item))).ToList();
-        var min = values.Min();
-        var max = values.Max();
-
-        _cachedTotalXRange = (min, max);
+        _cachedTotalXRange = (points[0].X, points[^1].X);
         return _cachedTotalXRange;
     }
 
     /// <inheritdoc />
     public override (decimal Min, decimal Max)? GetYRange(double? xMin = null, double? xMax = null) {
-        if (Data == null || !Data.Any()) {
+        var points = GetSortedVisiblePoints();
+        if (points.Count == 0) {
             return null;
         }
 
@@ -68,12 +67,9 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         var min = decimal.MaxValue;
         var max = decimal.MinValue;
 
-        var dataToConsider = Data;
+        IEnumerable<TData> dataToConsider = points.Select(p => p.Data);
         if (xMin.HasValue && xMax.HasValue) {
-            dataToConsider = dataToConsider.Where(d => {
-                var x = Chart.GetScaledXValue(XValue.Invoke(d));
-                return x >= xMin.Value && x <= xMax.Value;
-            });
+            dataToConsider = GetVisibleWindow(xMin.Value, xMax.Value).Select(p => p.Data);
         }
 
         if (!dataToConsider.Any()) {
@@ -194,6 +190,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
 
     private (double Min, double Max)? _cachedTotalXRange;
     private (decimal Min, decimal Max)? _cachedTotalYRange;
+    private List<VisiblePoint>? _cachedSortedVisiblePoints;
 
     private SKPaint? _pointPaint;
     private SKPaint? _labelPaint;
@@ -209,77 +206,72 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     protected (decimal Min, decimal Max)? _panStartYRange;
 
     public override void HandleMouseDown(MouseEventArgs e) {
-        //var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
-        //if (Interactions.HasFlag(ChartInteractions.XPan) || Interactions.HasFlag(ChartInteractions.YPan)) {
-        //    _isPanning = true;
-        //    _panStartPoint = point;
-        //    _panStartXRange = Chart.GetXRange(Chart.XAxis, true);
-        //    var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
-        //    _panStartYRange = Chart.GetYRange(yAxis, true);
-        //}
+        var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
+        if (Interactions.HasFlag(ChartInteractions.XPan) || Interactions.HasFlag(ChartInteractions.YPan)) {
+            _isPanning = true;
+            _panStartPoint = point;
+            _panStartXRange = Chart.GetXRange(Chart.XAxis as NTAxisOptions<TData>, true);
+            var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
+            _panStartYRange = Chart.GetYRange(yAxis as NTAxisOptions<TData>, true);
+        }
     }
 
     public override void HandleMouseMove(MouseEventArgs e) {
-        //var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
-        //if (_isPanning && Chart.LastPlotArea != default) {
-        //    var dx = _panStartPoint.X - point.X;
-        //    var dy = point.Y - _panStartPoint.Y; // Y is inverted in screen coords
+        var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
+        if (_isPanning && Chart.LastPlotArea != default) {
+            var dx = _panStartPoint.X - point.X;
+            var dy = point.Y - _panStartPoint.Y;
 
-        //    if (_panStartXRange.HasValue && Interactions.HasFlag(ChartInteractions.XPan)) {
-        //        var xRangeSize = _panStartXRange.Value.Max - _panStartXRange.Value.Min;
-        //        var dataDx = dx / Chart.LastPlotArea.Width * xRangeSize;
-        //        _viewXMin = _panStartXRange.Value.Min + dataDx;
-        //        _viewXMax = _panStartXRange.Value.Max + dataDx;
-        //        Chart.XAxis?.ClearCache();
-        //    }
+            if (_panStartXRange.HasValue && Interactions.HasFlag(ChartInteractions.XPan)) {
+                var xRangeSize = _panStartXRange.Value.Max - _panStartXRange.Value.Min;
+                var dataDx = dx / Chart.LastPlotArea.Width * xRangeSize;
+                _viewXMin = _panStartXRange.Value.Min + dataDx;
+                _viewXMax = _panStartXRange.Value.Max + dataDx;
+            }
 
-        //    if (_panStartYRange.HasValue && Interactions.HasFlag(ChartInteractions.YPan)) {
-        //        var yRangeSize = _panStartYRange.Value.Max - _panStartYRange.Value.Min;
-        //        var dataDy = (decimal)(dy / Chart.LastPlotArea.Height) * yRangeSize;
-        //        _viewYMin = _panStartYRange.Value.Min + dataDy;
-        //        _viewYMax = _panStartYRange.Value.Max + dataDy;
-        //        var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
-        //        yAxis?.ClearCache();
-        //    }
-        //}
+            if (_panStartYRange.HasValue && Interactions.HasFlag(ChartInteractions.YPan)) {
+                var yRangeSize = _panStartYRange.Value.Max - _panStartYRange.Value.Min;
+                var dataDy = (decimal)(dy / Chart.LastPlotArea.Height) * yRangeSize;
+                _viewYMin = _panStartYRange.Value.Min + dataDy;
+                _viewYMax = _panStartYRange.Value.Max + dataDy;
+            }
+        }
     }
 
     public override void HandleMouseUp(MouseEventArgs e) => _isPanning = false;
 
     public override void HandleMouseWheel(WheelEventArgs e) {
-        //if ((!Interactions.HasFlag(ChartInteractions.XZoom) && !Interactions.HasFlag(ChartInteractions.YZoom)) || Chart.LastPlotArea == default) {
-        //    return;
-        //}
+        if ((!Interactions.HasFlag(ChartInteractions.XZoom) && !Interactions.HasFlag(ChartInteractions.YZoom)) || Chart.LastPlotArea == default) {
+            return;
+        }
 
-        //var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
-        //if (!Chart.LastPlotArea.Contains(point)) {
-        //    return;
-        //}
+        var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
+        if (!Chart.LastPlotArea.Contains(point)) {
+            return;
+        }
 
-        //var zoomFactor = e.DeltaY > 0 ? 1.1 : 0.9;
+        var zoomFactor = e.DeltaY > 0 ? 1.1 : 0.9;
+        var yAxis = (UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis) as NTAxisOptions<TData>;
 
-        //var xVal = Chart.ScaleXInverse(point.X, Chart.LastPlotArea, Chart.XAxis);
-        //var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
-        //var yVal = Chart.ScaleYInverse(point.Y, yAxis, Chart.LastPlotArea);
+        var xVal = Chart.ScaleXInverse(point.X, Chart.LastPlotArea);
+        var yVal = Chart.ScaleYInverse(point.Y, yAxis, Chart.LastPlotArea);
 
-        //var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
-        //var (yMin, yMax) = Chart.GetYRange(yAxis, true);
+        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis as NTAxisOptions<TData>, true);
+        var (yMin, yMax) = Chart.GetYRange(yAxis, true);
 
-        //if (Interactions.HasFlag(ChartInteractions.XZoom)) {
-        //    var newXRange = (xMax - xMin) * zoomFactor;
-        //    var xPct = (xVal - xMin) / (xMax - xMin);
-        //    _viewXMin = xVal - (newXRange * xPct);
-        //    _viewXMax = xVal + (newXRange * (1 - xPct));
-        //    Chart.XAxis?.ClearCache();
-        //}
+        if (Interactions.HasFlag(ChartInteractions.XZoom)) {
+            var newXRange = (xMax - xMin) * zoomFactor;
+            var xPct = (xVal - xMin) / (xMax - xMin);
+            _viewXMin = xVal - (newXRange * xPct);
+            _viewXMax = xVal + (newXRange * (1 - xPct));
+        }
 
-        //if (Interactions.HasFlag(ChartInteractions.YZoom)) {
-        //    var newYRange = (yMax - yMin) * (decimal)zoomFactor;
-        //    var yPct = (decimal)((double)(yVal - yMin) / (double)(yMax - yMin));
-        //    _viewYMin = yVal - (newYRange * yPct);
-        //    _viewYMax = yVal + (newYRange * (1 - yPct));
-        //    yAxis?.ClearCache();
-        //}
+        if (Interactions.HasFlag(ChartInteractions.YZoom)) {
+            var newYRange = (yMax - yMin) * (decimal)zoomFactor;
+            var yPct = (decimal)((double)(yVal - yMin) / (double)(yMax - yMin));
+            _viewYMin = yVal - (newYRange * yPct);
+            _viewYMax = yVal + (newYRange * (1 - yPct));
+        }
     }
 
     public override void ResetView() {
@@ -319,7 +311,83 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         AnimationCurrentValues = null;
         _cachedTotalXRange = null;
         _cachedTotalYRange = null;
+        _cachedSortedVisiblePoints = null;
         base.OnDataChanged();
+    }
+
+    protected List<VisiblePoint> GetVisibleWindow(double minX, double maxX, int overscan = 1) {
+        var points = GetSortedVisiblePoints();
+        if (points.Count == 0) {
+            return [];
+        }
+
+        if (maxX < minX) {
+            (minX, maxX) = (maxX, minX);
+        }
+
+        var start = LowerBound(points, minX);
+        var end = UpperBound(points, maxX);
+
+        if (end < start) {
+            return [];
+        }
+
+        start = Math.Max(0, start - overscan);
+        end = Math.Min(points.Count - 1, end + overscan);
+        return points.GetRange(start, (end - start) + 1);
+    }
+
+    private List<VisiblePoint> GetSortedVisiblePoints() {
+        if (_cachedSortedVisiblePoints is not null) {
+            return _cachedSortedVisiblePoints;
+        }
+
+        var points = new List<VisiblePoint>();
+        if (Data != null) {
+            var index = 0;
+            foreach (var item in Data) {
+                points.Add(new VisiblePoint(item, index, Chart.GetScaledXValue(XValue.Invoke(item))));
+                index++;
+            }
+        }
+
+        points.Sort(static (a, b) => {
+            var cmp = a.X.CompareTo(b.X);
+            return cmp != 0 ? cmp : a.Index.CompareTo(b.Index);
+        });
+
+        _cachedSortedVisiblePoints = points;
+        return _cachedSortedVisiblePoints;
+    }
+
+    private static int LowerBound(List<VisiblePoint> values, double target) {
+        var lo = 0;
+        var hi = values.Count;
+        while (lo < hi) {
+            var mid = lo + ((hi - lo) / 2);
+            if (values[mid].X < target) {
+                lo = mid + 1;
+            }
+            else {
+                hi = mid;
+            }
+        }
+        return lo;
+    }
+
+    private static int UpperBound(List<VisiblePoint> values, double target) {
+        var lo = 0;
+        var hi = values.Count;
+        while (lo < hi) {
+            var mid = lo + ((hi - lo) / 2);
+            if (values[mid].X <= target) {
+                lo = mid + 1;
+            }
+            else {
+                hi = mid;
+            }
+        }
+        return lo - 1;
     }
 
     protected void RenderDataLabel(NTRenderContext context, float x, float y, decimal value, SKRect renderArea, SKColor? overrideColor = null, float? overrideFontSize = null, SKTextAlign textAlign = SKTextAlign.Center) {

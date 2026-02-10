@@ -11,6 +11,8 @@ namespace NTComponents.Charts;
 /// </summary>
 public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
+    private readonly record struct RenderPointInfo(SKPoint Point, TData Data, int Index, decimal Value);
+
     /// <summary>
     ///     Gets or sets the width of the line.
     /// </summary>
@@ -68,198 +70,248 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
     /// <inheritdoc />
     public override SKRect Render(NTRenderContext context, SKRect renderArea) {
-        //var canvas = context.Canvas;
-        //if (Data?.Any() != true) {
-        //    return renderArea;
-        //}
+        if (Data?.Any() != true) {
+            return renderArea;
+        }
 
-        //var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
-        //Console.WriteLine($"X Range: {xMin} to {xMax}");
-        //var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
+        var yAxis = (UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis) as NTAxisOptions<TData>;
+        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis as NTAxisOptions<TData>, true);
+        var points = GetRenderPoints(renderArea, xMin, xMax, yAxis);
 
-        //var points = GetPoints(renderArea, xMin, xMax, yMin, yMax);
+        if (points.Count == 0) {
+            return renderArea;
+        }
 
-        //var isHovered = Chart.HoveredSeries == this;
-        //var color = Chart.GetSeriesColor(this);
-        //var visibilityFactor = VisibilityFactor;
-        //var hoverFactor = HoverFactor;
+        var canvas = context.Canvas;
+        var color = Chart.GetSeriesColor(this);
+        var alphaFactor = HoverFactor * VisibilityFactor;
+        color = color.WithAlpha((byte)(color.Alpha * alphaFactor));
 
-        //color = color.WithAlpha((byte)(color.Alpha * hoverFactor * visibilityFactor));
+        _linePaint ??= new SKPaint {
+            Style = SKPaintStyle.Stroke,
+            IsAntialias = true,
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round
+        };
+        _linePaint.Color = color;
+        _linePaint.StrokeWidth = StrokeWidth * context.Density;
+        _linePaint.PathEffect = LineStyle == LineStyle.Dashed
+            ? SKPathEffect.CreateDash([10 * context.Density, 5 * context.Density], 0)
+            : null;
 
-        //_linePaint ??= new SKPaint {
-        //    Style = SKPaintStyle.Stroke,
-        //    IsAntialias = true,
-        //    StrokeCap = SKStrokeCap.Round,
-        //    StrokeJoin = SKStrokeJoin.Round
-        //};
-        //_linePaint.Color = color;
-        //_linePaint.StrokeWidth = StrokeWidth;
+        if (LineStyle != LineStyle.None && points.Count > 1) {
+            if (OnDataPointRender == null) {
+                _linePath?.Dispose();
+                _linePath = BuildPath(points.Select(p => p.Point).ToList());
+                canvas.DrawPath(_linePath, _linePaint);
+            }
+            else {
+                for (var i = 1; i < points.Count; i++) {
+                    var args = new NTDataPointRenderArgs<TData> {
+                        Data = points[i].Data,
+                        Index = points[i].Index,
+                        Color = color,
+                        LineStyle = LineStyle,
+                        StrokeWidth = StrokeWidth,
+                        GetThemeColor = Chart.GetThemeColor
+                    };
+                    OnDataPointRender.Invoke(args);
 
-        //if (LineStyle == LineStyle.Dashed) {
-        //    _linePaint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
-        //}
-        //else {
-        //    _linePaint.PathEffect = null;
-        //}
+                    var segmentColor = args.Color ?? color;
+                    var segmentStyle = args.LineStyle ?? LineStyle;
+                    var segmentWidth = (args.StrokeWidth ?? StrokeWidth) * context.Density;
 
-        //if (LineStyle != LineStyle.None && points.Count > 1) {
-        //    if (OnDataPointRender == null) {
-        //        _linePath?.Dispose();
-        //        _linePath = BuildPath(points);
-        //        canvas.DrawPath(_linePath, _linePaint);
-        //    }
-        //    else {
-        //        // Draw segment by segment to allow for per-point line styling
-        //        var dataList = Data.ToList();
-        //        for (var i = 1; i < points.Count; i++) {
-        //            var args = new NTDataPointRenderArgs<TData> {
-        //                Data = dataList[i],
-        //                Index = i,
-        //                Color = color,
-        //                LineStyle = LineStyle,
-        //                StrokeWidth = StrokeWidth,
-        //                GetThemeColor = Chart.GetThemeColor
-        //            };
-        //            OnDataPointRender.Invoke(args);
+                    if (segmentStyle == LineStyle.None) {
+                        continue;
+                    }
 
-        //            var segmentColor = args.Color ?? color;
-        //            var segmentStyle = args.LineStyle ?? LineStyle;
-        //            var segmentWidth = args.StrokeWidth ?? StrokeWidth;
+                    _segmentPaint ??= new SKPaint {
+                        Style = SKPaintStyle.Stroke,
+                        IsAntialias = true,
+                        StrokeCap = SKStrokeCap.Round,
+                        StrokeJoin = SKStrokeJoin.Round
+                    };
+                    _segmentPaint.Color = segmentColor;
+                    _segmentPaint.StrokeWidth = segmentWidth;
+                    _segmentPaint.PathEffect = segmentStyle == LineStyle.Dashed
+                        ? SKPathEffect.CreateDash([10 * context.Density, 5 * context.Density], 0)
+                        : null;
 
-        //            if (segmentStyle == LineStyle.None) continue;
+                    canvas.DrawLine(points[i - 1].Point, points[i].Point, _segmentPaint);
+                }
+            }
+        }
 
-        //            _segmentPaint ??= new SKPaint {
-        //                Style = SKPaintStyle.Stroke,
-        //                IsAntialias = true,
-        //                StrokeCap = SKStrokeCap.Round,
-        //                StrokeJoin = SKStrokeJoin.Round
-        //            };
-        //            _segmentPaint.Color = segmentColor;
-        //            _segmentPaint.StrokeWidth = segmentWidth;
+        if (PointStyle != PointStyle.None || ShowDataLabels) {
+            for (var i = 0; i < points.Count; i++) {
+                var rp = points[i];
+                var args = new NTDataPointRenderArgs<TData> {
+                    Data = rp.Data,
+                    Index = rp.Index,
+                    Color = color,
+                    PointSize = PointSize,
+                    PointShape = PointShape,
+                    GetThemeColor = Chart.GetThemeColor
+                };
+                OnDataPointRender?.Invoke(args);
 
-        //            if (segmentStyle == LineStyle.Dashed) {
-        //                _segmentPaint.PathEffect = SKPathEffect.CreateDash([10, 5], 0);
-        //            }
-        //            else {
-        //                _segmentPaint.PathEffect = null;
-        //            }
+                var isPointHovered = Chart.HoveredSeries == this && Chart.HoveredPointIndex == rp.Index;
+                var pointColor = args.Color ?? color;
+                var pointStrokeColor = args.StrokeColor ?? pointColor;
+                var currentPointSize = (args.PointSize ?? PointSize) * context.Density;
+                var currentPointShape = args.PointShape ?? PointShape;
 
-        //            // For now, segment-based styling only supports straight lines
-        //            canvas.DrawLine(points[i - 1], points[i], _segmentPaint);
-        //        }
-        //    }
-        //}
+                if (isPointHovered) {
+                    pointColor = pointColor.WithAlpha(255);
+                    pointStrokeColor = pointStrokeColor.WithAlpha(255);
+                    currentPointSize *= 1.5f;
+                }
 
-        //if (PointStyle != PointStyle.None || ShowDataLabels) {
-        //    var dataList = Data.ToList();
-        //    for (var i = 0; i < points.Count; i++) {
-        //        var item = dataList[i];
-        //        var args = new NTDataPointRenderArgs<TData> {
-        //            Data = item,
-        //            Index = i,
-        //            Color = color,
-        //            PointSize = PointSize,
-        //            PointShape = PointShape,
-        //            GetThemeColor = Chart.GetThemeColor
-        //        };
-        //        OnDataPointRender?.Invoke(args);
+                if (PointStyle != PointStyle.None) {
+                    RenderPoint(context, rp.Point.X, rp.Point.Y, pointColor, currentPointSize / context.Density, currentPointShape, pointStrokeColor);
+                }
 
-        //        var point = points[i];
-        //        var isPointHovered = Chart.HoveredSeries == this && Chart.HoveredPointIndex == i;
-
-        //        var pointColor = args.Color ?? color;
-        //        var pointStrokeColor = args.StrokeColor ?? pointColor;
-        //        var currentPointSize = args.PointSize ?? PointSize;
-        //        var currentPointShape = args.PointShape ?? PointShape;
-
-        //        if (isPointHovered) {
-        //            pointColor = pointColor.WithAlpha(255);
-        //            pointStrokeColor = pointStrokeColor.WithAlpha(255);
-        //            currentPointSize *= 1.5f;
-        //        }
-
-        //        if (PointStyle != PointStyle.None) {
-        //            RenderPoint(context, point.X, point.Y, pointColor, currentPointSize, currentPointShape, pointStrokeColor);
-        //        }
-
-        //        if (ShowDataLabels || isPointHovered) {
-        //            var labelColor = args.DataLabelColor;
-        //            var labelSize = args.DataLabelSize ?? DataLabelSize;
-        //            RenderDataLabel(context, point.X, point.Y, YValueSelector(dataList[i]), renderArea, labelColor, labelSize);
-        //        }
-        //    }
-        //}
+                if (ShowDataLabels || isPointHovered) {
+                    var labelColor = args.DataLabelColor;
+                    var labelSize = args.DataLabelSize ?? DataLabelSize;
+                    RenderDataLabel(context, rp.Point.X, rp.Point.Y, rp.Value, renderArea, labelColor, labelSize);
+                }
+            }
+        }
 
         return renderArea;
     }
 
     protected List<SKPoint> GetPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {
-        
-        return [];
+        var points = GetRenderPoints(renderArea, xMin, xMax, Chart.YAxis as NTAxisOptions<TData>);
+        return points.Select(p => p.Point).ToList();
     }
 
-    private List<SKPoint> GetAggregatedPoints(List<(TData Data, int Index)> visibleData, SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {
-        //var points = new List<SKPoint>();
-        //if (AggregationThreshold <= 0) return points;
+    private List<RenderPointInfo> GetRenderPoints(SKRect renderArea, double xMin, double xMax, NTAxisOptions<TData>? yAxis) {
+        var visibleData = GetVisibleWindow(xMin, xMax);
+        if (visibleData.Count == 0) {
+            return [];
+        }
 
-        //var buckets = new List<(TData Data, int Index)>[AggregationThreshold];
-        //for (int i = 0; i < buckets.Length; i++) buckets[i] = [];
+        if (EnableAggregation && visibleData.Count > AggregationThreshold && AggregationThreshold > 1) {
+            return GetAggregatedPoints(visibleData, renderArea, xMin, xMax, yAxis);
+        }
 
-        //double range = xMax - xMin;
-        //if (range <= 0) range = 1;
+        var progress = GetAnimationProgress();
+        var easedProgress = (decimal)BackEase(progress);
+        var vFactor = (decimal)VisibilityFactor;
 
-        //foreach (var item in visibleData) {
-        //    var xVal = Chart.GetScaledXValue(XValue?.Invoke(item.Data));
-        //    int bucketIndex = (int)((xVal - xMin) / range * (AggregationThreshold - 1));
-        //    bucketIndex = Math.Clamp(bucketIndex, 0, AggregationThreshold - 1);
-        //    buckets[bucketIndex].Add(item);
-        //}
+        var points = new List<RenderPointInfo>(visibleData.Count);
+        foreach (var item in visibleData) {
+            var targetY = YValueSelector(item.Data);
+            var animatedY = (targetY * easedProgress) * vFactor * vFactor;
 
-        //var vFactor = (decimal)VisibilityFactor;
+            var screenX = Chart.ScaleX(item.X, renderArea);
+            var screenY = ScaleYForAxis(animatedY, yAxis, renderArea);
+            points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), item.Data, item.Index, targetY));
+        }
 
-        //foreach (var bucket in buckets) {
-        //    if (bucket.Count == 0) continue;
+        return points;
+    }
 
-        //    decimal aggregatedY = 0;
-        //    double aggregatedX = 0;
+    private List<RenderPointInfo> GetAggregatedPoints(List<VisiblePoint> visibleData, SKRect renderArea, double xMin, double xMax, NTAxisOptions<TData>? yAxis) {
+        if (AggregationThreshold <= 1) {
+            return [];
+        }
 
-        //    if (AggregationMode == AggregationMode.Average) {
-        //        aggregatedY = bucket.Average(x => YValueSelector!(x.Data));
-        //        aggregatedX = bucket.Average(x => Chart.GetScaledXValue(XValue?.Invoke(x.Data)));
-        //    }
+        var bucketCount = Math.Min(AggregationThreshold, Math.Max(2, (int)renderArea.Width));
+        var buckets = new List<VisiblePoint>[bucketCount];
+        for (var i = 0; i < buckets.Length; i++) {
+            buckets[i] = [];
+        }
 
-        //    else if (AggregationMode == AggregationMode.Sum) {
-        //        aggregatedY = bucket.Sum(x => YValueSelector!(x.Data));
-        //        aggregatedX = bucket.Average(x => Chart.GetScaledXValue(XValue?.Invoke(x.Data)));
-        //    }
+        var range = xMax - xMin;
+        if (range <= 0) {
+            range = 1;
+        }
 
-        //    else if (AggregationMode == AggregationMode.Min) {
-        //        aggregatedY = bucket.Min(x => YValueSelector!(x.Data));
-        //        var best = bucket.First(x => YValueSelector!(x.Data) == aggregatedY);
-        //        aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(best.Data));
-        //    }
+        foreach (var item in visibleData) {
+            var bucketIndex = (int)((item.X - xMin) / range * (bucketCount - 1));
+            bucketIndex = Math.Clamp(bucketIndex, 0, bucketCount - 1);
+            buckets[bucketIndex].Add(item);
+        }
 
-        //    else if (AggregationMode == AggregationMode.Max) {
-        //        aggregatedY = bucket.Max(x => YValueSelector!(x.Data));
-        //        var best = bucket.First(x => YValueSelector!(x.Data) == aggregatedY);
-        //        aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(best.Data));
-        //    }
+        var progress = GetAnimationProgress();
+        var easedProgress = (decimal)BackEase(progress);
+        var vFactor = (decimal)VisibilityFactor;
 
-        //    else {
-        //        var mid = bucket[bucket.Count / 2];
-        //        aggregatedY = YValueSelector!(mid.Data);
-        //        aggregatedX = Chart.GetScaledXValue(XValue?.Invoke(mid.Data));
-        //    }
+        var points = new List<RenderPointInfo>();
+        foreach (var bucket in buckets) {
+            if (bucket.Count == 0) {
+                continue;
+            }
 
+            decimal aggregatedY;
+            double aggregatedX;
+            VisiblePoint representative;
 
-        //    aggregatedY *= vFactor * vFactor;
+            if (AggregationMode == AggregationMode.Average) {
+                aggregatedY = bucket.Average(x => YValueSelector(x.Data));
+                aggregatedX = bucket.Average(x => x.X);
+                representative = bucket[bucket.Count / 2];
+            }
+            else if (AggregationMode == AggregationMode.Sum) {
+                aggregatedY = bucket.Sum(x => YValueSelector(x.Data));
+                aggregatedX = bucket.Average(x => x.X);
+                representative = bucket[bucket.Count / 2];
+            }
+            else if (AggregationMode == AggregationMode.Min) {
+                representative = bucket.MinBy(x => YValueSelector(x.Data));
+                aggregatedY = YValueSelector(representative.Data);
+                aggregatedX = representative.X;
+            }
+            else if (AggregationMode == AggregationMode.Max) {
+                representative = bucket.MaxBy(x => YValueSelector(x.Data));
+                aggregatedY = YValueSelector(representative.Data);
+                aggregatedX = representative.X;
+            }
+            else {
+                representative = bucket[bucket.Count / 2];
+                aggregatedY = YValueSelector(representative.Data);
+                aggregatedX = representative.X;
+            }
 
-        //    var screenX = Chart.ScaleX(aggregatedX, renderArea, Chart.XAxis);
-        //    var screenY = Chart.ScaleY(aggregatedY, Chart.YAxis, renderArea);
-        //    points.Add(new SKPoint(screenX, screenY));
-        //}
+            var animatedY = (aggregatedY * easedProgress) * vFactor * vFactor;
+            var screenX = Chart.ScaleX(aggregatedX, renderArea);
+            var screenY = ScaleYForAxis(animatedY, yAxis, renderArea);
+            points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), representative.Data, representative.Index, aggregatedY));
+        }
 
-        return [];
+        return points;
+    }
+
+    private float ScaleYForAxis(decimal y, NTAxisOptions<TData>? yAxis, SKRect plotArea) {
+        if (yAxis == null || ReferenceEquals(yAxis, Chart.YAxis)) {
+            return Chart.ScaleY(y, plotArea);
+        }
+
+        var (min, max) = Chart.GetYRange(yAxis, true);
+        var scale = yAxis.Scale;
+
+        double t;
+        if (scale == NTAxisScale.Logarithmic) {
+            var dMin = Math.Max(0.000001, (double)min);
+            var dMax = Math.Max(dMin * 1.1, (double)max);
+            var dy = Math.Max(dMin, (double)y);
+            t = (Math.Log10(dy) - Math.Log10(dMin)) / (Math.Log10(dMax) - Math.Log10(dMin));
+        }
+        else {
+            var range = max - min;
+            if (range <= 0) {
+                return plotArea.Bottom;
+            }
+            t = (double)((y - min) / range);
+        }
+
+        const float p = 3f;
+        var bottom = plotArea.Bottom - p;
+        var height = plotArea.Height - (p * 2);
+        return (float)(bottom - (t * height));
     }
 
     protected SKPath BuildPath(List<SKPoint> points) {
@@ -336,44 +388,48 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
     /// <inheritdoc />
     public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
-        //if (Data == null || !Data.Any()) {
-        //    return null;
-        //}
+        if (Data == null || !Data.Any()) {
+            return null;
+        }
 
-        //var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
-        //var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
-        //var points = GetPoints(renderArea, xMin, xMax, yMin, yMax);
-        //var dataList = Data.ToList();
+        var yAxis = (UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis) as NTAxisOptions<TData>;
+        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis as NTAxisOptions<TData>, true);
+        var points = GetRenderPoints(renderArea, xMin, xMax, yAxis);
 
-        //for (var i = 0; i < points.Count; i++) {
-        //    var p = points[i];
-        //    var distance = Math.Sqrt(Math.Pow(p.X - point.X, 2) + Math.Pow(p.Y - point.Y, 2));
-        //    if (distance < PointSize + 5) {
-        //        return (i, dataList[i]);
-        //    }
-        //}
+        for (var i = 0; i < points.Count; i++) {
+            var p = points[i].Point;
+            var distance = Math.Sqrt(Math.Pow(p.X - point.X, 2) + Math.Pow(p.Y - point.Y, 2));
+            if (distance < (PointSize * Chart.Density) + (5 * Chart.Density)) {
+                return (points[i].Index, points[i].Data);
+            }
+        }
 
-        //if (points.Count > 1 && LineStyle != LineStyle.None) {
-        //    _hitTestPath?.Dispose();
-        //    _hitTestPath = BuildPath(points);
+        if (points.Count > 1 && LineStyle != LineStyle.None) {
+            _hitTestPath?.Dispose();
+            _hitTestPath = BuildPath(points.Select(p => p.Point).ToList());
 
-        //    _hitTestPaint ??= new SKPaint {
-        //        Style = SKPaintStyle.Stroke,
-        //        StrokeCap = SKStrokeCap.Round,
-        //        StrokeJoin = SKStrokeJoin.Round
-        //    };
-        //    _hitTestPaint.StrokeWidth = StrokeWidth + 10; // Wider tolerance for hovering
+            _hitTestPaint ??= new SKPaint {
+                Style = SKPaintStyle.Stroke,
+                StrokeCap = SKStrokeCap.Round,
+                StrokeJoin = SKStrokeJoin.Round
+            };
+            _hitTestPaint.StrokeWidth = (StrokeWidth * Chart.Density) + (10 * Chart.Density);
 
-        //    _hitTestStrokePath ??= new SKPath();
-        //    _hitTestStrokePath.Reset();
+            _hitTestStrokePath ??= new SKPath();
+            _hitTestStrokePath.Reset();
 
-        //    _hitTestPaint.GetFillPath(_hitTestPath, _hitTestStrokePath);
+            _hitTestPaint.GetFillPath(_hitTestPath, _hitTestStrokePath);
 
-        //    if (_hitTestStrokePath.Contains(point.X, point.Y)) {
-        //        return (-1, null);
-        //    }
-        //}
+            if (_hitTestStrokePath.Contains(point.X, point.Y)) {
+                var nearest = points
+                    .OrderBy(p => Math.Abs(p.Point.X - point.X))
+                    .ThenBy(p => Math.Abs(p.Point.Y - point.Y))
+                    .First();
+                return (nearest.Index, nearest.Data);
+            }
+        }
 
         return null;
     }
 }
+

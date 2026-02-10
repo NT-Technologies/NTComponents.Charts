@@ -365,144 +365,126 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     }
 
     public (double Min, double Max) GetXRange(NTAxisOptions<TData>? axis, bool padded = false) {
-        throw new NotImplementedException();
-        //if (XAxis != null && XAxis.CachedXRange.HasValue && padded) {
-        //    return XAxis.CachedXRange.Value;
-        //}
+        var cartesianSeries = Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible).ToList();
+        if (!cartesianSeries.Any()) {
+            return (0, 1);
+        }
 
-        //foreach (var s in Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible)) {
-        //    var v = s.GetViewXRange();
-        //    if (v.HasValue) {
-        //        if (XAxis != null && padded)
-        //            XAxis.CachedXRange = v.Value;
-        //        return v.Value;
-        //    }
-        //}
+        var viewRanges = cartesianSeries
+            .Select(s => s.GetViewXRange())
+            .Where(r => r.HasValue)
+            .Select(r => r!.Value)
+            .ToList();
+        var hasViewRange = viewRanges.Count > 0;
 
-        //    if (!allX.Any()) {
-        //        return (0, 1);
-        //    }
+        if (XAxis.IsCategorical) {
+            var allX = GetAllXValues();
+            if (!allX.Any()) {
+                return (0, 1);
+            }
 
-        //    if (!padded) {
-        //        return (0, Math.Max(1, allX.Count - 1));
-        //    }
+            double min = 0;
+            double max = Math.Max(1, allX.Count - 1);
 
-        //    var catRange = Math.Max(1, allX.Count - 1);
-        //    var resultCat = (-catRange * RangePadding, catRange + (catRange * RangePadding));
-        //    if (XAxis != null)
-        //        XAxis.CachedXRange = resultCat;
-        //    return resultCat;
-        //}
+            if (hasViewRange) {
+                min = viewRanges.Min(v => v.Min);
+                max = viewRanges.Max(v => v.Max);
+            }
 
-        //var min = (double?)(XAxis?.Min) ?? double.MaxValue;
-        //var max = (double?)(XAxis?.Max) ?? double.MinValue;
+            if (!padded || hasViewRange) {
+                return NormalizeRange(min, max);
+            }
 
-        //var seriesToConsider = Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible);
+            var catRange = Math.Max(1, max - min);
+            var padding = catRange * RangePadding;
+            return NormalizeRange(min - padding, max + padding);
+        }
 
-        //foreach (var s in seriesToConsider) {
-        //    var seriesRange = s.GetXRange();
-        //    if (seriesRange.HasValue) {
-        //        if (XAxis?.Min == null)
-        //            min = Math.Min(min, seriesRange.Value.Min);
-        //        if (XAxis?.Max == null)
-        //            max = Math.Max(max, seriesRange.Value.Max);
-        //    }
-        //}
+        double dataMin = double.MaxValue;
+        double dataMax = double.MinValue;
 
-        //if (min == double.MaxValue)
-        //    min = 0;
-        //if (max == double.MinValue)
-        //    max = 1;
+        foreach (var s in cartesianSeries) {
+            var range = s.GetXRange();
+            if (!range.HasValue) {
+                continue;
+            }
 
-        //if (!padded || (XAxis?.Min != null && XAxis?.Max != null)) {
-        //    var resultNoPad = (min, max);
-        //    if (XAxis != null && padded)
-        //        XAxis.CachedXRange = resultNoPad;
-        //    return resultNoPad;
-        //}
+            dataMin = Math.Min(dataMin, range.Value.Min);
+            dataMax = Math.Max(dataMax, range.Value.Max);
+        }
 
-        //var (niceMin, niceMax, _) = (XAxis ?? NTXAxisOptions<TData>.Default).CalculateNiceScaling(min, max, (XAxis ?? NTXAxisOptions<TData>.Default).MaxTicks);
-        //var result = (niceMin, niceMax);
-        //if (XAxis != null)
-        //    XAxis.CachedXRange = result;
-        //return result;
+        if (hasViewRange) {
+            dataMin = viewRanges.Min(v => v.Min);
+            dataMax = viewRanges.Max(v => v.Max);
+        }
+
+        if (dataMin == double.MaxValue || dataMax == double.MinValue) {
+            return (0, 1);
+        }
+
+        if (!padded || hasViewRange) {
+            return NormalizeRange(dataMin, dataMax);
+        }
+
+        var rangeSize = Math.Max(1e-9, dataMax - dataMin);
+        var rangePadding = rangeSize * RangePadding;
+        return NormalizeRange(dataMin - rangePadding, dataMax + rangePadding);
     }
 
     public (decimal Min, decimal Max) GetYRange(NTAxisOptions<TData>? axis, bool padded = false) {
-        throw new NotImplementedException();
-        //if (YAxis != null && YAxis.CachedYRange.HasValue && padded) {
-        //    return YAxis.CachedYRange.Value;
-        //}
+        var useSecondaryAxis = axis is not null && SecondaryYAxis is not null && ReferenceEquals(axis, SecondaryYAxis);
 
-        //foreach (var s in Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible)) {
-        //    var v = s.GetViewYRange();
-        //    if (v.HasValue) {
-        //        if (YAxis != null && padded)
-        //            YAxis.CachedYRange = v.Value;
-        //        return v.Value;
-        //    }
-        //}
 
-        //    var allY = GetAllYValues();
-        //    if (!allY.Any()) {
-        //        return (0, 1);
-        //    }
+        var cartesianSeries = Series
+            .OfType<NTCartesianSeries<TData>>()
+            .Where(s => s.IsEffectivelyVisible && s.UseSecondaryYAxis == useSecondaryAxis)
+            .ToList();
 
-        //    if (!padded) {
-        //        return (0, Math.Max(1, allY.Count - 1));
-        //    }
+        if (!cartesianSeries.Any()) {
+            return (0, 1);
+        }
 
-        //    var catRange = (decimal)Math.Max(1, allY.Count - 1);
-        //    var rp = (decimal)RangePadding;
-        //    var resultCat = (-catRange * rp, catRange + (catRange * rp));
-        //    if (YAxis != null)
-        //        YAxis.CachedYRange = resultCat;
-        //    return resultCat;
-        //}
+        var viewRanges = cartesianSeries
+            .Select(s => s.GetViewYRange())
+            .Where(r => r.HasValue)
+            .Select(r => r!.Value)
+            .ToList();
+        var hasViewRange = viewRanges.Count > 0;
 
-        //var min = YAxis?.Min ?? decimal.MaxValue;
-        //var max = YAxis?.Max ?? decimal.MinValue;
+        decimal min = decimal.MaxValue;
+        decimal max = decimal.MinValue;
 
-        //var seriesToConsider = Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible);
+        var xAxisOptions = XAxis as NTAxisOptions<TData>;
+        var hasXViewRange = xAxisOptions is not null && HasViewRange(xAxisOptions);
+        var viewXRange = hasXViewRange ? GetXRange(xAxisOptions, true) : (Min: 0d, Max: 0d);
 
-        //foreach (var s in seriesToConsider) {
-        //    var xView = s.GetViewXRange();
-        //    var seriesRange = (IsXZoomEnabled && xView.HasValue)
-        //        ? s.GetYRange(xView!.Value.Min, xView.Value.Max)
-        //        : s.GetYRange();
+        foreach (var s in cartesianSeries) {
+            var yRange = hasXViewRange ? s.GetYRange(viewXRange.Min, viewXRange.Max) : s.GetYRange();
+            if (!yRange.HasValue) {
+                continue;
+            }
 
-        //    if (seriesRange.HasValue) {
-        //        if (YAxis?.Min == null)
-        //            min = Math.Min(min, seriesRange.Value.Min);
-        //        if (YAxis?.Max == null)
-        //            max = Math.Max(max, seriesRange.Value.Max);
-        //    }
-        //}
+            min = Math.Min(min, yRange.Value.Min);
+            max = Math.Max(max, yRange.Value.Max);
+        }
 
-        //if (min == decimal.MaxValue)
-        //    min = 0;
-        //if (max == decimal.MinValue)
-        //    max = 1;
+        if (hasViewRange) {
+            min = viewRanges.Min(v => v.Min);
+            max = viewRanges.Max(v => v.Max);
+        }
 
-        //// Bar charts should generally start at 0
-        //if (YAxis?.Min == null && seriesToConsider.Any(s => s is NTBarSeries<TData>)) {
-        //    min = Math.Min(0, min);
-        //}
+        if (min == decimal.MaxValue || max == decimal.MinValue) {
+            return (0, 1);
+        }
 
-        //if (!padded || (YAxis?.Min != null && YAxis?.Max != null)) {
-        //    var range = (min, max);
-        //    if (YAxis != null && padded)
-        //        YAxis.CachedYRange = range;
-        //    return range;
-        //}
+        if (!padded || hasViewRange) {
+            return NormalizeRange(min, max);
+        }
 
-        //var (niceMinY, niceMaxY, _) = (YAxis ?? NTYAxisOptions<TData>.Default).CalculateNiceScaling((double)min, (double)max, (YAxis ?? NTYAxisOptions<TData>.Default).MaxTicks);
-        //var result = ((decimal)niceMinY, (decimal)niceMaxY);
-        //if (YAxis != null)
-        //    YAxis.CachedYRange = result;
-        //return result;
+        var rangeSize = Math.Max(0.0000001m, max - min);
+        var rangePadding = rangeSize * (decimal)RangePadding;
+        return NormalizeRange(min - rangePadding, max + rangePadding);
     }
-
     [JSInvokable]
     public async Task OnThemeChanged() {
         await ResolveColorsAsync();
@@ -520,77 +502,73 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     }
 
     public float ScaleX(double x, SKRect plotArea) {
+        var (min, max) = GetXRange(XAxis as NTAxisOptions<TData>, true);
+        var scale = (XAxis as NTAxisOptions<TData>)?.Scale ?? NTAxisScale.Linear;
 
-        //var (min, max) = GetXRange(XAxis, true);
-        //var scale = XAxis.Scale;
+        double t;
+        if (scale == NTAxisScale.Logarithmic) {
+            min = Math.Max(0.000001, min);
+            max = Math.Max(min * 1.1, max);
+            x = Math.Max(min, x);
+            t = (Math.Log10(x) - Math.Log10(min)) / (Math.Log10(max) - Math.Log10(min));
+        }
+        else {
+            var range = max - min;
+            if (range <= 0) {
+                return plotArea.Left;
+            }
+            t = (x - min) / range;
+        }
 
-        //double t;
-        //if (scale == NTAxisScale.Logarithmic) {
-        //    min = Math.Max(0.000001, min);
-        //    max = Math.Max(min * 1.1, max);
-        //    x = Math.Max(min, x);
-        //    t = (Math.Log10(x) - Math.Log10(min)) / (Math.Log10(max) - Math.Log10(min));
-        //}
-        //else {
-        //    var range = max - min;
-        //    if (range <= 0) {
-        //        return plotArea.Left;
-        //    }
-        //    t = (x - min) / range;
-        //}
-
-        //const float p = 3f; // 3 pixels of air
-        //var left = plotArea.Left + p;
-        //var width = plotArea.Width - (p * 2);
-        //return (float)(left + (t * width));
-        return 0;
+        const float p = 3f;
+        var left = plotArea.Left + p;
+        var width = plotArea.Width - (p * 2);
+        return (float)(left + (t * width));
     }
 
     public double ScaleXInverse(float coord, SKRect plotArea) {
-        //var (min, max) = GetXRange(XAxis, true);
-        //var scale = XAxis?.Scale ?? NTAxisScale.Linear;
+        var (min, max) = GetXRange(XAxis as NTAxisOptions<TData>, true);
+        var scale = (XAxis as NTAxisOptions<TData>)?.Scale ?? NTAxisScale.Linear;
 
-        //const float p = 3f;
-        //double t;
-        //var left = plotArea.Left + p;
-        //var width = plotArea.Width - (p * 2);
-        //t = width <= 0 ? 0 : (coord - left) / width;
+        const float p = 3f;
+        var left = plotArea.Left + p;
+        var width = plotArea.Width - (p * 2);
+        var t = width <= 0 ? 0 : (coord - left) / width;
 
-        //if (scale == NTAxisScale.Logarithmic) {
-        //    min = Math.Max(0.000001, min);
-        //    max = Math.Max(min * 1.1, max);
-        //    return Math.Pow(10, Math.Log10(min) + (t * (Math.Log10(max) - Math.Log10(min))));
-        //}
-        //return min + (t * (max - min));
-        return 0;
+        if (scale == NTAxisScale.Logarithmic) {
+            min = Math.Max(0.000001, min);
+            max = Math.Max(min * 1.1, max);
+            return Math.Pow(10, Math.Log10(min) + (t * (Math.Log10(max) - Math.Log10(min))));
+        }
+
+        return min + (t * (max - min));
     }
 
 
 
     public float ScaleY(decimal y, SKRect plotArea) {
-        //var (min, max) = GetYRange(YAxis, true);
-        //var scale = YAxis?.Scale ?? NTAxisScale.Linear;
+        var (min, max) = GetYRange(YAxis as NTAxisOptions<TData>, true);
+        var scale = (YAxis as NTAxisOptions<TData>)?.Scale ?? NTAxisScale.Linear;
 
-        //double t;
-        //if (scale == NTAxisScale.Logarithmic) {
-        //    var dMin = Math.Max(0.000001, (double)min);
-        //    var dMax = Math.Max(dMin * 1.1, (double)max);
-        //    var dy = Math.Max(dMin, (double)y);
-        //    t = (Math.Log10(dy) - Math.Log10(dMin)) / (Math.Log10(dMax) - Math.Log10(dMin));
-        //}
-        //else {
-        //    var range = max - min;
-        //    if (range <= 0) {
-        //        return plotArea.Bottom;
-        //    }
-        //    t = (double)((y - min) / range);
-        //}
+        double t;
+        if (scale == NTAxisScale.Logarithmic) {
+            var dMin = Math.Max(0.000001, (double)min);
+            var dMax = Math.Max(dMin * 1.1, (double)max);
+            var dy = Math.Max(dMin, (double)y);
+            t = (Math.Log10(dy) - Math.Log10(dMin)) / (Math.Log10(dMax) - Math.Log10(dMin));
+        }
+        else {
+            var range = max - min;
+            if (range <= 0) {
+                return plotArea.Bottom;
+            }
+            t = (double)((y - min) / range);
+        }
 
-        //const float p = 3f; // 3 pixels of air
-        //var bottom = plotArea.Bottom - p;
-        //var height = plotArea.Height - (p * 2);
-        //return (float)(bottom - (t * height));
-        return 1;
+        const float p = 3f;
+        var bottom = plotArea.Bottom - p;
+        var height = plotArea.Height - (p * 2);
+        return (float)(bottom - (t * height));
     }
 
     /// <summary>
@@ -869,7 +847,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         _lastWidth = info.Width;
         _lastHeight = info.Height;
 
-        // Reset hover state and cache for this frame calculation
         HoveredSeries = null;
         HoveredPointIndex = null;
         HoveredDataPoint = null;
@@ -898,36 +875,68 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
         canvas.Clear(GetThemeColor(BackgroundColor));
 
-
-        foreach (var order in Enum.GetValues<RenderOrdered>().Where(x => x is RenderOrdered.Title or RenderOrdered.Legend or RenderOrdered.Axis)) {
-
+        foreach (var order in Enum.GetValues<RenderOrdered>()) {
             if (order is RenderOrdered.Axis && _chartCoordSystem is ChartCoordinateSystem.Cartesian) {
-                var axisArea = renderArea;
-                foreach (var renderable in _renderablesByOrder[order]) {
-                    axisArea = renderable.Render(context, axisArea);
-                }
+                var plotArea = renderArea;
 
-                var xAxisArea = new SKRect(axisArea.Left, renderArea.Top, axisArea.Right, renderArea.Bottom);
+                if (YAxis is NTAxisOptions<TData> primaryYAxis) {
+                    plotArea = primaryYAxis.Measure(context, plotArea);
+                }
+                if (SecondaryYAxis is NTAxisOptions<TData> secondaryYAxisMeasure) {
+                    plotArea = secondaryYAxisMeasure.Measure(context, plotArea);
+                }
+                if (XAxis is NTAxisOptions<TData> xAxisMeasure) {
+                    plotArea = xAxisMeasure.Measure(context, plotArea);
+                }
+                var xAxisArea = new SKRect(plotArea.Left, plotArea.Top, plotArea.Right, renderArea.Bottom);
+
+                context.PlotArea = plotArea;
+                LastPlotArea = plotArea;
+
                 XAxis.Render(context, xAxisArea);
 
-                var yAxisArea = new SKRect(renderArea.Left, axisArea.Top, renderArea.Right, axisArea.Bottom);
+                var yAxisArea = new SKRect(renderArea.Left, plotArea.Top, plotArea.Right, plotArea.Bottom);
                 YAxis.Render(context, yAxisArea);
 
                 if (SecondaryYAxis is not null) {
-                    var secondaryYAxisArea = new SKRect(renderArea.Left, axisArea.Top, renderArea.Right, axisArea.Bottom);
+                    var secondaryYAxisArea = new SKRect(plotArea.Left, plotArea.Top, renderArea.Right, plotArea.Bottom);
                     SecondaryYAxis.Render(context, secondaryYAxisArea);
                 }
+
+                renderArea = plotArea;
+                continue;
             }
-            else {
-                foreach (var renderable in _renderablesByOrder[order]) {
-                    renderArea = renderable.Render(context, renderArea);
+
+            if (order is RenderOrdered.Series) {
+                context.PlotArea = renderArea;
+                LastPlotArea = renderArea;
+
+                if (_chartCoordSystem == ChartCoordinateSystem.TreeMap) {
+                    CalculateTreeMapAreas(renderArea);
                 }
+
+                PerformHitTesting(context, renderArea);
+
+                foreach (var renderable in _renderablesByOrder[order]) {
+                    if (renderable is not NTBaseSeries<TData> series || !series.IsEffectivelyVisible) {
+                        continue;
+                    }
+
+                    var seriesArea = GetSeriesRenderArea(series, renderArea, totalArea);
+                    series.Render(context, seriesArea);
+                }
+
+                if (_chartCoordSystem == ChartCoordinateSystem.TreeMap) {
+                    RenderTreeMapGroupLabels(context);
+                }
+
+                continue;
             }
 
-
+            foreach (var renderable in _renderablesByOrder[order]) {
+                renderArea = renderable.Render(context, renderArea);
+            }
         }
-
-        // Pass 9: Update cursor if needed
 
         if (sw != null) {
             sw.Stop();
@@ -935,7 +944,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             RenderDebugInfo(context);
         }
     }
-
     private ChartCoordinateSystem _chartCoordSystem;
 
     private void PerformHitTesting(NTRenderContext context, SKRect plotArea) {
@@ -1158,8 +1166,59 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
     }
 
-    public decimal ScaleYInverse(float coord, SKRect plotArea) => throw new NotImplementedException();
-    public bool HasViewRange(NTAxisOptions<TData> axis) => throw new NotImplementedException();
+    public decimal ScaleYInverse(float coord, SKRect plotArea) => ScaleYInverse(coord, YAxis as NTAxisOptions<TData>, plotArea);
+
+    public bool HasViewRange(NTAxisOptions<TData> axis) {
+        if (ReferenceEquals(axis, XAxis)) {
+            return Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible).Any(s => s.GetViewXRange().HasValue);
+        }
+
+        var isSecondary = SecondaryYAxis is not null && ReferenceEquals(axis, SecondaryYAxis);
+        return Series
+            .OfType<NTCartesianSeries<TData>>()
+            .Where(s => s.IsEffectivelyVisible && s.UseSecondaryYAxis == isSecondary)
+            .Any(s => s.GetViewYRange().HasValue);
+    }
+
+    private static (double Min, double Max) NormalizeRange(double min, double max) {
+        if (double.IsNaN(min) || double.IsNaN(max) || double.IsInfinity(min) || double.IsInfinity(max)) {
+            return (0, 1);
+        }
+
+        if (max < min) {
+            (min, max) = (max, min);
+        }
+
+        if (Math.Abs(max - min) <= double.Epsilon) {
+            var delta = Math.Abs(min) > 1 ? Math.Abs(min * 0.01) : 1;
+            return (min - delta, max + delta);
+        }
+
+        return (min, max);
+    }
+
+    private static (decimal Min, decimal Max) NormalizeRange(decimal min, decimal max) {
+        if (max < min) {
+            (min, max) = (max, min);
+        }
+
+        if (max == min) {
+            var delta = Math.Abs(min) > 1 ? Math.Abs(min * 0.01m) : 1m;
+            return (min - delta, max + delta);
+        }
+
+        return (min, max);
+    }
 
     private record SeriesLayoutItem(NTBaseSeries<TData> Series, decimal Value);
 }
+
+
+
+
+
+
+
+
+
+
