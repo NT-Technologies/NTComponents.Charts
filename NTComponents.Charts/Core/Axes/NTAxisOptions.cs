@@ -10,16 +10,14 @@ namespace NTComponents.Charts.Core.Axes;
 /// </summary>
 public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where TData : class {
 
+    [Parameter]
+    public float AxisFontSize { get; set; } = 12;
+
     /// <summary>
     ///     Gets or sets the format string for axis labels.
     /// </summary>
     [Parameter]
     public string? LabelFormat { get; set; }
-
-    [Parameter]
-    public float TitleFontSize { get; set; } = 16;
-    [Parameter]
-    public float AxisFontSize { get; set; } = 12;
 
     /// <inheritdoc />
     public RenderOrdered RenderOrder => RenderOrdered.Axis;
@@ -35,6 +33,9 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
     /// </summary>
     [Parameter]
     public string? Title { get; set; }
+
+    [Parameter]
+    public float TitleFontSize { get; set; } = 16;
 
     /// <summary>
     ///     Gets or sets whether the axis is visible.
@@ -53,6 +54,12 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
     /// <inheritdoc />
     public virtual void Invalidate() { }
 
+    /// <summary>
+    ///     Measures the required space for the axis within the given render area.
+    /// </summary>
+    /// <param name="context">   The current frame's render context.</param>
+    /// <param name="renderArea">The availble render area.</param>
+    /// <returns>The space that would be left over in the <paramref name="renderArea"/> after rendering the axis.</returns>
     public virtual SKRect Measure(NTRenderContext context, SKRect renderArea) => renderArea;
 
     public abstract SKRect Render(NTRenderContext context, SKRect renderArea);
