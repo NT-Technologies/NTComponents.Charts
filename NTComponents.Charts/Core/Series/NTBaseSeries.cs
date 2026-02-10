@@ -313,7 +313,10 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     /// <summary>
     ///     Called when the data reference changes.
     /// </summary>
-    protected virtual void OnDataChanged() => ResetAnimation();
+    protected virtual void OnDataChanged() {
+        ResetAnimation();
+        Chart?.InvalidateDataCaches();
+    }
 
     protected override void OnInitialized() {
         base.OnInitialized();
@@ -346,5 +349,12 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         if (Visible) {
             ResetAnimation();
         }
+
+        Chart?.InvalidateDataCaches();
     }
 }
+
+
+
+
+

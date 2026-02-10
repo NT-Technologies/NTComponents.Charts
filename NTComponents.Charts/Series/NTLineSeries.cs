@@ -13,6 +13,25 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
     private readonly record struct RenderPointInfo(SKPoint Point, TData Data, int Index, decimal Value);
 
+    private readonly record struct RenderCacheKey(
+        double XMin,
+        double XMax,
+        float Left,
+        float Top,
+        float Right,
+        float Bottom,
+        float Density,
+        float Progress,
+        float Visibility,
+        bool Aggregated,
+        int AggregationThreshold,
+        AggregationMode AggregationMode,
+        bool UseSecondaryAxis,
+        decimal YMin,
+        decimal YMax,
+        NTAxisScale YScale,
+        LineInterpolation Interpolation);
+
     /// <summary>
     ///     Gets or sets the width of the line.
     /// </summary>
@@ -52,9 +71,14 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     private SKPaint? _linePaint;
     private SKPaint? _segmentPaint;
     private SKPath? _linePath;
+    private RenderCacheKey? _linePathKey;
     private SKPaint? _hitTestPaint;
     private SKPath? _hitTestPath;
+    private RenderCacheKey? _hitTestPathKey;
     private SKPath? _hitTestStrokePath;
+
+    private List<RenderPointInfo>? _cachedRenderPoints;
+    private RenderCacheKey? _cachedRenderKey;
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
@@ -68,6 +92,14 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         base.Dispose(disposing);
     }
 
+    protected override void OnDataChanged() {
+        _cachedRenderPoints = null;
+        _cachedRenderKey = null;
+        _linePathKey = null;
+        _hitTestPathKey = null;
+        base.OnDataChanged();
+    }
+
     /// <inheritdoc />
     public override SKRect Render(NTRenderContext context, SKRect renderArea) {
         if (Data?.Any() != true) {
@@ -76,7 +108,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
         var yAxis = (UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis) as NTAxisOptions<TData>;
         var (xMin, xMax) = Chart.GetXRange(Chart.XAxis as NTAxisOptions<TData>, true);
-        var points = GetRenderPoints(renderArea, xMin, xMax, yAxis);
+        var points = GetRenderPoints(renderArea, xMin, xMax, yAxis, context.Density, out var renderKey);
 
         if (points.Count == 0) {
             return renderArea;
@@ -101,8 +133,11 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
         if (LineStyle != LineStyle.None && points.Count > 1) {
             if (OnDataPointRender == null) {
-                _linePath?.Dispose();
-                _linePath = BuildPath(points.Select(p => p.Point).ToList());
+                if (_linePath is null || !_linePathKey.HasValue || !_linePathKey.Value.Equals(renderKey)) {
+                    _linePath?.Dispose();
+                    _linePath = BuildPath(points.Select(p => p.Point).ToList());
+                    _linePathKey = renderKey;
+                }
                 canvas.DrawPath(_linePath, _linePaint);
             }
             else {
@@ -183,41 +218,81 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     }
 
     protected List<SKPoint> GetPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {
-        var points = GetRenderPoints(renderArea, xMin, xMax, Chart.YAxis as NTAxisOptions<TData>);
+        var points = GetRenderPoints(renderArea, xMin, xMax, Chart.YAxis as NTAxisOptions<TData>, Chart.Density, out _);
         return points.Select(p => p.Point).ToList();
     }
 
-    private List<RenderPointInfo> GetRenderPoints(SKRect renderArea, double xMin, double xMax, NTAxisOptions<TData>? yAxis) {
+    private List<RenderPointInfo> GetRenderPoints(SKRect renderArea, double xMin, double xMax, NTAxisOptions<TData>? yAxis, float density, out RenderCacheKey key) {
+        var (yMin, yMax) = Chart.GetYRange(yAxis, true);
+        var yScale = yAxis?.Scale ?? NTAxisScale.Linear;
+        var progress = GetAnimationProgress();
+        var visibility = VisibilityFactor;
+        var shouldAggregate = EnableAggregation && AggregationThreshold > 1;
+
+        key = new RenderCacheKey(
+            Math.Round(xMin, 6),
+            Math.Round(xMax, 6),
+            renderArea.Left,
+            renderArea.Top,
+            renderArea.Right,
+            renderArea.Bottom,
+            density,
+            (float)Math.Round(progress, 3),
+            (float)Math.Round(visibility, 3),
+            shouldAggregate,
+            AggregationThreshold,
+            AggregationMode,
+            UseSecondaryYAxis,
+            decimal.Round(yMin, 6),
+            decimal.Round(yMax, 6),
+            yScale,
+            Interpolation);
+
+        if (_cachedRenderPoints is not null && _cachedRenderKey.HasValue && _cachedRenderKey.Value.Equals(key)) {
+            return _cachedRenderPoints;
+        }
+
         var visibleData = GetVisibleWindow(xMin, xMax);
         if (visibleData.Count == 0) {
-            return [];
+            _cachedRenderPoints = [];
+            _cachedRenderKey = key;
+            return _cachedRenderPoints;
         }
 
-        if (EnableAggregation && visibleData.Count > AggregationThreshold && AggregationThreshold > 1) {
-            return GetAggregatedPoints(visibleData, renderArea, xMin, xMax, yAxis);
-        }
-
-        var progress = GetAnimationProgress();
         var easedProgress = (decimal)BackEase(progress);
-        var vFactor = (decimal)VisibilityFactor;
+        var vFactor = (decimal)visibility;
 
-        var points = new List<RenderPointInfo>(visibleData.Count);
-        foreach (var item in visibleData) {
-            var targetY = YValueSelector(item.Data);
-            var animatedY = (targetY * easedProgress) * vFactor * vFactor;
+        if (shouldAggregate && visibleData.Count > AggregationThreshold) {
+            _cachedRenderPoints = GetAggregatedPoints(visibleData, renderArea, xMin, xMax, yMin, yMax, yScale, easedProgress, vFactor);
+        }
+        else {
+            var points = new List<RenderPointInfo>(visibleData.Count);
+            foreach (var item in visibleData) {
+                var targetY = YValueSelector(item.Data);
+                var animatedY = (targetY * easedProgress) * vFactor * vFactor;
 
-            var screenX = Chart.ScaleX(item.X, renderArea);
-            var screenY = ScaleYForAxis(animatedY, yAxis, renderArea);
-            points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), item.Data, item.Index, targetY));
+                var screenX = Chart.ScaleX(item.X, renderArea);
+                var screenY = ScaleYFast(animatedY, yMin, yMax, yScale, renderArea);
+                points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), item.Data, item.Index, targetY));
+            }
+
+            _cachedRenderPoints = points;
         }
 
-        return points;
+        _cachedRenderKey = key;
+        return _cachedRenderPoints;
     }
 
-    private List<RenderPointInfo> GetAggregatedPoints(List<VisiblePoint> visibleData, SKRect renderArea, double xMin, double xMax, NTAxisOptions<TData>? yAxis) {
-        if (AggregationThreshold <= 1) {
-            return [];
-        }
+    private List<RenderPointInfo> GetAggregatedPoints(
+        List<VisiblePoint> visibleData,
+        SKRect renderArea,
+        double xMin,
+        double xMax,
+        decimal yMin,
+        decimal yMax,
+        NTAxisScale yScale,
+        decimal easedProgress,
+        decimal vFactor) {
 
         var bucketCount = Math.Min(AggregationThreshold, Math.Max(2, (int)renderArea.Width));
         var buckets = new List<VisiblePoint>[bucketCount];
@@ -236,11 +311,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             buckets[bucketIndex].Add(item);
         }
 
-        var progress = GetAnimationProgress();
-        var easedProgress = (decimal)BackEase(progress);
-        var vFactor = (decimal)VisibilityFactor;
-
-        var points = new List<RenderPointInfo>();
+        var points = new List<RenderPointInfo>(bucketCount);
         foreach (var bucket in buckets) {
             if (bucket.Count == 0) {
                 continue;
@@ -278,21 +349,14 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
             var animatedY = (aggregatedY * easedProgress) * vFactor * vFactor;
             var screenX = Chart.ScaleX(aggregatedX, renderArea);
-            var screenY = ScaleYForAxis(animatedY, yAxis, renderArea);
+            var screenY = ScaleYFast(animatedY, yMin, yMax, yScale, renderArea);
             points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), representative.Data, representative.Index, aggregatedY));
         }
 
         return points;
     }
 
-    private float ScaleYForAxis(decimal y, NTAxisOptions<TData>? yAxis, SKRect plotArea) {
-        if (yAxis == null || ReferenceEquals(yAxis, Chart.YAxis)) {
-            return Chart.ScaleY(y, plotArea);
-        }
-
-        var (min, max) = Chart.GetYRange(yAxis, true);
-        var scale = yAxis.Scale;
-
+    private static float ScaleYFast(decimal y, decimal min, decimal max, NTAxisScale scale, SKRect plotArea) {
         double t;
         if (scale == NTAxisScale.Logarithmic) {
             var dMin = Math.Max(0.000001, (double)min);
@@ -394,19 +458,25 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
         var yAxis = (UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis) as NTAxisOptions<TData>;
         var (xMin, xMax) = Chart.GetXRange(Chart.XAxis as NTAxisOptions<TData>, true);
-        var points = GetRenderPoints(renderArea, xMin, xMax, yAxis);
+        var points = GetRenderPoints(renderArea, xMin, xMax, yAxis, Chart.Density, out var renderKey);
 
         for (var i = 0; i < points.Count; i++) {
             var p = points[i].Point;
-            var distance = Math.Sqrt(Math.Pow(p.X - point.X, 2) + Math.Pow(p.Y - point.Y, 2));
-            if (distance < (PointSize * Chart.Density) + (5 * Chart.Density)) {
+            var dx = p.X - point.X;
+            var dy = p.Y - point.Y;
+            var distanceSq = (dx * dx) + (dy * dy);
+            var threshold = (PointSize * Chart.Density) + (5 * Chart.Density);
+            if (distanceSq < (threshold * threshold)) {
                 return (points[i].Index, points[i].Data);
             }
         }
 
         if (points.Count > 1 && LineStyle != LineStyle.None) {
-            _hitTestPath?.Dispose();
-            _hitTestPath = BuildPath(points.Select(p => p.Point).ToList());
+            if (_hitTestPath is null || !_hitTestPathKey.HasValue || !_hitTestPathKey.Value.Equals(renderKey)) {
+                _hitTestPath?.Dispose();
+                _hitTestPath = BuildPath(points.Select(p => p.Point).ToList());
+                _hitTestPathKey = renderKey;
+            }
 
             _hitTestPaint ??= new SKPaint {
                 Style = SKPaintStyle.Stroke,
@@ -421,15 +491,24 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             _hitTestPaint.GetFillPath(_hitTestPath, _hitTestStrokePath);
 
             if (_hitTestStrokePath.Contains(point.X, point.Y)) {
-                var nearest = points
-                    .OrderBy(p => Math.Abs(p.Point.X - point.X))
-                    .ThenBy(p => Math.Abs(p.Point.Y - point.Y))
-                    .First();
-                return (nearest.Index, nearest.Data);
+                var nearestIdx = -1;
+                var nearestDistSq = double.MaxValue;
+                for (var i = 0; i < points.Count; i++) {
+                    var dx = points[i].Point.X - point.X;
+                    var dy = points[i].Point.Y - point.Y;
+                    var distSq = (dx * dx) + (dy * dy);
+                    if (distSq < nearestDistSq) {
+                        nearestDistSq = distSq;
+                        nearestIdx = i;
+                    }
+                }
+
+                if (nearestIdx >= 0) {
+                    return (points[nearestIdx].Index, points[nearestIdx].Data);
+                }
             }
         }
 
         return null;
     }
 }
-

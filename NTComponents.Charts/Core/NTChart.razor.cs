@@ -252,6 +252,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private readonly Dictionary<NTBaseSeries<TData>, SKRect> _treeMapAreas = [];
     private List<object>? _cachedAllX;
     private List<object>? _cachedAllY;
+    private Dictionary<object, int>? _cachedXIndexMap;
     public float Density { get; private set; } = 1.0f;
     private bool _hasDraggedLegend;
     private bool _isDraggingLegend;
@@ -342,9 +343,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
 
         if (XAxis?.IsCategorical == true) {
-            var allX = GetAllXValues();
-            var index = allX.IndexOf(originalX);
-            return index >= 0 ? index : 0;
+            _cachedXIndexMap ??= GetAllXValues()
+                .Select((x, index) => new { x, index })
+                .ToDictionary(item => item.x, item => item.index);
+
+            return _cachedXIndexMap.TryGetValue(originalX, out var index) ? index : 0;
         }
 
         if (originalX is DateTime dt) {
@@ -595,8 +598,8 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     internal void RegisterSeries(NTBaseSeries<TData> series) {
         if (!Series.Contains(series)) {
             Series.Add(series);
+            InvalidateDataCaches();
         }
-
 
         ValidateState();
     }
@@ -708,7 +711,14 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     internal void UnregisterSeries(NTBaseSeries<TData> series) {
         if (Series.Contains(series)) {
             Series.Remove(series);
+            InvalidateDataCaches();
         }
+    }
+
+    internal void InvalidateDataCaches() {
+        _cachedAllX = null;
+        _cachedAllY = null;
+        _cachedXIndexMap = null;
     }
 
     protected override void Dispose(bool disposing) {
@@ -852,8 +862,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         HoveredDataPoint = null;
         _isHoveringLegend = false;
         _treeMapAreas.Clear();
-        _cachedAllX = null;
-        _cachedAllY = null;
 
         var totalArea = new SKRect(0, 0, info.Width, info.Height);
         var renderArea = new SKRect(
@@ -970,8 +978,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
         // Check series/points
         if (HoveredSeries == null && plotArea.Contains(mousePoint)) {
-            foreach (var series in Series.AsEnumerable().Reverse().Where(s => s.Visible)) {
-                // In the decentralized model, each series should handle its own hit testing relative to plotArea
+            for (var i = Series.Count - 1; i >= 0; i--) {
+                var series = Series[i];
+                if (!series.IsEffectivelyVisible) {
+                    continue;
+                }
+
                 var hit = series.HitTest(mousePoint, plotArea);
                 if (hit != null) {
                     HoveredSeries = series;
@@ -1212,6 +1224,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     private record SeriesLayoutItem(NTBaseSeries<TData> Series, decimal Value);
 }
+
+
+
+
+
 
 
 
