@@ -106,7 +106,7 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
         var textColor = Chart.GetThemeColor(TextColor ?? Chart.HoveredSeries.TooltipTextColor ?? Chart.TooltipTextColor);
         var subTextColor = textColor.WithAlpha(200);
 
-        _headerFont ??= new SKFont { Typeface = context.RegularFont.Typeface, Size = 11 * context.Density };
+        _headerFont ??= new SKFont { Typeface = context.RegularFont.Typeface, Size = 14 * context.Density };
         _labelFont ??= new SKFont { Typeface = context.RegularFont.Typeface, Size = 12 * context.Density };
         _valueFont ??= new SKFont { Typeface = context.DefaultFont.Typeface, Size = 12 * context.Density };
 
