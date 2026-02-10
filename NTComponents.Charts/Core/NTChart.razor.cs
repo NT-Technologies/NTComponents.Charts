@@ -159,16 +159,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     public TimeSpan HoverAnimationDuration { get; set; } = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
-    ///     Gets whether to use a categorical scale for the X axis.
-    /// </summary>
-    public bool IsCategoricalX => Series.OfType<NTBarSeries<TData>>().Any(s => s.Orientation == NTChartOrientation.Vertical && s.IsEffectivelyVisible);
-
-    /// <summary>
-    ///     Gets whether to use a categorical scale for the Y axis.
-    /// </summary>
-    public bool IsCategoricalY => Series.OfType<NTBarSeries<TData>>().Any(s => s.Orientation == NTChartOrientation.Horizontal && s.IsEffectivelyVisible);
-
-    /// <summary>
     ///     Gets or sets the margin around the chart.
     /// </summary>
     [Parameter]
@@ -351,7 +341,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             return 0;
         }
 
-        if (IsCategoricalX) {
+        if (XAxis?.IsCategorical == true) {
             var allX = GetAllXValues();
             var index = allX.IndexOf(originalX);
             return index >= 0 ? index : 0;
@@ -366,12 +356,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     public decimal GetScaledYValue(object? originalY) {
         if (originalY == null) {
             return 0;
-        }
-
-        if (IsCategoricalY) {
-            var allY = GetAllYValues();
-            var index = allY.IndexOf(originalY);
-            return index >= 0 ? index : 0;
         }
 
         if (originalY is DateTime dt) {
@@ -395,8 +379,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         //    }
         //}
 
-        //if (IsCategoricalX) {
-        //    var allX = GetAllXValues();
         //    if (!allX.Any()) {
         //        return (0, 1);
         //    }
@@ -461,7 +443,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         //    }
         //}
 
-        //if (IsCategoricalY) {
         //    var allY = GetAllYValues();
         //    if (!allY.Any()) {
         //        return (0, 1);

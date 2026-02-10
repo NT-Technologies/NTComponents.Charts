@@ -8,4 +8,6 @@ namespace NTComponents.Charts.Core.Axes;
 
 public interface INTXAxis<TData> : INTAxis<TData> where TData : class {
     static abstract INTXAxis<TData> Default { get; }
+
+    bool IsCategorical { get; }
 }

@@ -143,7 +143,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             var val = XValue.Invoke(dataList[i]);
             var scaled = (decimal)Chart.GetScaledYValue(val);
 
-            if (!Chart.IsCategoricalY && scaled == 0 && val != null && !(val is IConvertible)) {
+            if (scaled == 0 && val != null && !(val is IConvertible)) {
                 // If not categorical and we got 0 for a non-numeric value, use index
                 values.Add(i);
             }

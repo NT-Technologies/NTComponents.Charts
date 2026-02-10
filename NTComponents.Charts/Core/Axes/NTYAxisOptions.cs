@@ -30,6 +30,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
 
     [Parameter, EditorRequired]
     public Func<TData, TAxisValue> ValueSelector { get; set; }
+
     public override void Dispose() {
         _textPaint?.Dispose();
         _titlePaint?.Dispose();
@@ -60,7 +61,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         //var totalAxisWidth = labelWidth + titleWidth + (5 * context.Density);
 
         //// Determine nice range once during measurement based on available space
-        //if (!Chart.IsCategoricalY && Scale == NTAxisScale.Linear && !Chart.HasViewRange(this)) {
+        //if (!IsCategorical && Scale == NTAxisScale.Linear && !Chart.HasViewRange(this)) {
         //    var (min, max) = Chart.GetYRange(this, false);
         //    var maxTicks = Math.Min(MaxTicks, Math.Max(2, (int)(renderArea.Height / (40 * context.Density))));
         //    var (niceMin, niceMax, _) = CalculateNiceScaling(min, max, maxTicks);
@@ -134,7 +135,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         //       isSecondary ? xLine : renderArea.Right,
         //       renderArea.Bottom);
 
-        //    var isCategorical = Chart.IsCategoricalY;
+        //    var isCategorical = IsCategorical;
 
         //    if (isCategorical) {
         //        var allValues = Chart.GetAllYValues().Cast<object>().ToList();

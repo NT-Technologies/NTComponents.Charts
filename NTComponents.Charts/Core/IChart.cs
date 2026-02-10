@@ -80,9 +80,6 @@ public interface IChart<TData> where TData : class {
     double ScaleXInverse(float coord, SKRect plotArea);
     decimal ScaleYInverse(float coord, SKRect plotArea);
 
-    bool IsCategoricalX { get; }
-    bool IsCategoricalY { get; }
-
     List<object> GetAllXValues();
     List<object> GetAllYValues();
 

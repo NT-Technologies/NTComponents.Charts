@@ -17,6 +17,25 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     [Parameter, EditorRequired]
     public Func<TData, TAxisType> ValueSelector { get; set; }
 
+    /// <inheritdoc />
+    public bool IsCategorical
+    {
+        get
+        {
+            var type = typeof(TAxisType);
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+            {
+                type = Nullable.GetUnderlyingType(type)!;
+            }
+
+            return !(type == typeof(DateTime) ||
+                     type == typeof(DateTimeOffset) ||
+                     type == typeof(DateOnly) ||
+                     type == typeof(TimeOnly) ||
+                     type.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(INumberBase<>)));
+        }
+    }
+
     private List<string> _cachedLabels = [];
     private SKPaint _linePaint = default!;
     private float _rotation = 0;
@@ -53,13 +72,10 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
         InitializePaints(context);
         _titleHeight ??= GetTitleHeight(context, _titleFont);
-
-        var density = context.Density;
-
         _rotation = 0;
         float finalLabelHeight = 0;
 
-        if (Chart.IsCategoricalX) {
+        if (IsCategorical) {
             _cachedLabels = Chart.GetAllXValues().Select(FormatLabel).ToList();
             if (_cachedLabels.Count == 0) {
                 return renderArea;
@@ -74,7 +90,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             }
 
             var labelSlotWidth = renderArea.Width / _cachedLabels.Count;
-            if (maxLWidth + (5 * density) > labelSlotWidth) {
+            if (maxLWidth + (5 * context.Density) > labelSlotWidth) {
                 _rotation = -45f;
                 var rad = Math.Abs(_rotation) * Math.PI / 180.0;
                 finalLabelHeight = (float)((Math.Sin(rad) * maxLWidth) + (Math.Cos(rad) * maxLHeight));
@@ -96,7 +112,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             var s2 = FormatLabel(max);
             _textFont.MeasureText(s1, out var b1);
             _textFont.MeasureText(s2, out var b2);
-            var estWidth = Math.Max(b1.Width, b2.Width) + (12 * density);
+            var estWidth = Math.Max(b1.Width, b2.Width) + (12 * context.Density);
             var tickCount = Math.Max(2, (int)(renderArea.Width / estWidth));
 
             _cachedLabels = [];
@@ -108,8 +124,8 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             finalLabelHeight = Math.Max(b1.Height, b2.Height);
         }
 
-        var tickHeight = 5 * density;
-        var totalHeight = _titleHeight.Value + finalLabelHeight + tickHeight + (10 * density);
+        var tickHeight = 5 * context.Density;
+        var totalHeight = _titleHeight.Value + finalLabelHeight + tickHeight + (10 * context.Density);
 
         return new SKRect(renderArea.Left, renderArea.Top, renderArea.Right, renderArea.Bottom - totalHeight);
     }
