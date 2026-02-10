@@ -931,7 +931,15 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
                     }
 
                     var seriesArea = GetSeriesRenderArea(series, renderArea, totalArea);
-                    series.Render(context, seriesArea);
+                    if (_chartCoordSystem == ChartCoordinateSystem.Cartesian) {
+                        canvas.Save();
+                        canvas.ClipRect(seriesArea);
+                        series.Render(context, seriesArea);
+                        canvas.Restore();
+                    }
+                    else {
+                        series.Render(context, seriesArea);
+                    }
                 }
 
                 if (_chartCoordSystem == ChartCoordinateSystem.TreeMap) {
@@ -956,6 +964,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     private void PerformHitTesting(NTRenderContext context, SKRect plotArea) {
         if (!LastMousePosition.HasValue) {
+            return;
+        }
+
+        // Skip hover hit-testing while panning to avoid expensive per-frame path checks.
+        if (Series.Any(s => s.IsPanning)) {
             return;
         }
 
@@ -1224,6 +1237,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     private record SeriesLayoutItem(NTBaseSeries<TData> Series, decimal Value);
 }
+
+
+
+
 
 
 

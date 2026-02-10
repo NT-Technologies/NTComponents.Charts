@@ -168,8 +168,8 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         var visibleCount = end - start + 1;
         var (maxLabelWidth, maxLabelHeight) = MeasureSampleLabels(context, start, end, idx => FormatLabel(allX[idx]));
 
-        var targetTicks = EstimateTargetTicks(plotArea.Width, maxLabelWidth, context.Density);
-        var step = Math.Max(1, (int)Math.Ceiling(visibleCount / (double)targetTicks));
+        var targetTicks = EstimateTargetTicks(plotArea.Width, maxLabelWidth, context.Density, preferDensity: true);
+        var step = Math.Max(1, (int)Math.Floor(visibleCount / (double)targetTicks));
 
         for (var i = start; i <= end; i += step) {
             _cachedTicks.Add(new AxisTick(i, FormatLabel(allX[i])));
@@ -209,7 +209,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         _textFont.MeasureText(maxLabel, out var maxBounds);
         var estWidth = Math.Max(minBounds.Width, maxBounds.Width);
 
-        var targetTicks = EstimateTargetTicks(plotWidth, estWidth, context.Density);
+        var targetTicks = EstimateTargetTicks(plotWidth, estWidth, context.Density, preferDensity: Chart.IsXAxisDateTime);
         var spacing = CalculateNiceSpacing(min, max, targetTicks);
 
         if (spacing <= 0 || double.IsInfinity(spacing) || double.IsNaN(spacing)) {
@@ -266,9 +266,11 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         return (maxWidth, maxHeight);
     }
 
-    private static int EstimateTargetTicks(float plotWidth, float estimatedLabelWidth, float density) {
-        var width = Math.Max(1f, estimatedLabelWidth + (12 * density));
-        return Math.Max(2, (int)(plotWidth / width));
+    private static int EstimateTargetTicks(float plotWidth, float estimatedLabelWidth, float density, bool preferDensity = false) {
+        var padding = preferDensity ? (6 * density) : (12 * density);
+        var width = Math.Max(1f, estimatedLabelWidth + padding);
+        var minTicks = preferDensity ? 6 : 2;
+        return Math.Max(minTicks, (int)(plotWidth / width));
     }
 
     private static double CalculateNiceSpacing(double min, double max, int targetTicks) {
@@ -374,3 +376,6 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         string? Title,
         float TitleFontSize);
 }
+
+
+
