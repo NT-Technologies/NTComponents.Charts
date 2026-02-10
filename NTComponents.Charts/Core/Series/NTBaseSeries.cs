@@ -320,7 +320,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         if (Chart is null) {
             throw new ArgumentNullException(nameof(Chart), $"Series must be used within a {nameof(NTChart<TData>)}.");
         }
-        Chart.AddSeries(this);
+        Chart.RegisterSeries(this);
         Chart.RegisterRenderable(this);
     }
 

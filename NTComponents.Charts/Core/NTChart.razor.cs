@@ -633,7 +633,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         return min + ((decimal)t * (max - min));
     }
 
-    internal void AddSeries(NTBaseSeries<TData> series) {
+    internal void RegisterSeries(NTBaseSeries<TData> series) {
         if (!Series.Contains(series)) {
             Series.Add(series);
         }
