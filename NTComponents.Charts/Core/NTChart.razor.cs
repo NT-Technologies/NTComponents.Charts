@@ -666,6 +666,24 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             throw new InvalidOperationException("All series in the chart must use the same coordinate system.");
         }
 
+        // Validate XValue types across series
+        Type? commonXType = null;
+        foreach (var series in Series) {
+            var firstItem = series.Data?.FirstOrDefault();
+            if (firstItem != null) {
+                var xVal = series.XValue(firstItem);
+                if (xVal != null) {
+                    var currentType = xVal.GetType();
+                    if (commonXType == null) {
+                        commonXType = currentType;
+                    }
+                    else if (commonXType != currentType) {
+                        throw new InvalidOperationException("All series in the chart must have the same X value type.");
+                    }
+                }
+            }
+        }
+
         if (_chartCoordSystem == ChartCoordinateSystem.Cartesian) {
             var cartesianSeries = Series.Select(s => s as NTCartesianSeries<TData>).Where(s => s is not null).ToArray();
             if (cartesianSeries.Length != Series.Count) {
