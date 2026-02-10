@@ -43,11 +43,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     }
 
-    public INTXAxis<TData> XAxis { get; private set; } = NTXAxisOptions<TData>.Default;
+    public INTXAxis<TData> XAxis { get; private set; } = _defaultXAxis;
 
     public void RegisterAxis(INTXAxis<TData> axis) {
         ArgumentNullException.ThrowIfNull(axis, nameof(axis));
-        if (!ReferenceEquals(XAxis, NTXAxisOptions<TData>.Default)) {
+        if (!ReferenceEquals(XAxis, _defaultXAxis)) {
             throw new InvalidOperationException("Only one X axis can be registered to the chart.");
         }
 
@@ -56,11 +56,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     public void UnregisterAxis(INTXAxis<TData> axis) {
         if (ReferenceEquals(XAxis, axis)) {
-            XAxis = NTXAxisOptions<TData>.Default;
+            XAxis = _defaultXAxis;
         }
     }
     private static readonly INTYAxis<TData> _defaultYAxis = NTYAxisOptions<TData, decimal>.Default;
-    private static readonly INTXAxis<TData> _defaultXAxis = NTXAxisOptions<TData>.Default;
+    private static readonly INTXAxis<TData> _defaultXAxis = NTXAxisOptions<TData, object>.Default;
 
     public INTYAxis<TData> YAxis { get; private set; } = _defaultYAxis;
     public INTYAxis<TData>? SecondaryYAxis { get; private set; }
