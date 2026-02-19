@@ -120,14 +120,15 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
 
         if (!string.IsNullOrWhiteSpace(Title)) {
             var centerY = plotArea.Top + (plotArea.Height / 2);
+            var titleTickPadding = 12 * context.Density;
             canvas.Save();
             if (isSecondary) {
-                var titleX = plotArea.Right + _titleWidth - (2 * context.Density);
+                var titleX = plotArea.Right + _titleWidth + (2 * context.Density);
                 canvas.RotateDegrees(90, titleX, centerY);
                 canvas.DrawText(Title, titleX, centerY, SKTextAlign.Center, _titleFont, _titlePaint);
             }
             else {
-                var titleX = plotArea.Left - _measuredLabelWidth - (8 * context.Density);
+                var titleX = plotArea.Left - _measuredLabelWidth - titleTickPadding;
                 canvas.RotateDegrees(-90, titleX, centerY);
                 canvas.DrawText(Title, titleX, centerY, SKTextAlign.Center, _titleFont, _titlePaint);
             }
