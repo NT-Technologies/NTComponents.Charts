@@ -18,6 +18,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
     private SKPaint? _textPaint;
     private SKPaint? _titlePaint;
     private SKPaint? _linePaint;
+    private SKPaint? _gridLinePaint;
     private SKFont? _textFont;
     private SKFont? _titleFont;
     private readonly List<AxisTick> _cachedTicks = [];
@@ -32,10 +33,23 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
     [Parameter, EditorRequired]
     public Func<TData, TAxisValue> ValueSelector { get; set; }
 
+    /// <summary>
+    ///     Gets or sets whether horizontal grid lines are rendered at each Y-axis tick.
+    /// </summary>
+    [Parameter]
+    public bool ShowGridLines { get; set; } = true;
+
+    /// <summary>
+    ///     Gets or sets the color used for Y-axis grid lines.
+    /// </summary>
+    [Parameter]
+    public TnTColor GridLineColor { get; set; } = TnTColor.OutlineVariant;
+
     public override void Dispose() {
         _textPaint?.Dispose();
         _titlePaint?.Dispose();
         _linePaint?.Dispose();
+        _gridLinePaint?.Dispose();
         _textFont?.Dispose();
         _titleFont?.Dispose();
         Chart.UnregisterAxis(this);
@@ -88,6 +102,10 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             var y = ScaleYForAxis(tick.Value, yMin, yMax, plotArea);
             if (y < plotArea.Top - context.Density || y > plotArea.Bottom + context.Density) {
                 continue;
+            }
+
+            if (ShowGridLines) {
+                canvas.DrawLine(plotArea.Left, y, plotArea.Right, y, _gridLinePaint);
             }
 
             if (isSecondary) {
@@ -333,6 +351,14 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         };
         _linePaint.Color = context.TextColor;
         _linePaint.StrokeWidth = context.Density;
+
+        _gridLinePaint ??= new SKPaint {
+            StrokeWidth = context.Density,
+            Style = SKPaintStyle.Stroke,
+            IsAntialias = true
+        };
+        _gridLinePaint.Color = Chart.GetThemeColor(GridLineColor);
+        _gridLinePaint.StrokeWidth = context.Density;
 
         _textFont ??= new SKFont(context.DefaultFont.Typeface, AxisFontSize * context.Density);
         _textFont.Size = AxisFontSize * context.Density;
