@@ -83,7 +83,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var yScale = yAxis?.Scale ?? NTAxisScale.Linear;
         var progress = GetAnimationProgress();
         var visibility = VisibilityFactor;
-        var animationFactor = Math.Clamp(progress * visibility, 0f, 1f);
+        var animationFactor = GetBarAnimationFactor(progress, visibility);
 
         decimal yBase;
         if (yMin > 0) {
@@ -440,6 +440,18 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var bottom = plotArea.Bottom - p;
         var height = plotArea.Height - (p * 2);
         return (float)(bottom - (t * height));
+    }
+
+    private static float GetBarAnimationFactor(float progress, float visibility) {
+        progress = Math.Clamp(progress, 0f, 1f);
+        visibility = Math.Clamp(visibility, 0f, 1f);
+
+        // Ease-out-back creates a small overshoot past 1.0 before settling.
+        const float c1 = 1.35f;
+        var c3 = c1 + 1f;
+        var p = progress - 1f;
+        var eased = 1f + (c3 * p * p * p) + (c1 * p * p);
+        return eased * visibility;
     }
 
     /// <inheritdoc />
