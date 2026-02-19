@@ -32,15 +32,19 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     protected override void OnParametersSet() {
         base.OnParametersSet();
-        if (TitleOptions != null) {
-            _title = new(this);
-        }
-        else {
+        if (TitleOptions is null) {
             _title?.Dispose();
             _title = null;
+            _lastTitleOptionsRef = null;
         }
-
-
+        else {
+            // Keep a single title renderable instance while title options are enabled.
+            _title ??= new(this);
+            if (!ReferenceEquals(_lastTitleOptionsRef, TitleOptions)) {
+                _title.Invalidate();
+                _lastTitleOptionsRef = TitleOptions;
+            }
+        }
     }
 
     public INTXAxis<TData> XAxis { get; private set; } = _defaultXAxis;
@@ -94,6 +98,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     }
 
     private NTTitle<TData>? _title;
+    private NTTitleOptions? _lastTitleOptionsRef;
     private bool _invalidate;
     private readonly Dictionary<RenderOrdered, List<IRenderable>> _renderablesByOrder = Enum.GetValues<RenderOrdered>().ToDictionary(r => r, _ => new List<IRenderable>());
     private bool _defaultAxesAttached;
@@ -1421,9 +1426,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     private record SeriesLayoutItem(NTBaseSeries<TData> Series, decimal Value);
 }
-
-
-
 
 
 

@@ -14,10 +14,23 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
    public float ExplosionDistance { get; set; } = 10f;
 
    /// <summary>
+   ///    Gets or sets whether slices should explode on hover.
+   /// </summary>
+   [Parameter]
+   public bool ExplodeOnHover { get; set; } = true;
+
+   /// <summary>
    ///    Gets or sets whether to explode slices on entry.
    /// </summary>
    [Parameter]
    public bool ExplosionOnEntry { get; set; } = true;
+
+   /// <summary>
+   ///    Gets or sets the fixed inner radius (in device-independent pixels).
+   ///    If greater than zero, this value takes precedence over <see cref="InnerRadiusRatio"/>.
+   /// </summary>
+   [Parameter]
+   public float InnerRadius { get; set; } = 0f;
 
    private readonly Dictionary<int, float> _explosionFactors = new();
    private DateTime _lastRenderTime = DateTime.Now;
@@ -40,7 +53,7 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
       _lastRenderTime = now;
 
       float radius = Math.Min(renderArea.Width, renderArea.Height) / 2f;
-      float innerRadius = radius * InnerRadiusRatio;
+      float innerRadius = GetInnerRadius(radius, context.Density);
 
       // Entry explosion factor (starts at 1.0 and goes to 0.0 as progress goes from 0 to 0.8)
       float entryFactor = ExplosionOnEntry ? Math.Max(0, 1.0f - (progress / 0.8f)) : 0f;
@@ -54,13 +67,13 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
 
       foreach (var slice in SliceInfos) {
          // Update explosion factor for this slice (hover)
-         bool isTargetExploded = Chart.HoveredSeries == this && Chart.HoveredPointIndex == slice.Index;
+         bool isTargetExploded = ExplodeOnHover && Chart.HoveredSeries == this && Chart.HoveredPointIndex == slice.Index;
          float currentFactor = _explosionFactors.GetValueOrDefault(slice.Index, 0f);
          float targetFactor = isTargetExploded ? 1f : 0f;
 
          if (Math.Abs(currentFactor - targetFactor) > 0.001f) {
-            // Animate over ~150ms
-            float step = deltaTime / 0.15f;
+            const float durationSeconds = 0.30f;
+            float step = deltaTime / durationSeconds;
             if (currentFactor < targetFactor)
                currentFactor = Math.Min(targetFactor, currentFactor + step);
             else
@@ -157,19 +170,30 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
    }
 
    private void RenderSliceLabel(NTRenderContext context, PieSliceInfo slice, float centerX, float centerY, float radius, float innerRadius, SKColor color, NTDataPointRenderArgs<TData>? args) {
+      if (!float.IsFinite(radius) || radius <= 0f || !float.IsFinite(innerRadius) || innerRadius < 0f) {
+         return;
+      }
+
       float midAngle = slice.StartAngle + slice.SweepAngle / 2f;
       float rad = midAngle * (float)Math.PI / 180f;
 
-      float labelRadius = innerRadius + (radius - innerRadius) / 2f;
-      if (innerRadius == 0) labelRadius = radius * 0.7f;
+      string text;
+      try {
+         text = string.Format(DataLabelFormat, slice.Value);
+      }
+      catch {
+         text = slice.Value.ToString("0.##");
+      }
 
-      float lx = centerX + (float)Math.Cos(rad) * labelRadius;
-      float ly = centerY + (float)Math.Sin(rad) * labelRadius;
-
-      var text = string.Format(DataLabelFormat, slice.Value);
+      if (string.IsNullOrWhiteSpace(text)) {
+         return;
+      }
 
       var labelColor = args?.DataLabelColor ?? (DataLabelColor.HasValue ? Chart.GetThemeColor(DataLabelColor.Value) : Chart.GetPaletteTextColor(slice.Index));
       var labelSize = (args?.DataLabelSize ?? DataLabelSize) * context.Density;
+      if (!float.IsFinite(labelSize) || labelSize <= 0f) {
+         return;
+      }
 
       _labelPaint ??= new SKPaint {
          IsAntialias = true
@@ -179,7 +203,24 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
       _labelFont ??= new SKFont { Typeface = context.DefaultFont.Typeface };
       _labelFont.Size = labelSize;
 
-      context.Canvas.DrawText(text, lx, ly, SKTextAlign.Center, _labelFont, _labelPaint);
+      // Avoid SKFont.MeasureText/metrics on WASM due intermittent native OOB crashes.
+      // Use a conservative width estimate so labels render only when very likely to fit.
+      var estimatedTextWidth = EstimateTextWidth(text, labelSize);
+      var estimatedTextHeight = labelSize;
+      if (!CanRenderLabelInsideSlice(slice.SweepAngle, radius, innerRadius, estimatedTextWidth, estimatedTextHeight)) {
+         return;
+      }
+
+      float labelRadius = innerRadius + ((radius - innerRadius) / 2f);
+      if (innerRadius <= 0) {
+         labelRadius = radius * 0.67f;
+      }
+
+      float lx = centerX + ((float)Math.Cos(rad) * labelRadius);
+      float ly = centerY + ((float)Math.Sin(rad) * labelRadius);
+      var baselineY = ly + (labelSize * 0.35f);
+
+      context.Canvas.DrawText(text, lx, baselineY, SKTextAlign.Center, _labelFont, _labelPaint);
    }
 
    protected override void Dispose(bool disposing) {
@@ -198,7 +239,7 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
 
    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
       float radius = Math.Min(renderArea.Width, renderArea.Height) / 2f;
-      float innerRadius = radius * InnerRadiusRatio;
+      float innerRadius = GetInnerRadius(radius, Chart.Density);
       float centerX = renderArea.MidX;
       float centerY = renderArea.MidY;
 
@@ -243,5 +284,45 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
       }
 
       return null;
+   }
+
+   private float GetInnerRadius(float outerRadius, float density) {
+      if (InnerRadius > 0f) {
+         return Math.Clamp(InnerRadius * density, 0f, Math.Max(0f, outerRadius - 1f));
+      }
+
+      var ratio = Math.Clamp(InnerRadiusRatio, 0f, 0.95f);
+      return outerRadius * ratio;
+   }
+
+   private static bool CanRenderLabelInsideSlice(float sweepAngleDegrees, float outerRadius, float innerRadius, float textWidth, float textHeight) {
+      if (sweepAngleDegrees <= 0f) {
+         return false;
+      }
+
+      var ringThickness = outerRadius - innerRadius;
+      const float radialPadding = 4f;
+      if ((textHeight + (2f * radialPadding)) > ringThickness) {
+         return false;
+      }
+
+      var labelRadius = innerRadius + (ringThickness / 2f);
+      if (innerRadius <= 0f) {
+         labelRadius = outerRadius * 0.67f;
+      }
+
+      var sweepRadians = sweepAngleDegrees * ((float)Math.PI / 180f);
+      var availableArcLength = labelRadius * sweepRadians;
+      const float tangentialPadding = 6f;
+      return (textWidth + (2f * tangentialPadding)) <= availableArcLength;
+   }
+
+   private static float EstimateTextWidth(string text, float labelSize) {
+      if (string.IsNullOrEmpty(text)) {
+         return 0f;
+      }
+
+      // Numeric labels dominate in this chart; this factor intentionally overestimates.
+      return text.Length * (labelSize * 0.62f);
    }
 }
