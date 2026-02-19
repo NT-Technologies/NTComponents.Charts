@@ -389,6 +389,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             return (0, 1);
         }
 
+        var horizontalBars = cartesianSeries
+            .OfType<NTBarSeries<TData>>()
+            .Where(s => s.Orientation == NTChartOrientation.Horizontal)
+            .ToList();
+        var hasHorizontalBars = horizontalBars.Count > 0;
+
         var viewRanges = cartesianSeries
             .Select(s => s.GetViewXRange())
             .Where(r => r.HasValue)
@@ -396,7 +402,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             .ToList();
         var hasViewRange = viewRanges.Count > 0;
 
-        if (XAxis.IsCategorical) {
+        if (XAxis.IsCategorical && !hasHorizontalBars) {
             var allX = GetAllXValues();
             if (!allX.Any()) {
                 return (0, 1);
@@ -417,7 +423,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             var catRange = Math.Max(1, max - min);
             var padding = catRange * RangePadding;
             // Bar charts need at least half-category edge padding so first/last bars are not clipped.
-            if (Series.OfType<NTBarSeries<TData>>().Any(s => s.IsEffectivelyVisible)) {
+            if (Series.OfType<NTBarSeries<TData>>().Any(s => s.IsEffectivelyVisible && s.Orientation == NTChartOrientation.Vertical)) {
                 padding = Math.Max(padding, 0.5);
             }
             return NormalizeRange(min - padding, max + padding);
@@ -440,6 +446,21 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             dataMin = viewRanges.Min(v => v.Min);
             dataMax = viewRanges.Max(v => v.Max);
         }
+        else if (horizontalBars.Count > 0) {
+            // Horizontal bar value axis floor: default to 0 for all-positive, otherwise data min.
+            // Can be overridden by ValueAxisMinimum on NTBarSeries.
+            var overrideMins = horizontalBars
+                .Where(s => s.ValueAxisMinimum.HasValue)
+                .Select(s => (double)s.ValueAxisMinimum!.Value)
+                .ToList();
+
+            if (overrideMins.Count > 0) {
+                dataMin = overrideMins.Min();
+            }
+            else if (dataMin > 0) {
+                dataMin = 0;
+            }
+        }
 
         if (dataMin == double.MaxValue || dataMax == double.MinValue) {
             return (0, 1);
@@ -451,6 +472,19 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
         var rangeSize = Math.Max(1e-9, dataMax - dataMin);
         var rangePadding = rangeSize * RangePadding;
+
+        if (hasHorizontalBars) {
+            if (dataMin >= 0) {
+                // All-positive horizontal bars should start at the axis with no left padding.
+                return NormalizeRange(dataMin, dataMax + rangePadding);
+            }
+
+            if (dataMax <= 0) {
+                // All-negative horizontal bars should end at the axis with no right padding.
+                return NormalizeRange(dataMin - rangePadding, dataMax);
+            }
+        }
+
         return NormalizeRange(dataMin - rangePadding, dataMax + rangePadding);
     }
 
@@ -466,6 +500,14 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         if (!cartesianSeries.Any()) {
             return (0, 1);
         }
+
+        var hasHorizontalBars = cartesianSeries
+            .OfType<NTBarSeries<TData>>()
+            .Any(s => s.Orientation == NTChartOrientation.Horizontal);
+        var verticalBars = cartesianSeries
+            .OfType<NTBarSeries<TData>>()
+            .Where(s => s.Orientation == NTChartOrientation.Vertical)
+            .ToList();
 
         var viewRanges = cartesianSeries
             .Select(s => s.GetViewYRange())
@@ -496,6 +538,22 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             max = viewRanges.Max(v => v.Max);
         }
 
+        // Bar chart value axis floor: default to 0 for all-positive, otherwise data min.
+        // Can be overridden by ValueAxisMinimum on NTBarSeries.
+        if (!hasViewRange && verticalBars.Count > 0) {
+            var overrideMins = verticalBars
+                .Where(s => s.ValueAxisMinimum.HasValue)
+                .Select(s => s.ValueAxisMinimum!.Value)
+                .ToList();
+
+            if (overrideMins.Count > 0) {
+                min = overrideMins.Min();
+            }
+            else if (min > 0) {
+                min = 0;
+            }
+        }
+
         if (min == decimal.MaxValue || max == decimal.MinValue) {
             return (0, 1);
         }
@@ -506,6 +564,16 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
         var rangeSize = Math.Max(0.0000001m, max - min);
         var rangePadding = rangeSize * (decimal)RangePadding;
+        if (verticalBars.Count > 0) {
+            // Keep the lower bound anchored for bar charts (0/data-min/override-min),
+            // and only pad the top.
+            return NormalizeRange(min, max + rangePadding);
+        }
+
+        // Horizontal bar charts use Y as the category axis and need half-category edge padding.
+        if (hasHorizontalBars) {
+            rangePadding = Math.Max(rangePadding, 0.5m);
+        }
         return NormalizeRange(min - rangePadding, max + rangePadding);
     }
     [JSInvokable]
@@ -670,6 +738,17 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             var cartesianSeries = Series.Select(s => s as NTCartesianSeries<TData>).Where(s => s is not null).ToArray();
             if (cartesianSeries.Length != Series.Count) {
                 throw new InvalidOperationException("All series must be of type NTCartesianSeries when using Cartesian coordinate system.");
+            }
+
+            // Horizontal bar charts can only be combined with other horizontal bar series.
+            var barSeries = cartesianSeries.OfType<NTBarSeries<TData>>().ToList();
+            var hasHorizontalBars = barSeries.Any(s => s.Orientation == NTChartOrientation.Horizontal);
+            if (hasHorizontalBars) {
+                var onlyHorizontalBars = (barSeries.Count == Series.Count) &&
+                                         barSeries.All(s => s.Orientation == NTChartOrientation.Horizontal);
+                if (!onlyHorizontalBars) {
+                    throw new InvalidOperationException("Horizontal bar series can only be combined with other horizontal bar series.");
+                }
             }
 
             // Panning/Zooming validation
@@ -1342,11 +1421,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     private record SeriesLayoutItem(NTBaseSeries<TData> Series, decimal Value);
 }
-
-
-
-
-
 
 
 

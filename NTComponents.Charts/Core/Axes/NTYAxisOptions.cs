@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using SkiaSharp;
 using System.Numerics;
+using NTComponents.Charts;
 
 namespace NTComponents.Charts.Core.Axes;
 
@@ -140,7 +141,11 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         _cachedTicks.Clear();
         _measuredLabelWidth = 0;
 
-        if (Scale == NTAxisScale.Logarithmic) {
+        var horizontalCategoryLabels = GetHorizontalCategoryLabels();
+        if (horizontalCategoryLabels is { Count: > 0 }) {
+            BuildHorizontalCategoryTicks(horizontalCategoryLabels);
+        }
+        else if (Scale == NTAxisScale.Logarithmic) {
             BuildLogTicks(min, max);
         }
         else {
@@ -150,6 +155,47 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         foreach (var tick in _cachedTicks) {
             _textFont!.MeasureText(tick.Label, out var bounds);
             _measuredLabelWidth = Math.Max(_measuredLabelWidth, bounds.Width);
+        }
+    }
+
+    private List<string>? GetHorizontalCategoryLabels() {
+        if (Chart is not NTChart<TData> ntChart) {
+            return null;
+        }
+
+        var useSecondaryAxis = IsSecondary(Chart);
+        var horizontalSeries = ntChart.Series
+            .OfType<NTBarSeries<TData>>()
+            .Where(s => s.IsEffectivelyVisible
+                        && s.Orientation == NTChartOrientation.Horizontal
+                        && s.UseSecondaryYAxis == useSecondaryAxis)
+            .ToList();
+
+        if (horizontalSeries.Count == 0) {
+            return null;
+        }
+
+        // Use first visible horizontal bar series as the category source.
+        var sourceSeries = horizontalSeries[0];
+        var labels = sourceSeries.Data
+            .Select(d => sourceSeries.XValue(d)?.ToString() ?? string.Empty)
+            .ToList();
+
+        return labels.Count > 0 ? labels : null;
+    }
+
+    private void BuildHorizontalCategoryTicks(List<string> labels) {
+        for (var i = 0; i < labels.Count; i++) {
+            _cachedTicks.Add(new AxisTick(i, labels[i]));
+        }
+    }
+
+    private void BuildLinearOrLogTicks(decimal min, decimal max, float plotHeight, float density) {
+        if (Scale == NTAxisScale.Logarithmic) {
+            BuildLogTicks(min, max);
+        }
+        else {
+            BuildLinearTicks(min, max, plotHeight, density);
         }
     }
 

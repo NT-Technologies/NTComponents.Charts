@@ -23,6 +23,13 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     [Parameter]
     public NTChartOrientation Orientation { get; set; } = NTChartOrientation.Vertical;
 
+    /// <summary>
+    ///     Optional explicit minimum for the value axis when rendering bar series.
+    ///     For vertical bars this affects Y-axis minimum; for horizontal bars this affects X-axis minimum.
+    /// </summary>
+    [Parameter]
+    public decimal? ValueAxisMinimum { get; set; }
+
     private SKPaint? _barPaint;
     private SKPaint? _highlightPaint;
     private SKPaint? _labelPaint;
@@ -89,7 +96,20 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             yBase = 0m;
         }
 
-        var barRects = GetBarRects(renderArea, xMin, xMax, yMin, yMax, yBase, yScale, animationFactor);
+        // Horizontal bars use the X axis as the value axis, so baseline comes from X range.
+        double xBase;
+        if (xMin > 0) {
+            xBase = xMin;
+        }
+        else if (xMax < 0) {
+            xBase = xMax;
+        }
+        else {
+            xBase = 0d;
+        }
+        var xBasePx = Chart.ScaleX(xBase, renderArea);
+
+        var barRects = GetBarRects(renderArea, xMin, xMax, yMin, yMax, yBase, xBase, yScale, animationFactor);
         if (barRects.Count == 0) {
             return renderArea;
         }
@@ -136,9 +156,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 DrawVerticalBarLabel(context, renderArea, rect, value, pointColor, labelColor, labelSize);
             }
             else {
-                var labelX = value >= 0 ? rect.Right + (5 * context.Density) : rect.Left - (5 * context.Density);
-                var textAlign = value >= 0 ? SKTextAlign.Left : SKTextAlign.Right;
-                RenderDataLabel(context, labelX, rect.MidY + (labelSize / 2), value, renderArea, labelColor, labelSize, textAlign);
+                DrawHorizontalBarLabel(context, renderArea, rect, value, pointColor, labelColor, labelSize, xBasePx);
             }
         }
 
@@ -155,7 +173,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
         // Horizontal: X axis shows values (YValueSelector)
         var values = Data.Select(item => (double)YValueSelector(item)).ToList();
-        var min = Math.Min(0, values.Min());
+        var min = values.Min();
         var max = values.Max();
         return (min, max);
     }
@@ -168,26 +186,13 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             return base.GetYRange(xMin, xMax);
         }
 
-
-        // Horizontal: Y axis shows categories (XValue)
-        var dataList = Data.ToList();
-        var values = new List<decimal>();
-        for (int i = 0; i < dataList.Count; i++) {
-            var val = XValue.Invoke(dataList[i]);
-            var scaled = (decimal)Chart.GetScaledYValue(val);
-
-            if (scaled == 0 && val != null && !(val is IConvertible)) {
-                // If not categorical and we got 0 for a non-numeric value, use index
-                values.Add(i);
-            }
-            else {
-                values.Add(scaled);
-            }
+        // Horizontal: Y axis is categorical, so use index positions.
+        var count = Data.Count();
+        if (count <= 0) {
+            return (0, 1);
         }
 
-        var min = values.Any() ? values.Min() : 0;
-        var max = values.Any() ? values.Max() : 1;
-        return (min, max);
+        return (0, Math.Max(1, count - 1));
     }
 
 
@@ -283,7 +288,70 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         context.Canvas.DrawText(text, centerX, baselineAbove, SKTextAlign.Center, _labelFont, _labelPaint);
     }
 
-    private List<SKRect> GetBarRects(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax, decimal yBase, NTAxisScale yScale, float animationFactor) {
+    private void DrawHorizontalBarLabel(NTRenderContext context, SKRect renderArea, SKRect barRect, decimal value, SKColor barColor, SKColor? labelColor, float labelSize, float xAxisBase) {
+        var text = string.Format(DataLabelFormat, value);
+        var sizePx = labelSize * context.Density;
+
+        _labelFont ??= new SKFont {
+            Embolden = true,
+            Typeface = context.DefaultFont.Typeface
+        };
+        _labelFont.Size = sizePx;
+
+        _labelPaint ??= new SKPaint {
+            IsAntialias = true
+        };
+        _labelPaint.Color = labelColor ?? Chart.GetSeriesTextColor(this);
+
+        _labelFont.MeasureText(text, out var bounds);
+        var textHeight = bounds.Height;
+        var textWidth = bounds.Width;
+        var textPadding = 4f * context.Density;
+        var minInsideWidth = textWidth + (10f * context.Density);
+        var canRenderInside = barRect.Width >= minInsideWidth;
+
+        var baselineY = barRect.MidY + (textHeight / 2f) - (1f * context.Density);
+        if (canRenderInside) {
+            context.Canvas.DrawText(text, barRect.MidX, baselineY, SKTextAlign.Center, _labelFont, _labelPaint);
+            return;
+        }
+
+        var isPositive = value >= 0;
+        var textAlign = isPositive ? SKTextAlign.Right : SKTextAlign.Left;
+        // For horizontal bars, place outside labels against the value axis side.
+        var outsideX = isPositive ? xAxisBase - (6f * context.Density) : xAxisBase + (6f * context.Density);
+
+        var bgRect = isPositive
+            ? new SKRect(
+                outsideX - textPadding,
+                baselineY - textHeight - textPadding,
+                outsideX + textWidth + textPadding,
+                baselineY + textPadding)
+            : new SKRect(
+                outsideX - textWidth - textPadding,
+                baselineY - textHeight - textPadding,
+                outsideX + textPadding,
+                baselineY + textPadding);
+
+        _labelBgPaint ??= new SKPaint {
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill
+        };
+        _labelBgPaint.Color = barColor.WithAlpha(235);
+        context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBgPaint);
+
+        _labelBorderPaint ??= new SKPaint {
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = context.Density
+        };
+        _labelBorderPaint.Color = Chart.GetThemeColor(TnTColor.OutlineVariant);
+        context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBorderPaint);
+
+        context.Canvas.DrawText(text, outsideX, baselineY, textAlign, _labelFont, _labelPaint);
+    }
+
+    private List<SKRect> GetBarRects(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax, decimal yBase, double xBase, NTAxisScale yScale, float animationFactor) {
         var dataList = Data?.ToList();
         if (dataList == null || dataList.Count == 0) {
             return [];
@@ -330,18 +398,16 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var interSeriesGapY = hSeriesCount > 1 ? Math.Min(2f * Chart.Density, clusterHeight * 0.04f) : 0f;
         var totalGapY = interSeriesGapY * Math.Max(0, hSeriesCount - 1);
         var barHeight = Math.Max(1f, (clusterHeight - totalGapY) / hSeriesCount);
-        var baseX = Chart.ScaleX((double)yBase, renderArea);
+        var baseX = Chart.ScaleX(xBase, renderArea);
 
         for (var i = 0; i < horizontalCount; i++) {
             var item = dataList[i];
-            var yValueRaw = XValue.Invoke(item);
-            var scaledY = Chart.GetScaledYValue(yValueRaw);
-            if (scaledY == 0m && yValueRaw is not null && yValueRaw is not IConvertible) {
-                scaledY = i;
-            }
+            var scaledY = (decimal)i;
 
             var centerY = Chart.ScaleY(scaledY, renderArea);
-            var valueX = Chart.ScaleX((double)YValueSelector(item), renderArea);
+            var xValue = (double)YValueSelector(item);
+            var animatedXValue = xBase + ((xValue - xBase) * animationFactor);
+            var valueX = Chart.ScaleX(animatedXValue, renderArea);
             var clusterTop = centerY - (clusterHeight / 2f);
             var top = clusterTop + (hSeriesIndex * (barHeight + interSeriesGapY));
             var bottom = top + barHeight;

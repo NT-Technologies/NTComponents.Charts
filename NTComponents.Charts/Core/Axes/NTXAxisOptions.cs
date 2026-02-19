@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components;
 using SkiaSharp;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using NTComponents.Charts;
 
 namespace NTComponents.Charts.Core.Axes;
 
@@ -20,6 +21,12 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     /// <inheritdoc />
     public bool IsCategorical {
         get {
+            // Horizontal bar charts flip axis roles: X becomes a value axis.
+            if (Chart is NTChart<TData> ntChart &&
+                ntChart.Series.OfType<NTBarSeries<TData>>().Any(s => s.IsEffectivelyVisible && s.Orientation == NTChartOrientation.Horizontal)) {
+                return false;
+            }
+
             var type = typeof(TAxisType);
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>)) {
                 type = Nullable.GetUnderlyingType(type)!;
