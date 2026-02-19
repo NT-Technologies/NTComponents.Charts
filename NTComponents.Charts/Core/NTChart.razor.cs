@@ -416,6 +416,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
             var catRange = Math.Max(1, max - min);
             var padding = catRange * RangePadding;
+            // Bar charts need at least half-category edge padding so first/last bars are not clipped.
+            if (Series.OfType<NTBarSeries<TData>>().Any(s => s.IsEffectivelyVisible)) {
+                padding = Math.Max(padding, 0.5);
+            }
             return NormalizeRange(min - padding, max + padding);
         }
 
@@ -1338,7 +1342,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     private record SeriesLayoutItem(NTBaseSeries<TData> Series, decimal Value);
 }
-
 
 
 
