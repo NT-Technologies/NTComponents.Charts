@@ -64,22 +64,28 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             return _cachedTotalYRange;
         }
 
+        if (xMin.HasValue && xMax.HasValue) {
+            var rangeMin = Math.Round(Math.Min(xMin.Value, xMax.Value), 6);
+            var rangeMax = Math.Round(Math.Max(xMin.Value, xMax.Value), 6);
+            if (_cachedWindowYRange.HasValue &&
+                _cachedWindowYRangeKey.HasValue &&
+                _cachedWindowYRangeKey.Value.Min == rangeMin &&
+                _cachedWindowYRangeKey.Value.Max == rangeMax) {
+                return _cachedWindowYRange;
+            }
+        }
+
         var min = decimal.MaxValue;
         var max = decimal.MinValue;
 
-        IEnumerable<TData> dataToConsider = points.Select(p => p.Data);
-        if (xMin.HasValue && xMax.HasValue) {
-            dataToConsider = GetVisibleWindow(xMin.Value, xMax.Value).Select(p => p.Data);
-        }
-
-        if (!dataToConsider.Any()) {
+        var window = xMin.HasValue && xMax.HasValue ? GetVisibleWindow(xMin.Value, xMax.Value) : points;
+        if (window.Count == 0) {
             return null;
         }
 
         if (this is NTBoxPlotSeries<TData> boxPlot) {
-            foreach (var item in dataToConsider) {
-                var values = boxPlot.BoXValue(item);
-
+            foreach (var entry in window) {
+                var values = boxPlot.BoXValue(entry.Data);
                 min = Math.Min(min, values.Min);
                 max = Math.Max(max, values.Max);
                 if (values.Outliers != null && values.Outliers.Any()) {
@@ -90,14 +96,20 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         }
         else {
             var visibilityFactor = (decimal)VisibilityFactor;
-            var values = dataToConsider.Select(item => YValueSelector(item) * visibilityFactor).ToList();
-            min = values.Min();
-            max = values.Max();
+            foreach (var entry in window) {
+                var y = YValueSelector(entry.Data) * visibilityFactor;
+                min = Math.Min(min, y);
+                max = Math.Max(max, y);
+            }
         }
 
         var result = (min, max);
         if (!xMin.HasValue && !xMax.HasValue) {
             _cachedTotalYRange = result;
+        }
+        else if (xMin.HasValue && xMax.HasValue) {
+            _cachedWindowYRangeKey = (Math.Round(Math.Min(xMin.Value, xMax.Value), 6), Math.Round(Math.Max(xMin.Value, xMax.Value), 6));
+            _cachedWindowYRange = result;
         }
 
         return result;
@@ -190,6 +202,8 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
 
     private (double Min, double Max)? _cachedTotalXRange;
     private (decimal Min, decimal Max)? _cachedTotalYRange;
+    private (double Min, double Max)? _cachedWindowYRangeKey;
+    private (decimal Min, decimal Max)? _cachedWindowYRange;
     private List<VisiblePoint>? _cachedSortedVisiblePoints;
 
     private SKPaint? _pointPaint;
@@ -311,6 +325,8 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         AnimationCurrentValues = null;
         _cachedTotalXRange = null;
         _cachedTotalYRange = null;
+        _cachedWindowYRangeKey = null;
+        _cachedWindowYRange = null;
         _cachedSortedVisiblePoints = null;
         base.OnDataChanged();
     }

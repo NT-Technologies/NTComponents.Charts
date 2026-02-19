@@ -113,10 +113,11 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
             var maxWidth = legendDrawArea.Width - (40 * density);
             var rows = GetLegendRows(font, maxWidth, density);
             var rowHeight = (FontSize + 10) * density;
+            var alignArea = Chart.LastPlotArea.Width > 0 ? Chart.LastPlotArea : legendDrawArea;
             for (var r = 0; r < rows.Count; r++) {
                 var rowItems = rows[r];
                 var totalRowWidth = rowItems.Sum(i => font.MeasureText(i.Label) + (IconSize * density) + (10 * density)) + ((rowItems.Count - 1) * (ItemSpacing * density));
-                var startX = plotArea.Left + ((plotArea.Width - totalRowWidth) / 2);
+                var startX = alignArea.Left + ((alignArea.Width - totalRowWidth) / 2);
 
                 var y = legendDrawArea.Top + (5 * density) + (FontSize * density) + (r * rowHeight);
                 var currentX = startX;
@@ -247,11 +248,12 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
             var maxWidth = legendArea.Width - (40 * context.Density);
             var rows = GetLegendRows(_font!, maxWidth, context.Density);
             var rowHeight = (FontSize + 10) * context.Density;
+            var alignArea = Chart.LastPlotArea.Width > 0 ? Chart.LastPlotArea : legendArea;
 
             for (var r = 0; r < rows.Count; r++) {
                 var rowItems = rows[r];
                 var totalRowWidth = rowItems.Sum(i => _font!.MeasureText(i.Label) + (IconSize * context.Density) + (10 * context.Density)) + ((rowItems.Count - 1) * (ItemSpacing * context.Density));
-                var startX = legendArea.Left + ((legendArea.Width - totalRowWidth) / 2);
+                var startX = alignArea.Left + ((alignArea.Width - totalRowWidth) / 2);
                 var y = legendArea.Top + (5 * context.Density) + (FontSize * context.Density) + (r * rowHeight);
 
                 var currentX = startX;

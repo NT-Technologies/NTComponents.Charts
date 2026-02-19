@@ -74,6 +74,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
 
         InitializePaints(context);
         BuildTicks(context, context.PlotArea.Height);
+        var (yMin, yMax) = Chart.GetYRange(this, true);
 
         var canvas = context.Canvas;
         var plotArea = context.PlotArea;
@@ -83,7 +84,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         canvas.DrawLine(xLine, plotArea.Top, xLine, plotArea.Bottom, _linePaint);
 
         foreach (var tick in _cachedTicks) {
-            var y = ScaleYForAxis(tick.Value, plotArea);
+            var y = ScaleYForAxis(tick.Value, yMin, yMax, plotArea);
             if (y < plotArea.Top - context.Density || y > plotArea.Bottom + context.Density) {
                 continue;
             }
@@ -207,8 +208,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         }
     }
 
-    private float ScaleYForAxis(decimal y, SKRect plotArea) {
-        var (min, max) = Chart.GetYRange(this, true);
+    private float ScaleYForAxis(decimal y, decimal min, decimal max, SKRect plotArea) {
         double t;
 
         if (Scale == NTAxisScale.Logarithmic) {

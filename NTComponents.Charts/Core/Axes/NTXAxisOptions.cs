@@ -145,22 +145,21 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         _tickLabelHeight = 0f;
 
         if (IsCategorical) {
-            BuildCategoricalTicks(context, plotArea);
+            BuildCategoricalTicks(context, plotArea, min, max);
         }
         else {
             BuildContinuousTicks(context, min, max, plotArea.Width);
         }
     }
 
-    private void BuildCategoricalTicks(NTRenderContext context, SKRect plotArea) {
+    private void BuildCategoricalTicks(NTRenderContext context, SKRect plotArea, double min, double max) {
         var allX = Chart.GetAllXValues();
         if (allX.Count == 0) {
             return;
         }
 
-        var (rangeMin, rangeMax) = Chart.GetXRange(this, false);
-        var start = Math.Max(0, (int)Math.Floor(Math.Min(rangeMin, rangeMax)));
-        var end = Math.Min(allX.Count - 1, (int)Math.Ceiling(Math.Max(rangeMin, rangeMax)));
+        var start = Math.Max(0, (int)Math.Floor(Math.Min(min, max)));
+        var end = Math.Min(allX.Count - 1, (int)Math.Ceiling(Math.Max(min, max)));
         if (end < start) {
             return;
         }
@@ -267,10 +266,11 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     }
 
     private static int EstimateTargetTicks(float plotWidth, float estimatedLabelWidth, float density, bool preferDensity = false) {
-        var padding = preferDensity ? (6 * density) : (12 * density);
+        var padding = preferDensity ? (4 * density) : (8 * density);
         var width = Math.Max(1f, estimatedLabelWidth + padding);
-        var minTicks = preferDensity ? 6 : 2;
-        return Math.Max(minTicks, (int)(plotWidth / width));
+        var densityBoost = preferDensity ? 1.25f : 1.45f;
+        var minTicks = preferDensity ? 8 : 4;
+        return Math.Max(minTicks, (int)((plotWidth / width) * densityBoost));
     }
 
     private static double CalculateNiceSpacing(double min, double max, int targetTicks) {
@@ -376,6 +376,3 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         string? Title,
         float TitleFontSize);
 }
-
-
-

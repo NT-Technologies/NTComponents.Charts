@@ -12,9 +12,16 @@
 	
     <ItemGroup>
 		<PackageReference Include="AspNetCore.SassCompiler" Version="1.97.1" />
-		<PackageReference Include="NTComponents" Version="1.21.0" />
 		<PackageReference Include="SkiaSharp.Views.Blazor" Version="3.119.2" />
     </ItemGroup>
+
+	<ItemGroup Condition="Exists('..\..\..\NTComponents\NTComponents.csproj')">
+		<ProjectReference Include="..\..\..\NTComponents\NTComponents.csproj" />
+	</ItemGroup>
+
+	<ItemGroup Condition="!Exists('..\..\..\NTComponents\NTComponents.csproj')">
+		<PackageReference Include="NTComponents" Version="1.21.0" />
+	</ItemGroup>
 	
 	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
 		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly">

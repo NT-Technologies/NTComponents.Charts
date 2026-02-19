@@ -228,6 +228,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         var progress = GetAnimationProgress();
         var visibility = VisibilityFactor;
         var shouldAggregate = EnableAggregation && AggregationThreshold > 1;
+        var pixelCapacity = GetPixelCapacity(renderArea);
+        var effectiveAggregationThreshold = Math.Max(AggregationThreshold, pixelCapacity);
 
         key = new RenderCacheKey(
             Math.Round(xMin, 6),
@@ -262,8 +264,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         var easedProgress = (decimal)BackEase(progress);
         var vFactor = (decimal)visibility;
 
-        if (shouldAggregate && visibleData.Count > AggregationThreshold) {
-            _cachedRenderPoints = GetAggregatedPoints(visibleData, renderArea, xMin, xMax, yMin, yMax, yScale, easedProgress, vFactor);
+        if (shouldAggregate && visibleData.Count > effectiveAggregationThreshold) {
+            _cachedRenderPoints = GetAggregatedPoints(visibleData, renderArea, xMin, xMax, yMin, yMax, yScale, easedProgress, vFactor, pixelCapacity);
         }
         else {
             var points = new List<RenderPointInfo>(visibleData.Count);
@@ -271,7 +273,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
                 var targetY = YValueSelector(item.Data);
                 var animatedY = (targetY * easedProgress) * vFactor * vFactor;
 
-                var screenX = Chart.ScaleX(item.X, renderArea);
+                var screenX = ScaleXFast(item.X, xMin, xMax, renderArea);
                 var screenY = ScaleYFast(animatedY, yMin, yMax, yScale, renderArea);
                 points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), item.Data, item.Index, targetY));
             }
@@ -283,6 +285,11 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return _cachedRenderPoints;
     }
 
+    private static int GetPixelCapacity(SKRect renderArea) {
+        // Allow slightly more than one point per pixel to preserve detail on dense data.
+        return Math.Max(2, (int)MathF.Ceiling(renderArea.Width * 1.25f));
+    }
+
     private List<RenderPointInfo> GetAggregatedPoints(
         List<VisiblePoint> visibleData,
         SKRect renderArea,
@@ -292,9 +299,10 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         decimal yMax,
         NTAxisScale yScale,
         decimal easedProgress,
-        decimal vFactor) {
+        decimal vFactor,
+        int pixelCapacity) {
 
-        var bucketCount = Math.Min(AggregationThreshold, Math.Max(2, (int)renderArea.Width));
+        var bucketCount = Math.Min(visibleData.Count, pixelCapacity);
         var buckets = new List<VisiblePoint>[bucketCount];
         for (var i = 0; i < buckets.Length; i++) {
             buckets[i] = [];
@@ -348,7 +356,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             }
 
             var animatedY = (aggregatedY * easedProgress) * vFactor * vFactor;
-            var screenX = Chart.ScaleX(aggregatedX, renderArea);
+            var screenX = ScaleXFast(aggregatedX, xMin, xMax, renderArea);
             var screenY = ScaleYFast(animatedY, yMin, yMax, yScale, renderArea);
             points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), representative.Data, representative.Index, aggregatedY));
         }
@@ -376,6 +384,19 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         var bottom = plotArea.Bottom - p;
         var height = plotArea.Height - (p * 2);
         return (float)(bottom - (t * height));
+    }
+
+    private static float ScaleXFast(double x, double min, double max, SKRect plotArea) {
+        var range = max - min;
+        if (range <= 0) {
+            return plotArea.Left;
+        }
+
+        var t = (x - min) / range;
+        const float p = 3f;
+        var left = plotArea.Left + p;
+        var width = plotArea.Width - (p * 2);
+        return (float)(left + (t * width));
     }
 
     protected SKPath BuildPath(List<SKPoint> points) {
