@@ -133,6 +133,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     public TnTColor BackgroundColor { get; set; } = TnTColor.Surface;
 
     /// <summary>
+    ///     Optional chart annotations rendered over the plot area.
+    /// </summary>
+    [Parameter]
+    public IReadOnlyList<NTChartAnnotation> Annotations { get; set; } = Array.Empty<NTChartAnnotation>();
+
+    /// <summary>
     ///     Gets or sets whether to show debug information, such as render time per frame.
     /// </summary>
     [Parameter]
@@ -297,6 +303,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private SKFont? _debugFont;
     private SKPaint? _treeMapGroupPaint;
     private SKFont? _treeMapGroupFont;
+    private SKPaint? _annotationLinePaint;
+    private SKPaint? _annotationFillPaint;
+    private SKPaint? _annotationTextPaint;
+    private SKPaint? _annotationLabelBgPaint;
+    private SKFont? _annotationFont;
 
     /// <summary>
     ///     Exports the current chart as a PNG image.
@@ -644,9 +655,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
 
 
-    public float ScaleY(decimal y, SKRect plotArea) {
-        var (min, max) = GetScaleYRange(YAxis as NTAxisOptions<TData>);
-        var scale = (YAxis as NTAxisOptions<TData>)?.Scale ?? NTAxisScale.Linear;
+    public float ScaleY(decimal y, SKRect plotArea) => ScaleY(y, YAxis as NTAxisOptions<TData>, plotArea);
+
+    private float ScaleY(decimal y, NTAxisOptions<TData>? axis, SKRect plotArea) {
+        var (min, max) = GetScaleYRange(axis);
+        var scale = axis?.Scale ?? NTAxisScale.Linear;
 
         double t;
         if (scale == NTAxisScale.Logarithmic) {
@@ -836,6 +849,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             _debugFont?.Dispose();
             _treeMapGroupPaint?.Dispose();
             _treeMapGroupFont?.Dispose();
+            _annotationLinePaint?.Dispose();
+            _annotationFillPaint?.Dispose();
+            _annotationTextPaint?.Dispose();
+            _annotationLabelBgPaint?.Dispose();
+            _annotationFont?.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -1128,6 +1146,13 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
                     continue;
                 }
 
+                if (order is RenderOrdered.Annotation) {
+                    context.PlotArea = renderArea;
+                    LastPlotArea = renderArea;
+                    RenderAnnotations(context, renderArea);
+                    continue;
+                }
+
                 foreach (var renderable in _renderablesByOrder[order]) {
                     renderArea = renderable.Render(context, renderArea);
                 }
@@ -1253,6 +1278,284 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
 
         return (null, null, null);
+    }
+
+    private void RenderAnnotations(NTRenderContext context, SKRect plotArea) {
+        if (Annotations.Count == 0 || plotArea.Width <= 0 || plotArea.Height <= 0) {
+            return;
+        }
+
+        InitializeAnnotationPaints(context);
+
+        foreach (var annotation in Annotations) {
+            var renderCustomOnly = annotation.Type == NTChartAnnotationType.Custom || _chartCoordSystem != ChartCoordinateSystem.Cartesian;
+            if (renderCustomOnly) {
+                InvokeCustomAnnotationRenderer(context, plotArea, annotation);
+                continue;
+            }
+
+            var opacity = Math.Clamp(annotation.Opacity, 0f, 1f);
+            var strokeColor = ResolveAnnotationColor(annotation.StrokeColor, opacity);
+            var fillThemeColor = annotation.FillColor ?? annotation.StrokeColor;
+            var fillOpacity = annotation.FillColor.HasValue ? opacity : opacity * 0.18f;
+            var fillColor = ResolveAnnotationColor(fillThemeColor, fillOpacity);
+            var textBaseColor = annotation.TextColor is TnTColor annotationTextColor && annotationTextColor != TnTColor.None
+                ? GetThemeColor(annotationTextColor)
+                : GetThemeColor(TextColor);
+            var textColor = textBaseColor.WithAlpha((byte)Math.Clamp((int)(255f * opacity), 0, 255));
+            var labelBackground = fillColor.WithAlpha((byte)Math.Clamp(Math.Max((int)fillColor.Alpha, 140), 0, 255));
+
+            _annotationLinePaint!.Color = strokeColor;
+            _annotationLinePaint.StrokeWidth = Math.Max(1f, annotation.StrokeWidth * context.Density);
+            _annotationFillPaint!.Color = fillColor;
+
+            var hasClip = annotation.ClipToPlotArea;
+            if (hasClip) {
+                context.Canvas.Save();
+                context.Canvas.ClipRect(plotArea);
+            }
+
+            try {
+                switch (annotation.Type) {
+                    case NTChartAnnotationType.XLine: {
+                        var x = ScaleAnnotationX(annotation.X, plotArea);
+                        if (!x.HasValue) {
+                            break;
+                        }
+
+                        DrawAnnotationLine(context.Canvas, new SKPoint(x.Value, plotArea.Top), new SKPoint(x.Value, plotArea.Bottom), annotation, context.Density);
+                        DrawAnnotationLabel(context, annotation, annotation.Label, x.Value + (annotation.LabelOffsetX * context.Density), plotArea.Top + (14f * context.Density) + (annotation.LabelOffsetY * context.Density), textColor, labelBackground, SKTextAlign.Center);
+                        break;
+                    }
+
+                    case NTChartAnnotationType.XRange: {
+                        var x1 = ScaleAnnotationX(annotation.X, plotArea);
+                        var x2 = ScaleAnnotationX(annotation.X2, plotArea);
+                        if (!x1.HasValue || !x2.HasValue) {
+                            break;
+                        }
+
+                        var left = Math.Min(x1.Value, x2.Value);
+                        var right = Math.Max(x1.Value, x2.Value);
+                        var rangeRect = new SKRect(left, plotArea.Top, right, plotArea.Bottom);
+                        context.Canvas.DrawRect(rangeRect, _annotationFillPaint);
+                        DrawAnnotationLine(context.Canvas, new SKPoint(left, plotArea.Top), new SKPoint(left, plotArea.Bottom), annotation, context.Density);
+                        DrawAnnotationLine(context.Canvas, new SKPoint(right, plotArea.Top), new SKPoint(right, plotArea.Bottom), annotation, context.Density);
+                        DrawAnnotationLabel(context, annotation, annotation.Label, rangeRect.MidX + (annotation.LabelOffsetX * context.Density), plotArea.Top + (14f * context.Density) + (annotation.LabelOffsetY * context.Density), textColor, labelBackground, SKTextAlign.Center);
+                        break;
+                    }
+
+                    case NTChartAnnotationType.YLine: {
+                        var y = ScaleAnnotationY(annotation.Y, annotation.UseSecondaryYAxis, plotArea);
+                        if (!y.HasValue) {
+                            break;
+                        }
+
+                        DrawAnnotationLine(context.Canvas, new SKPoint(plotArea.Left, y.Value), new SKPoint(plotArea.Right, y.Value), annotation, context.Density);
+                        DrawAnnotationLabel(context, annotation, annotation.Label, plotArea.Left + (8f * context.Density) + (annotation.LabelOffsetX * context.Density), y.Value - (6f * context.Density) + (annotation.LabelOffsetY * context.Density), textColor, labelBackground, SKTextAlign.Left);
+                        break;
+                    }
+
+                    case NTChartAnnotationType.YRange: {
+                        var y1 = ScaleAnnotationY(annotation.Y, annotation.UseSecondaryYAxis, plotArea);
+                        var y2 = ScaleAnnotationY(annotation.Y2, annotation.UseSecondaryYAxis, plotArea);
+                        if (!y1.HasValue || !y2.HasValue) {
+                            break;
+                        }
+
+                        var top = Math.Min(y1.Value, y2.Value);
+                        var bottom = Math.Max(y1.Value, y2.Value);
+                        var rangeRect = new SKRect(plotArea.Left, top, plotArea.Right, bottom);
+                        context.Canvas.DrawRect(rangeRect, _annotationFillPaint);
+                        DrawAnnotationLine(context.Canvas, new SKPoint(plotArea.Left, top), new SKPoint(plotArea.Right, top), annotation, context.Density);
+                        DrawAnnotationLine(context.Canvas, new SKPoint(plotArea.Left, bottom), new SKPoint(plotArea.Right, bottom), annotation, context.Density);
+                        DrawAnnotationLabel(context, annotation, annotation.Label, plotArea.Left + (8f * context.Density) + (annotation.LabelOffsetX * context.Density), top + (14f * context.Density) + (annotation.LabelOffsetY * context.Density), textColor, labelBackground, SKTextAlign.Left);
+                        break;
+                    }
+
+                    case NTChartAnnotationType.Point: {
+                        var x = ScaleAnnotationX(annotation.X, plotArea);
+                        var y = ScaleAnnotationY(annotation.Y, annotation.UseSecondaryYAxis, plotArea);
+                        if (!x.HasValue || !y.HasValue) {
+                            break;
+                        }
+
+                        var markerRadius = Math.Max(2f, annotation.MarkerSize * context.Density);
+                        context.Canvas.DrawCircle(x.Value, y.Value, markerRadius, _annotationFillPaint);
+                        context.Canvas.DrawCircle(x.Value, y.Value, markerRadius, _annotationLinePaint);
+                        DrawAnnotationLabel(context, annotation, annotation.Label, x.Value + (annotation.LabelOffsetX * context.Density), y.Value - markerRadius - (8f * context.Density) + (annotation.LabelOffsetY * context.Density), textColor, labelBackground, SKTextAlign.Center);
+                        break;
+                    }
+
+                    case NTChartAnnotationType.Text: {
+                        var x = ScaleAnnotationX(annotation.X, plotArea);
+                        var y = ScaleAnnotationY(annotation.Y, annotation.UseSecondaryYAxis, plotArea);
+                        if (!x.HasValue || !y.HasValue) {
+                            break;
+                        }
+
+                        DrawAnnotationLabel(context, annotation, annotation.Label, x.Value + (annotation.LabelOffsetX * context.Density), y.Value + (annotation.LabelOffsetY * context.Density), textColor, labelBackground, SKTextAlign.Center);
+                        break;
+                    }
+                }
+            }
+            finally {
+                if (hasClip) {
+                    context.Canvas.Restore();
+                }
+            }
+
+            if (annotation.CustomRenderer is not null) {
+                InvokeCustomAnnotationRenderer(context, plotArea, annotation);
+            }
+        }
+    }
+
+    private void InitializeAnnotationPaints(NTRenderContext context) {
+        _annotationLinePaint ??= new SKPaint {
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round
+        };
+
+        _annotationFillPaint ??= new SKPaint {
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill
+        };
+
+        _annotationTextPaint ??= new SKPaint {
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill
+        };
+
+        _annotationLabelBgPaint ??= new SKPaint {
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill
+        };
+
+        _annotationFont ??= new SKFont {
+            Typeface = context.RegularFont.Typeface
+        };
+    }
+
+    private void InvokeCustomAnnotationRenderer(NTRenderContext context, SKRect plotArea, NTChartAnnotation annotation) {
+        if (annotation.CustomRenderer is null) {
+            return;
+        }
+
+        var hasClip = annotation.ClipToPlotArea;
+        if (hasClip) {
+            context.Canvas.Save();
+            context.Canvas.ClipRect(plotArea);
+        }
+
+        try {
+            annotation.CustomRenderer(new NTChartAnnotationRenderContext {
+                Canvas = context.Canvas,
+                PlotArea = plotArea,
+                Density = context.Density,
+                Annotation = annotation,
+                ScaleX = value => ScaleAnnotationX(value, plotArea),
+                ScaleY = (value, useSecondary) => ScaleAnnotationY(value, useSecondary, plotArea),
+                ResolveThemeColor = GetThemeColor
+            });
+        }
+        finally {
+            if (hasClip) {
+                context.Canvas.Restore();
+            }
+        }
+    }
+
+    private void DrawAnnotationLine(SKCanvas canvas, SKPoint start, SKPoint end, NTChartAnnotation annotation, float density) {
+        if (_annotationLinePaint is null) {
+            return;
+        }
+
+        if (annotation.DashLength > 0f) {
+            var dash = Math.Max(1f, annotation.DashLength * density);
+            using var effect = SKPathEffect.CreateDash(new[] { dash, dash }, 0f);
+            _annotationLinePaint.PathEffect = effect;
+            canvas.DrawLine(start, end, _annotationLinePaint);
+            _annotationLinePaint.PathEffect = null;
+            return;
+        }
+
+        canvas.DrawLine(start, end, _annotationLinePaint);
+    }
+
+    private void DrawAnnotationLabel(
+        NTRenderContext context,
+        NTChartAnnotation annotation,
+        string? text,
+        float x,
+        float y,
+        SKColor textColor,
+        SKColor backgroundColor,
+        SKTextAlign align) {
+        if (string.IsNullOrWhiteSpace(text) || _annotationTextPaint is null || _annotationLabelBgPaint is null || _annotationFont is null) {
+            return;
+        }
+
+        _annotationTextPaint.Color = textColor;
+        _annotationFont.Size = Math.Max(8f, annotation.FontSize * context.Density);
+
+        var textWidth = _annotationFont.MeasureText(text);
+        var textHeight = _annotationFont.Size;
+        var padX = 6f * context.Density;
+        var padY = 3f * context.Density;
+
+        var left = align switch {
+            SKTextAlign.Left => x - padX,
+            SKTextAlign.Right => x - textWidth - padX,
+            _ => x - (textWidth / 2f) - padX
+        };
+        var top = y - textHeight - padY;
+        var rect = new SKRect(left, top, left + textWidth + (padX * 2f), top + textHeight + (padY * 2f));
+
+        _annotationLabelBgPaint.Color = backgroundColor;
+        context.Canvas.DrawRoundRect(rect, 4f * context.Density, 4f * context.Density, _annotationLabelBgPaint);
+
+        var textX = align switch {
+            SKTextAlign.Left => rect.Left + padX,
+            SKTextAlign.Right => rect.Right - padX,
+            _ => rect.MidX
+        };
+        var baseline = rect.Top + padY + _annotationFont.Size;
+        context.Canvas.DrawText(text, textX, baseline, align, _annotationFont, _annotationTextPaint);
+    }
+
+    private float? ScaleAnnotationX(object? value, SKRect plotArea) {
+        if (value is null) {
+            return null;
+        }
+
+        var scaled = GetScaledXValue(value);
+        if (double.IsNaN(scaled) || double.IsInfinity(scaled)) {
+            return null;
+        }
+
+        return ScaleX(scaled, plotArea);
+    }
+
+    private float? ScaleAnnotationY(object? value, bool useSecondaryYAxis, SKRect plotArea) {
+        if (value is null) {
+            return null;
+        }
+
+        var scaled = GetScaledYValue(value);
+        var axis = useSecondaryYAxis && SecondaryYAxis is NTAxisOptions<TData> secondary
+            ? secondary
+            : YAxis as NTAxisOptions<TData>;
+
+        return ScaleY(scaled, axis, plotArea);
+    }
+
+    private SKColor ResolveAnnotationColor(TnTColor color, float opacity) {
+        var resolved = GetThemeColor(color);
+        var alpha = (byte)Math.Clamp((int)(resolved.Alpha * Math.Clamp(opacity, 0f, 1f)), 0, 255);
+        return resolved.WithAlpha(alpha);
     }
 
 
