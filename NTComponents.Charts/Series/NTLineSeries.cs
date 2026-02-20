@@ -11,6 +11,8 @@ namespace NTComponents.Charts;
 ///     Represents a line series in a cartesian chart.
 /// </summary>
 public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class {
+    private const int EdgeCullBufferTicks = 2;
+    private const float EdgeCullBufferPixels = 16f;
 
     private readonly record struct RenderPointInfo(SKPoint Point, TData Data, int Index, decimal Value);
 
@@ -131,9 +133,166 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             max += delta;
         }
 
-        var padding = (max - min) * (decimal)Math.Max(0, Chart.RangePadding);
-        _viewYMin = min - padding;
-        _viewYMax = max + padding;
+        var paddingRatio = (decimal)Math.Max(0, Chart.RangePadding);
+        var padding = (max - min) * paddingRatio;
+        var paddedMin = min - padding;
+        var paddedMax = max + padding;
+
+        if (TryGetZoomAnchorY(e, viewXRange.Value, out var anchorY)) {
+            var halfSpan = Math.Max(paddedMax - anchorY, anchorY - paddedMin);
+            if (halfSpan <= 0) {
+                halfSpan = Math.Abs(anchorY) > 1m ? Math.Abs(anchorY * 0.01m) : 1m;
+            }
+
+            _viewYMin = anchorY - halfSpan;
+            _viewYMax = anchorY + halfSpan;
+            return;
+        }
+
+        _viewYMin = paddedMin;
+        _viewYMax = paddedMax;
+    }
+
+    private bool TryGetZoomAnchorY(WheelEventArgs e, (double Min, double Max) viewXRange, out decimal anchorY) {
+        anchorY = 0m;
+        if (Chart.LastPlotArea == default) {
+            return false;
+        }
+
+        var pointer = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
+        if (!Chart.LastPlotArea.Contains(pointer)) {
+            return false;
+        }
+
+        var xValue = Chart.ScaleXInverse(pointer.X, Chart.LastPlotArea);
+        return TryGetRepresentativeYAtX(xValue, viewXRange.Min, viewXRange.Max, out anchorY);
+    }
+
+    private bool TryGetRepresentativeYAtX(double xValue, double xMin, double xMax, out decimal yValue) {
+        var plotWidth = Chart is NTChart<TData> ntChart && ntChart.LastPlotArea.Width > 0f
+            ? ntChart.LastPlotArea.Width
+            : 1200f;
+        var density = Math.Max(0.1f, Chart.Density);
+        var axisDateGroupingLevel = Chart.XAxis.ResolveDateGroupingLevel(xMin, xMax, plotWidth, density);
+        var useAxisDateGrouping = Chart.IsXAxisDateTime
+            && Chart.XAxis.EnableAutoDateGrouping
+            && axisDateGroupingLevel is NTDateGroupingLevel.Year or NTDateGroupingLevel.Month;
+
+        var (cullMinX, cullMaxX) = ExpandCullRange(xMin, xMax, plotWidth, density, useAxisDateGrouping, axisDateGroupingLevel);
+        var window = useAxisDateGrouping
+            ? GetVisibleWindowIncludingGroupedBuckets(cullMinX, cullMaxX, axisDateGroupingLevel)
+            : GetVisibleWindow(cullMinX, cullMaxX);
+        if (window.Count == 0) {
+            yValue = 0m;
+            return false;
+        }
+
+        if (useAxisDateGrouping && TryGetBucketAggregatedY(window, GetDateBucketKey(xValue, axisDateGroupingLevel), xValue, axisDateGroupingLevel, out yValue)) {
+            return true;
+        }
+
+        var idx = LowerBoundVisible(window, xValue);
+        var chosen = 0;
+        if (idx <= 0) {
+            chosen = 0;
+        }
+        else if (idx >= window.Count) {
+            chosen = window.Count - 1;
+        }
+        else {
+            chosen = Math.Abs(window[idx].X - xValue) < Math.Abs(window[idx - 1].X - xValue) ? idx : idx - 1;
+        }
+        yValue = YValueSelector(window[chosen].Data);
+        return true;
+    }
+
+    private bool TryGetBucketAggregatedY(List<VisiblePoint> window, long bucketKey, double xValue, NTDateGroupingLevel groupingLevel, out decimal aggregatedY) {
+        var hasExactBucket = false;
+        long nearestBucket = 0;
+        var nearestDistance = long.MaxValue;
+
+        foreach (var point in window) {
+            var bucket = GetDateBucketKey(point.X, groupingLevel);
+            if (bucket == bucketKey) {
+                hasExactBucket = true;
+                break;
+            }
+
+            var dist = Math.Abs(bucket - bucketKey);
+            if (dist < nearestDistance) {
+                nearestDistance = dist;
+                nearestBucket = bucket;
+            }
+        }
+
+        var selectedBucket = hasExactBucket ? bucketKey : nearestBucket;
+        if (!hasExactBucket && nearestDistance == long.MaxValue) {
+            aggregatedY = 0m;
+            return false;
+        }
+
+        var mode = AggregationMode;
+        var count = 0;
+        var sum = 0m;
+        var min = decimal.MaxValue;
+        var max = decimal.MinValue;
+        var representativeValue = 0m;
+        var representativeDistance = double.MaxValue;
+        var medianValues = mode == AggregationMode.Median ? new List<decimal>(32) : null;
+
+        foreach (var point in window) {
+            if (GetDateBucketKey(point.X, groupingLevel) != selectedBucket) {
+                continue;
+            }
+
+            var value = YValueSelector(point.Data);
+            count++;
+            sum += value;
+            if (value < min) {
+                min = value;
+            }
+            if (value > max) {
+                max = value;
+            }
+
+            var distance = Math.Abs(point.X - xValue);
+            if (distance < representativeDistance) {
+                representativeDistance = distance;
+                representativeValue = value;
+            }
+
+            medianValues?.Add(value);
+        }
+
+        if (count == 0) {
+            aggregatedY = 0m;
+            return false;
+        }
+
+        aggregatedY = mode switch {
+            AggregationMode.Sum => sum,
+            AggregationMode.Min => min,
+            AggregationMode.Max => max,
+            AggregationMode.Median => CalculateMedian(medianValues!),
+            AggregationMode.None => representativeValue,
+            _ => sum / count
+        };
+        return true;
+    }
+
+    private static int LowerBoundVisible(List<VisiblePoint> values, double target) {
+        var lo = 0;
+        var hi = values.Count;
+        while (lo < hi) {
+            var mid = lo + ((hi - lo) / 2);
+            if (values[mid].X < target) {
+                lo = mid + 1;
+            }
+            else {
+                hi = mid;
+            }
+        }
+        return lo;
     }
 
     public override (decimal Min, decimal Max)? GetYRange(double? xMin = null, double? xMax = null) {
@@ -163,7 +322,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             return (_cachedGroupedSumRange.Value.MinY, _cachedGroupedSumRange.Value.MaxY);
         }
 
-        var window = GetVisibleWindow(xRange.Value.Min, xRange.Value.Max, overscan: 0);
+        var window = GetVisibleWindowIncludingGroupedBuckets(xRange.Value.Min, xRange.Value.Max, level);
         if (window.Count == 0) {
             return base.GetYRange(xMin, xMax);
         }
@@ -357,7 +516,10 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             return _cachedRenderPoints;
         }
 
-        var visibleData = GetVisibleWindow(xMin, xMax);
+        var (cullMinX, cullMaxX) = ExpandCullRange(xMin, xMax, renderArea.Width, density, useAxisDateGrouping, axisDateGroupingLevel);
+        var visibleData = useAxisDateGrouping
+            ? GetVisibleWindowIncludingGroupedBuckets(cullMinX, cullMaxX, axisDateGroupingLevel)
+            : GetVisibleWindow(cullMinX, cullMaxX);
         if (visibleData.Count == 0) {
             _cachedRenderPoints = [];
             _cachedRenderKey = key;
@@ -420,6 +582,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         var representative = visibleData[0];
         var minPoint = visibleData[0];
         var maxPoint = visibleData[0];
+        var cullBufferData = GetCullBufferDataUnits(xMin, xMax, renderArea.Width, Chart.Density, true, groupingLevel);
 
         void ResetBucketState(VisiblePoint seed) {
             count = 0;
@@ -487,7 +650,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             }
 
             var animatedY = (aggregatedY * easedProgress) * vFactor * vFactor;
-            var screenX = ScaleXFast(currentBucket, xMin, xMax, renderArea);
+            var renderX = GetVisibleBucketAnchorX(currentBucket, groupingLevel, xMin, xMax, cullBufferData);
+            var screenX = ScaleXFast(renderX, xMin, xMax, renderArea);
             var screenY = ScaleYFast(animatedY, yMin, yMax, yScale, renderArea);
             points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), selected.Data, selected.Index, aggregatedY));
         }
@@ -508,6 +672,26 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return points;
     }
 
+    private static double GetVisibleBucketAnchorX(long bucketKey, NTDateGroupingLevel groupingLevel, double xMin, double xMax, double cullBufferData) {
+        if (xMax < xMin) {
+            (xMin, xMax) = (xMax, xMin);
+        }
+
+        var bufferedMin = xMin - cullBufferData;
+        var bufferedMax = xMax + cullBufferData;
+        var (bucketStart, bucketEnd) = GetDateBucketRange(bucketKey, groupingLevel);
+        var visibleStart = Math.Max(bucketStart, bufferedMin);
+        var visibleEnd = Math.Min(bucketEnd, bufferedMax);
+
+        // Keep grouped points visible until the entire bucket is off-canvas by
+        // anchoring to the center of the currently visible overlap.
+        if (visibleStart <= visibleEnd) {
+            return visibleStart + ((visibleEnd - visibleStart) * 0.5d);
+        }
+
+        return bucketKey;
+    }
+
     private static long GetDateBucketKey(double xValue, NTDateGroupingLevel groupingLevel) {
         var ticks = (long)Math.Round(xValue);
         ticks = Math.Clamp(ticks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
@@ -518,6 +702,115 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             NTDateGroupingLevel.Month => new DateTime(dt.Year, dt.Month, 1).AddDays(14).Ticks,
             _ => dt.Ticks
         };
+    }
+
+    private List<VisiblePoint> GetVisibleWindowIncludingGroupedBuckets(double minX, double maxX, NTDateGroupingLevel groupingLevel) {
+        if (maxX < minX) {
+            (minX, maxX) = (maxX, minX);
+        }
+
+        var firstBucket = GetDateBucketKey(minX, groupingLevel);
+        var lastBucket = GetDateBucketKey(maxX, groupingLevel);
+        var (bucketStart, _) = GetDateBucketRange(firstBucket, groupingLevel);
+        var (_, bucketEnd) = GetDateBucketRange(lastBucket, groupingLevel);
+
+        var inclusiveStart = Math.BitDecrement(bucketStart);
+        var inclusiveEnd = Math.BitIncrement(bucketEnd);
+        var window = GetVisibleWindow(inclusiveStart, inclusiveEnd, overscan: 0);
+        if (window.Count > 0) {
+            return window;
+        }
+
+        // If no points are inside the computed bucket span (for example sparse data),
+        // fall back to the nearest visible point window so interactions remain stable.
+        return GetVisibleWindow(minX, maxX, overscan: 1);
+    }
+
+    private static (double Min, double Max) ExpandCullRange(
+        double minX,
+        double maxX,
+        float renderWidth,
+        float density,
+        bool useAxisDateGrouping,
+        NTDateGroupingLevel groupingLevel) {
+        if (maxX < minX) {
+            (minX, maxX) = (maxX, minX);
+        }
+
+        var buffer = GetCullBufferDataUnits(minX, maxX, renderWidth, density, useAxisDateGrouping, groupingLevel);
+        return (minX - buffer, maxX + buffer);
+    }
+
+    private static double GetCullBufferDataUnits(
+        double minX,
+        double maxX,
+        float renderWidth,
+        float density,
+        bool useAxisDateGrouping,
+        NTDateGroupingLevel groupingLevel) {
+        if (useAxisDateGrouping && groupingLevel is NTDateGroupingLevel.Year or NTDateGroupingLevel.Month or NTDateGroupingLevel.Day) {
+            return GetGroupedTickSpan(groupingLevel, minX, maxX) * EdgeCullBufferTicks;
+        }
+
+        var range = Math.Abs(maxX - minX);
+        if (range <= 0 || renderWidth <= 0) {
+            return 0;
+        }
+
+        var dataPerPixel = range / Math.Max(1f, renderWidth);
+        var pixelBuffer = Math.Max(1f, EdgeCullBufferPixels * Math.Max(0.1f, density));
+        return dataPerPixel * pixelBuffer;
+    }
+
+    private static double GetGroupedTickSpan(NTDateGroupingLevel groupingLevel, double minX, double maxX) {
+        var mid = (long)Math.Round(minX + ((maxX - minX) * 0.5d));
+        mid = Math.Clamp(mid, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
+        var dt = new DateTime(mid);
+
+        if (groupingLevel == NTDateGroupingLevel.Year) {
+            var start = new DateTime(dt.Year, 1, 1);
+            var end = dt.Year == DateTime.MaxValue.Year
+                ? DateTime.MaxValue
+                : new DateTime(dt.Year + 1, 1, 1);
+            return Math.Max(1d, end.Ticks - start.Ticks);
+        }
+
+        if (groupingLevel == NTDateGroupingLevel.Month) {
+            var start = new DateTime(dt.Year, dt.Month, 1);
+            var end = (dt.Year == DateTime.MaxValue.Year && dt.Month == 12)
+                ? DateTime.MaxValue
+                : start.AddMonths(1);
+            return Math.Max(1d, end.Ticks - start.Ticks);
+        }
+
+        var dayStart = dt.Date;
+        var dayEnd = dayStart == DateTime.MaxValue.Date ? DateTime.MaxValue : dayStart.AddDays(1);
+        return Math.Max(1d, dayEnd.Ticks - dayStart.Ticks);
+    }
+
+    private static (double Start, double End) GetDateBucketRange(long bucketKey, NTDateGroupingLevel groupingLevel) {
+        var ticks = Math.Clamp(bucketKey, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
+        var dt = new DateTime(ticks);
+
+        if (groupingLevel == NTDateGroupingLevel.Year) {
+            var start = new DateTime(dt.Year, 1, 1);
+            var end = dt.Year == DateTime.MaxValue.Year
+                ? DateTime.MaxValue
+                : new DateTime(dt.Year + 1, 1, 1).AddTicks(-1);
+            return (start.Ticks, end.Ticks);
+        }
+
+        if (groupingLevel == NTDateGroupingLevel.Month) {
+            var start = new DateTime(dt.Year, dt.Month, 1);
+            var end = (dt.Year == DateTime.MaxValue.Year && dt.Month == 12)
+                ? DateTime.MaxValue
+                : start.AddMonths(1).AddTicks(-1);
+            return (start.Ticks, end.Ticks);
+        }
+
+        var dayStart = dt.Date;
+        var dayEnd = dayStart == DateTime.MaxValue.Date ? DateTime.MaxValue : dayStart.AddDays(1).AddTicks(-1);
+        return (dayStart.Ticks, dayEnd.Ticks);
     }
 
     private static int GetPixelCapacity(SKRect renderArea) {

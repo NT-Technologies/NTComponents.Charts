@@ -58,8 +58,6 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     private float? _titleHeight;
     private NTDateGroupingLevel _activeDateGroupingLevel = NTDateGroupingLevel.None;
     private readonly Dictionary<DateTickCacheKey, List<AxisTick>> _groupedDateTickCache = [];
-    private List<object>? _cachedDateSource;
-    private long[]? _cachedDateTicks;
 
     public override void Dispose() {
         _textPaint?.Dispose();
@@ -448,45 +446,27 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     }
 
     private (int VisibleDays, int VisibleMonths, int VisibleYears) CountVisibleDateDensity(long minTicks, long maxTicks) {
-        var ticks = GetAllDateTicks();
-        if (ticks.Length == 0) {
+        if (maxTicks < minTicks) {
+            (minTicks, maxTicks) = (maxTicks, minTicks);
+        }
+
+        minTicks = Math.Clamp(minTicks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
+        maxTicks = Math.Clamp(maxTicks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
+
+        var start = new DateTime(minTicks).Date;
+        var end = new DateTime(maxTicks).Date;
+        if (end < start) {
             return (0, 0, 0);
         }
 
-        var (startIdx, endIdx) = FindVisibleDateTickRange(ticks, minTicks, maxTicks, includeOutside: false);
-        if (startIdx > endIdx) {
-            return (0, 0, 0);
-        }
+        var visibleDaysLong = (end - start).Days + 1L;
+        var visibleMonthsLong = ((end.Year - start.Year) * 12L) + end.Month - start.Month + 1L;
+        var visibleYearsLong = (end.Year - start.Year) + 1L;
 
-        var visibleDays = 0;
-        var visibleMonths = 0;
-        var visibleYears = 0;
-
-        long? lastDayKey = null;
-        int? lastMonthKey = null;
-        int? lastYear = null;
-        for (var i = startIdx; i <= endIdx; i++) {
-            var tick = ticks[i];
-            var dayKey = tick / TimeSpan.TicksPerDay;
-            if (!lastDayKey.HasValue || dayKey != lastDayKey.Value) {
-                visibleDays++;
-                lastDayKey = dayKey;
-            }
-
-            var dt = new DateTime(tick);
-            var monthKey = (dt.Year * 12) + dt.Month;
-            if (!lastMonthKey.HasValue || monthKey != lastMonthKey.Value) {
-                visibleMonths++;
-                lastMonthKey = monthKey;
-            }
-
-            if (!lastYear.HasValue || dt.Year != lastYear.Value) {
-                visibleYears++;
-                lastYear = dt.Year;
-            }
-        }
-
-        return (visibleDays, visibleMonths, visibleYears);
+        return (
+            (int)Math.Clamp(visibleDaysLong, 0L, int.MaxValue),
+            (int)Math.Clamp(visibleMonthsLong, 0L, int.MaxValue),
+            (int)Math.Clamp(visibleYearsLong, 0L, int.MaxValue));
     }
 
     private IReadOnlyList<AxisTick> GetOrCreateGroupedDateTicks(long minTicks, long maxTicks, NTDateGroupingLevel level) {
@@ -494,36 +474,62 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             return [];
         }
 
+        if (maxTicks < minTicks) {
+            (minTicks, maxTicks) = (maxTicks, minTicks);
+        }
+        minTicks = Math.Clamp(minTicks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
+        maxTicks = Math.Clamp(maxTicks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
+
         var key = new DateTickCacheKey(level, minTicks, maxTicks);
         if (_groupedDateTickCache.TryGetValue(key, out var cached)) {
             return cached;
         }
 
-        var allTicks = GetAllDateTicks();
-        if (allTicks.Length == 0) {
-            return [];
-        }
-
-        var (startIdx, endIdx) = FindVisibleDateTickRange(allTicks, minTicks, maxTicks, includeOutside: true);
-        var ticksSorted = new List<AxisTick>();
-        if (startIdx <= endIdx) {
-            long? lastBucket = null;
-            for (var i = startIdx; i <= endIdx; i++) {
-                var bucket = GetDateBucketKey(new DateTime(allTicks[i]), level);
-                if (lastBucket.HasValue && lastBucket.Value == bucket) {
-                    continue;
-                }
-
-                ticksSorted.Add(new AxisTick(bucket, FormatLabel(new DateTime(bucket), false)));
-                lastBucket = bucket;
-            }
-        }
+        var ticksSorted = BuildGroupedDateTicks(minTicks, maxTicks, level);
 
         if (_groupedDateTickCache.Count > 32) {
             _groupedDateTickCache.Clear();
         }
         _groupedDateTickCache[key] = ticksSorted;
         return ticksSorted;
+    }
+
+    private List<AxisTick> BuildGroupedDateTicks(long minTicks, long maxTicks, NTDateGroupingLevel level) {
+        var start = new DateTime(minTicks);
+        var end = new DateTime(maxTicks);
+        if (end < start) {
+            return [];
+        }
+
+        var ticks = new List<AxisTick>();
+
+        if (level == NTDateGroupingLevel.Year) {
+            for (var year = start.Year; year <= end.Year; year++) {
+                var dt = new DateTime(year, 7, 1);
+                ticks.Add(new AxisTick(dt.Ticks, FormatLabel(dt, false)));
+            }
+            return ticks;
+        }
+
+        if (level == NTDateGroupingLevel.Month) {
+            var cursor = new DateTime(start.Year, start.Month, 1);
+            var endMonth = new DateTime(end.Year, end.Month, 1);
+            while (cursor <= endMonth) {
+                var dt = cursor.AddDays(14);
+                ticks.Add(new AxisTick(dt.Ticks, FormatLabel(dt, false)));
+                cursor = cursor.AddMonths(1);
+            }
+            return ticks;
+        }
+
+        var dayCursor = start.Date;
+        var dayEnd = end.Date;
+        while (dayCursor <= dayEnd) {
+            ticks.Add(new AxisTick(dayCursor.Ticks, FormatLabel(dayCursor, false)));
+            dayCursor = dayCursor.AddDays(1);
+        }
+
+        return ticks;
     }
 
     private IReadOnlyList<AxisTick> DownsampleTicksForReadability(IReadOnlyList<AxisTick> ticks, float plotWidth, float density) {
@@ -555,56 +561,6 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         }
 
         return reduced;
-    }
-
-    private long[] GetAllDateTicks() {
-        var values = Chart.GetAllXValues();
-        if (_cachedDateTicks is not null && ReferenceEquals(values, _cachedDateSource)) {
-            return _cachedDateTicks;
-        }
-
-        _groupedDateTickCache.Clear();
-        _cachedDateSource = values;
-        _cachedDateTicks = values
-            .OfType<DateTime>()
-            .Select(dt => dt.Ticks)
-            .Distinct()
-            .OrderBy(t => t)
-            .ToArray();
-        return _cachedDateTicks;
-    }
-
-    private static (int Start, int End) FindVisibleDateTickRange(long[] allTicks, long minTicks, long maxTicks, bool includeOutside) {
-        if (allTicks.Length == 0) {
-            return (1, 0);
-        }
-
-        if (maxTicks < minTicks) {
-            (minTicks, maxTicks) = (maxTicks, minTicks);
-        }
-
-        var start = Array.BinarySearch(allTicks, minTicks);
-        if (start < 0) {
-            start = ~start;
-        }
-
-        var end = Array.BinarySearch(allTicks, maxTicks);
-        if (end < 0) {
-            end = (~end) - 1;
-        }
-
-        if (includeOutside) {
-            if (start > 0) {
-                start--;
-            }
-            if (end < allTicks.Length - 1) {
-                end++;
-            }
-        }
-
-        start = Math.Clamp(start, 0, allTicks.Length - 1);
-        end = Math.Clamp(end, 0, allTicks.Length - 1);
-        return (start, end);
     }
 
     private static long GetDateBucketKey(DateTime dt, NTDateGroupingLevel level) {
