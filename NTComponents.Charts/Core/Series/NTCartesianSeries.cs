@@ -227,6 +227,13 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             _panStartXRange = Chart.GetXRange(Chart.XAxis as NTAxisOptions<TData>, true);
             var yAxis = UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis;
             _panStartYRange = Chart.GetYRange(yAxis as NTAxisOptions<TData>, true);
+            NotifyPanStart(new NTSeriesPanStartEventArgs<TData> {
+                Series = this,
+                PointerPosition = point,
+                MouseEvent = e,
+                ViewXRange = GetViewXRange(),
+                ViewYRange = GetViewYRange()
+            });
         }
     }
 
@@ -249,10 +256,30 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
                 _viewYMin = _panStartYRange.Value.Min + dataDy;
                 _viewYMax = _panStartYRange.Value.Max + dataDy;
             }
+
+            NotifyPan(new NTSeriesPanEventArgs<TData> {
+                Series = this,
+                PointerPosition = point,
+                MouseEvent = e,
+                ViewXRange = GetViewXRange(),
+                ViewYRange = GetViewYRange()
+            });
         }
     }
 
-    public override void HandleMouseUp(MouseEventArgs e) => _isPanning = false;
+    public override void HandleMouseUp(MouseEventArgs e) {
+        if (_isPanning) {
+            var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
+            NotifyPanEnd(new NTSeriesPanEndEventArgs<TData> {
+                Series = this,
+                PointerPosition = point,
+                MouseEvent = e,
+                ViewXRange = GetViewXRange(),
+                ViewYRange = GetViewYRange()
+            });
+        }
+        _isPanning = false;
+    }
 
     public override void HandleMouseWheel(WheelEventArgs e) {
         if ((!Interactions.HasFlag(ChartInteractions.XZoom) && !Interactions.HasFlag(ChartInteractions.YZoom)) || Chart.LastPlotArea == default) {
@@ -286,6 +313,14 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             _viewYMin = yVal - (newYRange * yPct);
             _viewYMax = yVal + (newYRange * (1 - yPct));
         }
+
+        NotifyZoom(new NTSeriesZoomEventArgs<TData> {
+            Series = this,
+            PointerPosition = point,
+            WheelEvent = e,
+            ViewXRange = GetViewXRange(),
+            ViewYRange = GetViewYRange()
+        });
     }
 
     public override void ResetView() {
@@ -293,6 +328,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         _viewXMax = null;
         _viewYMin = null;
         _viewYMax = null;
+        base.ResetView();
     }
 
     public override (double Min, double Max)? GetViewXRange() => (_viewXMin.HasValue && _viewXMax.HasValue) ? (_viewXMin.Value, _viewXMax.Value) : null;

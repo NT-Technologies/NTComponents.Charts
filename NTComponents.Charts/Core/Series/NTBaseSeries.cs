@@ -87,6 +87,30 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     [Parameter]
     public Action<NTDataPointRenderArgs<TData>>? OnDataPointRender { get; set; }
 
+    [Parameter]
+    public EventCallback<NTSeriesHoverEnterEventArgs<TData>> OnHoverEnter { get; set; }
+
+    [Parameter]
+    public EventCallback<NTSeriesHoverLeaveEventArgs<TData>> OnHoverLeave { get; set; }
+
+    [Parameter]
+    public EventCallback<NTSeriesClickEventArgs<TData>> OnClick { get; set; }
+
+    [Parameter]
+    public EventCallback<NTSeriesPanStartEventArgs<TData>> OnPanStart { get; set; }
+
+    [Parameter]
+    public EventCallback<NTSeriesPanEventArgs<TData>> OnPan { get; set; }
+
+    [Parameter]
+    public EventCallback<NTSeriesPanEndEventArgs<TData>> OnPanEnd { get; set; }
+
+    [Parameter]
+    public EventCallback<NTSeriesZoomEventArgs<TData>> OnZoom { get; set; }
+
+    [Parameter]
+    public EventCallback<NTSeriesResetViewEventArgs<TData>> OnResetView { get; set; }
+
     /// <summary>
     ///     Gets or sets the text color of the series. If null or <see cref="TnTColor.None" />, a color will be chosen from the chart's palette.
     /// </summary>
@@ -283,7 +307,11 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     public virtual void HandleMouseMove(MouseEventArgs e) { }
     public virtual void HandleMouseUp(MouseEventArgs e) { }
     public virtual void HandleMouseWheel(WheelEventArgs e) { }
-    public virtual void ResetView() { }
+    public virtual void ResetView() {
+        NotifyResetView(new NTSeriesResetViewEventArgs<TData> {
+            Series = this
+        });
+    }
 
     public virtual (double Min, double Max)? GetViewXRange() => null;
     public virtual (decimal Min, decimal Max)? GetViewYRange() => null;
@@ -323,6 +351,23 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     }
 
     protected void NotifyNestedParentSeriesChanged() => NestedSeriesParent?.NotifyChildSeriesChanged();
+
+    internal void NotifyHoverEnter(NTSeriesHoverEnterEventArgs<TData> args) => NotifyCallback(OnHoverEnter, args);
+    internal void NotifyHoverLeave(NTSeriesHoverLeaveEventArgs<TData> args) => NotifyCallback(OnHoverLeave, args);
+    internal void NotifyClick(NTSeriesClickEventArgs<TData> args) => NotifyCallback(OnClick, args);
+    internal void NotifyPanStart(NTSeriesPanStartEventArgs<TData> args) => NotifyCallback(OnPanStart, args);
+    internal void NotifyPan(NTSeriesPanEventArgs<TData> args) => NotifyCallback(OnPan, args);
+    internal void NotifyPanEnd(NTSeriesPanEndEventArgs<TData> args) => NotifyCallback(OnPanEnd, args);
+    internal void NotifyZoom(NTSeriesZoomEventArgs<TData> args) => NotifyCallback(OnZoom, args);
+    internal void NotifyResetView(NTSeriesResetViewEventArgs<TData> args) => NotifyCallback(OnResetView, args);
+
+    private void NotifyCallback<TArgs>(EventCallback<TArgs> callback, TArgs args) where TArgs : class {
+        if (!callback.HasDelegate) {
+            return;
+        }
+
+        _ = InvokeAsync(() => callback.InvokeAsync(args));
+    }
 
     protected override void OnInitialized() {
         base.OnInitialized();
@@ -364,6 +409,3 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         Chart?.InvalidateDataCaches();
     }
 }
-
-
-
