@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using NTComponents.Charts.Core.Axes;
 using NTComponents.Charts.Core;
 using NTComponents.Charts.Core.Series;
@@ -26,6 +27,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         bool Aggregated,
         int AggregationThreshold,
         AggregationMode AggregationMode,
+        NTDateGroupingLevel DateGroupingLevel,
         bool UseSecondaryAxis,
         decimal YMin,
         decimal YMax,
@@ -79,6 +81,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
     private List<RenderPointInfo>? _cachedRenderPoints;
     private RenderCacheKey? _cachedRenderKey;
+    private (double MinX, double MaxX, NTDateGroupingLevel Level, decimal MinY, decimal MaxY)? _cachedGroupedSumRange;
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
@@ -97,7 +100,100 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         _cachedRenderKey = null;
         _linePathKey = null;
         _hitTestPathKey = null;
+        _cachedGroupedSumRange = null;
         base.OnDataChanged();
+    }
+
+    public override void HandleMouseWheel(WheelEventArgs e) {
+        base.HandleMouseWheel(e);
+
+        // Keep Y fitted to current X zoom window on every X zoom event.
+        // This preserves visibility for aggregation modes like Sum where magnitude changes with bucket size.
+        if (!Interactions.HasFlag(ChartInteractions.XZoom) || _isPanning) {
+            return;
+        }
+
+        var viewXRange = GetViewXRange();
+        if (!viewXRange.HasValue) {
+            return;
+        }
+
+        var yRange = GetYRange(viewXRange.Value.Min, viewXRange.Value.Max);
+        if (!yRange.HasValue) {
+            return;
+        }
+
+        var min = yRange.Value.Min;
+        var max = yRange.Value.Max;
+        if (max <= min) {
+            var delta = Math.Abs(min) > 1m ? Math.Abs(min * 0.01m) : 1m;
+            min -= delta;
+            max += delta;
+        }
+
+        var padding = (max - min) * (decimal)Math.Max(0, Chart.RangePadding);
+        _viewYMin = min - padding;
+        _viewYMax = max + padding;
+    }
+
+    public override (decimal Min, decimal Max)? GetYRange(double? xMin = null, double? xMax = null) {
+        if (AggregationMode != AggregationMode.Sum || !Chart.IsXAxisDateTime || !Chart.XAxis.EnableAutoDateGrouping) {
+            return base.GetYRange(xMin, xMax);
+        }
+
+        var xRange = (xMin.HasValue && xMax.HasValue)
+            ? (Math.Min(xMin.Value, xMax.Value), Math.Max(xMin.Value, xMax.Value))
+            : GetXRange();
+        if (!xRange.HasValue) {
+            return base.GetYRange(xMin, xMax);
+        }
+
+        var plotWidth = Chart is NTChart<TData> ntChart && ntChart.LastPlotArea.Width > 0f
+            ? ntChart.LastPlotArea.Width
+            : 1200f;
+        var level = Chart.XAxis.ResolveDateGroupingLevel(xRange.Value.Min, xRange.Value.Max, plotWidth, Math.Max(0.1f, Chart.Density));
+        if (level is not (NTDateGroupingLevel.Year or NTDateGroupingLevel.Month)) {
+            return base.GetYRange(xMin, xMax);
+        }
+
+        if (_cachedGroupedSumRange.HasValue &&
+            Math.Abs(_cachedGroupedSumRange.Value.MinX - xRange.Value.Min) < 0.000001 &&
+            Math.Abs(_cachedGroupedSumRange.Value.MaxX - xRange.Value.Max) < 0.000001 &&
+            _cachedGroupedSumRange.Value.Level == level) {
+            return (_cachedGroupedSumRange.Value.MinY, _cachedGroupedSumRange.Value.MaxY);
+        }
+
+        var window = GetVisibleWindow(xRange.Value.Min, xRange.Value.Max, overscan: 0);
+        if (window.Count == 0) {
+            return base.GetYRange(xMin, xMax);
+        }
+
+        decimal min = decimal.MaxValue;
+        decimal max = decimal.MinValue;
+        var currentBucket = GetDateBucketKey(window[0].X, level);
+        var bucketSum = 0m;
+
+        foreach (var point in window) {
+            var bucket = GetDateBucketKey(point.X, level);
+            if (bucket != currentBucket) {
+                min = Math.Min(min, bucketSum);
+                max = Math.Max(max, bucketSum);
+                currentBucket = bucket;
+                bucketSum = 0m;
+            }
+
+            bucketSum += YValueSelector(point.Data);
+        }
+
+        min = Math.Min(min, bucketSum);
+        max = Math.Max(max, bucketSum);
+
+        if (min == decimal.MaxValue || max == decimal.MinValue) {
+            return base.GetYRange(xMin, xMax);
+        }
+
+        _cachedGroupedSumRange = (xRange.Value.Min, xRange.Value.Max, level, min, max);
+        return (min, max);
     }
 
     /// <inheritdoc />
@@ -177,7 +273,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             }
         }
 
-        if (PointStyle != PointStyle.None || ShowDataLabels) {
+        var renderPointMarkers = PointStyle != PointStyle.None && points.Count <= 600;
+        if (renderPointMarkers || ShowDataLabels || Chart.HoveredSeries == this) {
             for (var i = 0; i < points.Count; i++) {
                 var rp = points[i];
                 var args = new NTDataPointRenderArgs<TData> {
@@ -202,7 +299,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
                     currentPointSize *= 1.5f;
                 }
 
-                if (PointStyle != PointStyle.None) {
+                if (renderPointMarkers) {
                     RenderPoint(context, rp.Point.X, rp.Point.Y, pointColor, currentPointSize / context.Density, currentPointShape, pointStrokeColor);
                 }
 
@@ -227,7 +324,12 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         var yScale = yAxis?.Scale ?? NTAxisScale.Linear;
         var progress = GetAnimationProgress();
         var visibility = VisibilityFactor;
-        var shouldAggregate = EnableAggregation && AggregationThreshold > 1;
+        var xAxis = Chart.XAxis;
+        var axisDateGroupingLevel = xAxis.ResolveDateGroupingLevel(xMin, xMax, renderArea.Width, density);
+        var useAxisDateGrouping = Chart.IsXAxisDateTime
+            && xAxis.EnableAutoDateGrouping
+            && axisDateGroupingLevel is NTDateGroupingLevel.Year or NTDateGroupingLevel.Month;
+        var shouldAggregate = (EnableAggregation || useAxisDateGrouping) && AggregationThreshold > 1;
         var pixelCapacity = GetPixelCapacity(renderArea);
         var effectiveAggregationThreshold = Math.Max(AggregationThreshold, pixelCapacity);
 
@@ -244,6 +346,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             shouldAggregate,
             AggregationThreshold,
             AggregationMode,
+            axisDateGroupingLevel,
             UseSecondaryYAxis,
             decimal.Round(yMin, 6),
             decimal.Round(yMax, 6),
@@ -264,7 +367,10 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         var easedProgress = (decimal)BackEase(progress);
         var vFactor = (decimal)visibility;
 
-        if (shouldAggregate && visibleData.Count > effectiveAggregationThreshold) {
+        if (useAxisDateGrouping) {
+            _cachedRenderPoints = GetAxisGroupedDatePoints(visibleData, renderArea, xMin, xMax, yMin, yMax, yScale, easedProgress, vFactor, axisDateGroupingLevel);
+        }
+        else if (shouldAggregate && visibleData.Count > effectiveAggregationThreshold) {
             _cachedRenderPoints = GetAggregatedPoints(visibleData, renderArea, xMin, xMax, yMin, yMax, yScale, easedProgress, vFactor, pixelCapacity);
         }
         else {
@@ -283,6 +389,135 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
         _cachedRenderKey = key;
         return _cachedRenderPoints;
+    }
+
+    private List<RenderPointInfo> GetAxisGroupedDatePoints(
+        List<VisiblePoint> visibleData,
+        SKRect renderArea,
+        double xMin,
+        double xMax,
+        decimal yMin,
+        decimal yMax,
+        NTAxisScale yScale,
+        decimal easedProgress,
+        decimal vFactor,
+        NTDateGroupingLevel groupingLevel) {
+
+        if (visibleData.Count == 0) {
+            return [];
+        }
+
+        var points = new List<RenderPointInfo>(Math.Min(visibleData.Count, 1024));
+        var mode = AggregationMode;
+        var useMedian = mode == AggregationMode.Median;
+        var medianValues = useMedian ? new List<decimal>(32) : null;
+
+        var currentBucket = GetDateBucketKey(visibleData[0].X, groupingLevel);
+        var count = 0;
+        var sum = 0m;
+        var min = decimal.MaxValue;
+        var max = decimal.MinValue;
+        var representative = visibleData[0];
+        var minPoint = visibleData[0];
+        var maxPoint = visibleData[0];
+
+        void ResetBucketState(VisiblePoint seed) {
+            count = 0;
+            sum = 0m;
+            min = decimal.MaxValue;
+            max = decimal.MinValue;
+            representative = seed;
+            minPoint = seed;
+            maxPoint = seed;
+            medianValues?.Clear();
+        }
+
+        void Accumulate(VisiblePoint item) {
+            var value = YValueSelector(item.Data);
+            count++;
+            sum += value;
+
+            if (value < min) {
+                min = value;
+                minPoint = item;
+            }
+            if (value > max) {
+                max = value;
+                maxPoint = item;
+            }
+
+            if ((count & 1) == 1) {
+                representative = item;
+            }
+
+            medianValues?.Add(value);
+        }
+
+        void FlushBucket() {
+            if (count == 0) {
+                return;
+            }
+
+            decimal aggregatedY;
+            VisiblePoint selected;
+
+            if (mode == AggregationMode.Sum) {
+                aggregatedY = sum;
+                selected = representative;
+            }
+            else if (mode == AggregationMode.Min) {
+                aggregatedY = min;
+                selected = minPoint;
+            }
+            else if (mode == AggregationMode.Max) {
+                aggregatedY = max;
+                selected = maxPoint;
+            }
+            else if (mode == AggregationMode.Median) {
+                aggregatedY = CalculateMedian(medianValues!);
+                selected = representative;
+            }
+            else if (mode == AggregationMode.None) {
+                aggregatedY = YValueSelector(representative.Data);
+                selected = representative;
+            }
+            else {
+                aggregatedY = sum / count;
+                selected = representative;
+            }
+
+            var animatedY = (aggregatedY * easedProgress) * vFactor * vFactor;
+            var screenX = ScaleXFast(currentBucket, xMin, xMax, renderArea);
+            var screenY = ScaleYFast(animatedY, yMin, yMax, yScale, renderArea);
+            points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), selected.Data, selected.Index, aggregatedY));
+        }
+
+        ResetBucketState(visibleData[0]);
+        foreach (var item in visibleData) {
+            var bucket = GetDateBucketKey(item.X, groupingLevel);
+            if (bucket != currentBucket) {
+                FlushBucket();
+                currentBucket = bucket;
+                ResetBucketState(item);
+            }
+
+            Accumulate(item);
+        }
+
+        FlushBucket();
+        return points;
+    }
+
+    private static long GetDateBucketKey(double xValue, NTDateGroupingLevel groupingLevel) {
+        var ticks = (long)Math.Round(xValue);
+        ticks = Math.Clamp(ticks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
+        var dt = new DateTime(ticks);
+
+        return groupingLevel switch {
+            NTDateGroupingLevel.Year => new DateTime(dt.Year, 7, 1).Ticks,
+            NTDateGroupingLevel.Month => new DateTime(dt.Year, dt.Month, 1).AddDays(14).Ticks,
+            _ => dt.Ticks
+        };
     }
 
     private static int GetPixelCapacity(SKRect renderArea) {
@@ -349,6 +584,11 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
                 aggregatedY = YValueSelector(representative.Data);
                 aggregatedX = representative.X;
             }
+            else if (AggregationMode == AggregationMode.Median) {
+                representative = bucket[bucket.Count / 2];
+                aggregatedY = CalculateMedian(bucket.Select(x => YValueSelector(x.Data)));
+                aggregatedX = bucket.Average(x => x.X);
+            }
             else {
                 representative = bucket[bucket.Count / 2];
                 aggregatedY = YValueSelector(representative.Data);
@@ -362,6 +602,20 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         }
 
         return points;
+    }
+
+    private static decimal CalculateMedian(IEnumerable<decimal> values) {
+        var sorted = values.OrderBy(v => v).ToList();
+        if (sorted.Count == 0) {
+            return 0m;
+        }
+
+        var mid = sorted.Count / 2;
+        if (sorted.Count % 2 == 1) {
+            return sorted[mid];
+        }
+
+        return (sorted[mid - 1] + sorted[mid]) / 2m;
     }
 
     private static float ScaleYFast(decimal y, decimal min, decimal max, NTAxisScale scale, SKRect plotArea) {

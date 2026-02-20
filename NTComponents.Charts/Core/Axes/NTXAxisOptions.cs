@@ -40,6 +40,12 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         }
     }
 
+    [Parameter]
+    public bool EnableAutoDateGrouping { get; set; } = true;
+
+    [Parameter]
+    public int DateGroupingThreshold { get; set; }
+
     private readonly List<AxisTick> _cachedTicks = [];
     private AxisCacheKey? _cacheKey;
     private SKPaint _linePaint = default!;
@@ -50,6 +56,10 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     private SKFont _titleFont = default!;
     private SKPaint _titlePaint = default!;
     private float? _titleHeight;
+    private NTDateGroupingLevel _activeDateGroupingLevel = NTDateGroupingLevel.None;
+    private readonly Dictionary<DateTickCacheKey, List<AxisTick>> _groupedDateTickCache = [];
+    private List<object>? _cachedDateSource;
+    private long[]? _cachedDateTicks;
 
     public override void Dispose() {
         _textPaint?.Dispose();
@@ -140,7 +150,9 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             AxisFontSize,
             LabelFormat,
             Title,
-            TitleFontSize);
+            TitleFontSize,
+            EnableAutoDateGrouping,
+            DateGroupingThreshold);
 
         if (_cacheKey.HasValue && _cacheKey.Value.Equals(key)) {
             return;
@@ -150,6 +162,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         _cachedTicks.Clear();
         _rotation = 0f;
         _tickLabelHeight = 0f;
+        _activeDateGroupingLevel = NTDateGroupingLevel.None;
 
         if (IsCategorical) {
             BuildCategoricalTicks(context, plotArea, min, max);
@@ -172,17 +185,17 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         }
 
         var visibleCount = end - start + 1;
-        var (maxLabelWidth, maxLabelHeight) = MeasureSampleLabels(context, start, end, idx => FormatLabel(allX[idx]));
+        var (maxLabelWidth, maxLabelHeight) = MeasureSampleLabels(context, start, end, idx => FormatLabel(allX[idx], false));
 
         var targetTicks = EstimateTargetTicks(plotArea.Width, maxLabelWidth, context.Density, preferDensity: true);
         var step = Math.Max(1, (int)Math.Floor(visibleCount / (double)targetTicks));
 
         for (var i = start; i <= end; i += step) {
-            _cachedTicks.Add(new AxisTick(i, FormatLabel(allX[i])));
+            _cachedTicks.Add(new AxisTick(i, FormatLabel(allX[i], false)));
         }
 
         if (_cachedTicks.Count == 0 || _cachedTicks[^1].Value != end) {
-            _cachedTicks.Add(new AxisTick(end, FormatLabel(allX[end])));
+            _cachedTicks.Add(new AxisTick(end, FormatLabel(allX[end], false)));
         }
 
         var labelSlotWidth = plotArea.Width / Math.Max(1, _cachedTicks.Count - 1);
@@ -201,15 +214,20 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             return;
         }
 
+        if (Chart.IsXAxisDateTime) {
+            BuildDateTimeTicks(context, min, max, plotWidth);
+            return;
+        }
+
         if (Math.Abs(max - min) < double.Epsilon) {
-            _cachedTicks.Add(new AxisTick(min, FormatLabel(ToLabelValue(min))));
+            _cachedTicks.Add(new AxisTick(min, FormatLabel(ToLabelValue(min), false)));
             _textFont.MeasureText(_cachedTicks[0].Label, out var bounds);
             _tickLabelHeight = bounds.Height;
             return;
         }
 
-        var minLabel = FormatLabel(ToLabelValue(min));
-        var maxLabel = FormatLabel(ToLabelValue(max));
+        var minLabel = FormatLabel(ToLabelValue(min), false);
+        var maxLabel = FormatLabel(ToLabelValue(max), false);
 
         _textFont.MeasureText(minLabel, out var minBounds);
         _textFont.MeasureText(maxLabel, out var maxBounds);
@@ -233,7 +251,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
                 continue;
             }
 
-            _cachedTicks.Add(new AxisTick(tick, FormatLabel(ToLabelValue(tick))));
+            _cachedTicks.Add(new AxisTick(tick, FormatLabel(ToLabelValue(tick), false)));
         }
 
         if (_cachedTicks.Count == 0) {
@@ -242,6 +260,45 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         }
 
         _tickLabelHeight = Math.Max(minBounds.Height, maxBounds.Height);
+    }
+
+    private void BuildDateTimeTicks(NTRenderContext context, double min, double max, float plotWidth) {
+        if (Math.Abs(max - min) < double.Epsilon) {
+            _cachedTicks.Add(new AxisTick(min, FormatLabel(ToLabelValue(min), false)));
+            _textFont.MeasureText(_cachedTicks[0].Label, out var bounds);
+            _tickLabelHeight = bounds.Height;
+            _activeDateGroupingLevel = NTDateGroupingLevel.Day;
+            return;
+        }
+
+        _activeDateGroupingLevel = ResolveDateGroupingLevel(min, max, plotWidth, context.Density);
+
+        var startTicks = (long)Math.Round(Math.Min(min, max));
+        var endTicks = (long)Math.Round(Math.Max(min, max));
+        startTicks = Math.Clamp(startTicks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
+        endTicks = Math.Clamp(endTicks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
+
+        var groupedTicks = GetOrCreateGroupedDateTicks(startTicks, endTicks, _activeDateGroupingLevel);
+        foreach (var tick in DownsampleTicksForReadability(groupedTicks, plotWidth, context.Density)) {
+            _cachedTicks.Add(tick);
+        }
+
+        if (_cachedTicks.Count == 0) {
+            var start = new DateTime(startTicks);
+            var end = new DateTime(endTicks);
+            _cachedTicks.Add(new AxisTick(startTicks, FormatLabel(start, false)));
+            if (endTicks != startTicks) {
+                _cachedTicks.Add(new AxisTick(endTicks, FormatLabel(end, false)));
+            }
+        }
+
+        float maxHeight = 0f;
+        var sampleStep = Math.Max(1, _cachedTicks.Count / 24);
+        for (var i = 0; i < _cachedTicks.Count; i += sampleStep) {
+            _textFont.MeasureText(_cachedTicks[i].Label, out var bounds);
+            maxHeight = Math.Max(maxHeight, bounds.Height);
+        }
+        _tickLabelHeight = maxHeight <= 0f ? (_textFont.Size + (2f * context.Density)) : maxHeight;
     }
 
     private (float MaxWidth, float MaxHeight) MeasureSampleLabels(NTRenderContext context, int start, int end, Func<int, string> labelFactory) {
@@ -322,7 +379,35 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         return bounds.Height + (5 * context.Density);
     }
 
-    private string FormatLabel(object? value) {
+    public string FormatValue(object? value, bool forTooltip = false) => FormatLabel(value, forTooltip);
+
+    public NTDateGroupingLevel ResolveDateGroupingLevel(double min, double max, float plotWidth, float density) {
+        if (!Chart.IsXAxisDateTime || !EnableAutoDateGrouping) {
+            return NTDateGroupingLevel.None;
+        }
+
+        var startTicks = (long)Math.Round(Math.Min(min, max));
+        var endTicks = (long)Math.Round(Math.Max(min, max));
+        startTicks = Math.Clamp(startTicks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
+        endTicks = Math.Clamp(endTicks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
+
+        var pointCapacity = Math.Max(8, (int)Math.Floor(plotWidth / Math.Max(2f, 4f * density)));
+        var dayThreshold = DateGroupingThreshold > 0 ? Math.Max(DateGroupingThreshold, pointCapacity) : pointCapacity;
+        var (visibleDays, _, visibleYears) = CountVisibleDateDensity(startTicks, endTicks);
+
+        // Strict LOD order: Year -> Month -> Day(show all).
+        if (visibleDays <= dayThreshold) {
+            return NTDateGroupingLevel.Day;
+        }
+
+        if (visibleYears > 5) {
+            return NTDateGroupingLevel.Year;
+        }
+
+        return NTDateGroupingLevel.Month;
+    }
+
+    private string FormatLabel(object? value, bool forTooltip) {
         if (value is null) {
             return string.Empty;
         }
@@ -337,10 +422,197 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         }
 
         if (value is DateTime dt) {
-            return dt.ToString("d");
+            var level = _activeDateGroupingLevel == NTDateGroupingLevel.None
+                ? ResolveDateGroupingLevelFromCurrentView()
+                : _activeDateGroupingLevel;
+
+            return level switch {
+                NTDateGroupingLevel.Year => dt.ToString("yyyy"),
+                NTDateGroupingLevel.Month => dt.ToString("MMM yyyy"),
+                NTDateGroupingLevel.Day => dt.ToString("MM/dd/yyyy"),
+                _ => forTooltip ? dt.ToString("MM/dd/yyyy") : dt.ToString("d")
+            };
         }
 
         return value.ToString() ?? string.Empty;
+    }
+
+    private NTDateGroupingLevel ResolveDateGroupingLevelFromCurrentView() {
+        if (!Chart.IsXAxisDateTime || !EnableAutoDateGrouping) {
+            return NTDateGroupingLevel.None;
+        }
+
+        var (min, max) = Chart.GetXRange(this, true);
+        var plotWidth = Chart is NTChart<TData> ntChart ? ntChart.LastPlotArea.Width : 0f;
+        return ResolveDateGroupingLevel(min, max, Math.Max(1f, plotWidth), Math.Max(0.1f, Chart.Density));
+    }
+
+    private (int VisibleDays, int VisibleMonths, int VisibleYears) CountVisibleDateDensity(long minTicks, long maxTicks) {
+        var ticks = GetAllDateTicks();
+        if (ticks.Length == 0) {
+            return (0, 0, 0);
+        }
+
+        var (startIdx, endIdx) = FindVisibleDateTickRange(ticks, minTicks, maxTicks, includeOutside: false);
+        if (startIdx > endIdx) {
+            return (0, 0, 0);
+        }
+
+        var visibleDays = 0;
+        var visibleMonths = 0;
+        var visibleYears = 0;
+
+        long? lastDayKey = null;
+        int? lastMonthKey = null;
+        int? lastYear = null;
+        for (var i = startIdx; i <= endIdx; i++) {
+            var tick = ticks[i];
+            var dayKey = tick / TimeSpan.TicksPerDay;
+            if (!lastDayKey.HasValue || dayKey != lastDayKey.Value) {
+                visibleDays++;
+                lastDayKey = dayKey;
+            }
+
+            var dt = new DateTime(tick);
+            var monthKey = (dt.Year * 12) + dt.Month;
+            if (!lastMonthKey.HasValue || monthKey != lastMonthKey.Value) {
+                visibleMonths++;
+                lastMonthKey = monthKey;
+            }
+
+            if (!lastYear.HasValue || dt.Year != lastYear.Value) {
+                visibleYears++;
+                lastYear = dt.Year;
+            }
+        }
+
+        return (visibleDays, visibleMonths, visibleYears);
+    }
+
+    private IReadOnlyList<AxisTick> GetOrCreateGroupedDateTicks(long minTicks, long maxTicks, NTDateGroupingLevel level) {
+        if (level == NTDateGroupingLevel.None) {
+            return [];
+        }
+
+        var key = new DateTickCacheKey(level, minTicks, maxTicks);
+        if (_groupedDateTickCache.TryGetValue(key, out var cached)) {
+            return cached;
+        }
+
+        var allTicks = GetAllDateTicks();
+        if (allTicks.Length == 0) {
+            return [];
+        }
+
+        var (startIdx, endIdx) = FindVisibleDateTickRange(allTicks, minTicks, maxTicks, includeOutside: true);
+        var ticksSorted = new List<AxisTick>();
+        if (startIdx <= endIdx) {
+            long? lastBucket = null;
+            for (var i = startIdx; i <= endIdx; i++) {
+                var bucket = GetDateBucketKey(new DateTime(allTicks[i]), level);
+                if (lastBucket.HasValue && lastBucket.Value == bucket) {
+                    continue;
+                }
+
+                ticksSorted.Add(new AxisTick(bucket, FormatLabel(new DateTime(bucket), false)));
+                lastBucket = bucket;
+            }
+        }
+
+        if (_groupedDateTickCache.Count > 32) {
+            _groupedDateTickCache.Clear();
+        }
+        _groupedDateTickCache[key] = ticksSorted;
+        return ticksSorted;
+    }
+
+    private IReadOnlyList<AxisTick> DownsampleTicksForReadability(IReadOnlyList<AxisTick> ticks, float plotWidth, float density) {
+        if (ticks.Count <= 2 || plotWidth <= 0) {
+            return ticks;
+        }
+
+        var sampleStep = Math.Max(1, ticks.Count / 24);
+        float maxWidth = 0f;
+        for (var i = 0; i < ticks.Count; i += sampleStep) {
+            _textFont.MeasureText(ticks[i].Label, out var bounds);
+            maxWidth = Math.Max(maxWidth, bounds.Width);
+        }
+
+        var minSpacing = Math.Max(24f * density, maxWidth + (10f * density));
+        var maxReadableTicks = Math.Max(2, (int)Math.Floor(plotWidth / minSpacing));
+        if (ticks.Count <= maxReadableTicks) {
+            return ticks;
+        }
+
+        var step = Math.Max(1, (int)Math.Ceiling((ticks.Count - 1d) / (maxReadableTicks - 1d)));
+        var reduced = new List<AxisTick>(maxReadableTicks + 1);
+        for (var i = 0; i < ticks.Count; i += step) {
+            reduced.Add(ticks[i]);
+        }
+
+        if (reduced.Count == 0 || reduced[^1].Value != ticks[^1].Value) {
+            reduced.Add(ticks[^1]);
+        }
+
+        return reduced;
+    }
+
+    private long[] GetAllDateTicks() {
+        var values = Chart.GetAllXValues();
+        if (_cachedDateTicks is not null && ReferenceEquals(values, _cachedDateSource)) {
+            return _cachedDateTicks;
+        }
+
+        _groupedDateTickCache.Clear();
+        _cachedDateSource = values;
+        _cachedDateTicks = values
+            .OfType<DateTime>()
+            .Select(dt => dt.Ticks)
+            .Distinct()
+            .OrderBy(t => t)
+            .ToArray();
+        return _cachedDateTicks;
+    }
+
+    private static (int Start, int End) FindVisibleDateTickRange(long[] allTicks, long minTicks, long maxTicks, bool includeOutside) {
+        if (allTicks.Length == 0) {
+            return (1, 0);
+        }
+
+        if (maxTicks < minTicks) {
+            (minTicks, maxTicks) = (maxTicks, minTicks);
+        }
+
+        var start = Array.BinarySearch(allTicks, minTicks);
+        if (start < 0) {
+            start = ~start;
+        }
+
+        var end = Array.BinarySearch(allTicks, maxTicks);
+        if (end < 0) {
+            end = (~end) - 1;
+        }
+
+        if (includeOutside) {
+            if (start > 0) {
+                start--;
+            }
+            if (end < allTicks.Length - 1) {
+                end++;
+            }
+        }
+
+        start = Math.Clamp(start, 0, allTicks.Length - 1);
+        end = Math.Clamp(end, 0, allTicks.Length - 1);
+        return (start, end);
+    }
+
+    private static long GetDateBucketKey(DateTime dt, NTDateGroupingLevel level) {
+        return level switch {
+            NTDateGroupingLevel.Year => new DateTime(dt.Year, 7, 1).Ticks,
+            NTDateGroupingLevel.Month => new DateTime(dt.Year, dt.Month, 1).AddDays(14).Ticks,
+            _ => dt.Date.Ticks
+        };
     }
 
     [MemberNotNull(nameof(_textPaint), nameof(_textFont), nameof(_titlePaint), nameof(_titleFont), nameof(_linePaint))]
@@ -381,5 +653,12 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         float AxisFontSize,
         string? LabelFormat,
         string? Title,
-        float TitleFontSize);
+        float TitleFontSize,
+        bool EnableAutoDateGrouping,
+        int DateGroupingThreshold);
+
+    private readonly record struct DateTickCacheKey(
+        NTDateGroupingLevel Level,
+        long MinTicks,
+        long MaxTicks);
 }

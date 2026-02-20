@@ -149,7 +149,9 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
             }
         }
         else if (Position == LegendPosition.Floating) {
-            var rect = GetFloatingRect(plotArea, density);
+            var rect = (legendDrawArea.Width > 0 && legendDrawArea.Height > 0)
+                ? legendDrawArea
+                : GetFloatingRect(plotArea, density);
             var x = rect.Left + (5 * density);
             var y = rect.Top + (5 * density) + (FontSize * density);
             var items = Chart.Series.SelectMany(s => s.GetLegendItems()).ToList();

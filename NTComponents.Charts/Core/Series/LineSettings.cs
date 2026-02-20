@@ -72,5 +72,10 @@ public enum AggregationMode {
     /// <summary>
     ///     Maximum value of all points in the bucket.
     /// </summary>
-    Max
+    Max,
+
+    /// <summary>
+    ///     Median value of all points in the bucket.
+    /// </summary>
+    Median
 }

@@ -81,6 +81,13 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     [Parameter]
     public bool ShowNavigation { get; set; } = true;
 
+    /// <summary>
+    ///     Controls whether immediate child treemap previews are rendered inside parent cells.
+    ///     Drilldown remains available when this is disabled.
+    /// </summary>
+    [Parameter]
+    public bool ShowChildPreviews { get; set; } = true;
+
     [Parameter]
     public string BackText { get; set; } = "Back";
 
@@ -597,6 +604,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         hash.Add(MinLabelHeight);
         hash.Add(EnableDrilldown);
         hash.Add(ShowNavigation);
+        hash.Add(ShowChildPreviews);
         hash.Add(BackText);
         hash.Add(NavigationHeight);
         hash.Add(Title);
@@ -692,7 +700,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             if (rect.Width > 0 && rect.Height > 0) {
                 var hasVisibleChildren = false;
                 var childArea = SKRect.Empty;
-                if (nestedDepth == 0 && node.Children.Count > 0 && TryGetChildContentArea(rect, density, out childArea)) {
+                if (ShowChildPreviews && nestedDepth == 0 && node.Children.Count > 0 && TryGetChildContentArea(rect, density, out childArea)) {
                     hasVisibleChildren = node.Children.Any(c => c.Value > 0m);
                 }
 

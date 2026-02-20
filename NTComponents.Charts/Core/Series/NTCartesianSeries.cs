@@ -24,8 +24,9 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     internal override TooltipInfo GetTooltipInfo(TData data) {
         var xValue = XValue.Invoke(data);
         var yValue = YValueSelector(data);
+        var header = Chart.XAxis.FormatValue(xValue, forTooltip: true);
         return new TooltipInfo {
-            Header = xValue?.ToString(),
+            Header = header,
             Lines =
             [
                 new TooltipLine

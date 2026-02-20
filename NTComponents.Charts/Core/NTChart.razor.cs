@@ -274,7 +274,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private double _lastRenderTimeMs;
     private float _lastWidth;
     private SKPoint _legendDragStartMousePos;
-    private SKPoint _legendMouseOffset;
+    private SKPoint _legendDragStartOffset;
     private DotNetObjectReference<NTChart<TData>>? _objRef;
     private IJSObjectReference? _themeListener;
     private long _lastUiRefreshTimestamp;
@@ -894,12 +894,15 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         var point = new SKPoint((float)e.OffsetX * Density, (float)e.OffsetY * Density);
 
         if (Legend != null && Legend.Visible && Legend.Position == LegendPosition.Floating) {
-            var rect = Legend.GetFloatingRect(LastPlotArea, Density);
+            var rect = Legend.LastDrawArea.Width > 0 && Legend.LastDrawArea.Height > 0
+                ? Legend.LastDrawArea
+                : Legend.GetFloatingRect(LastPlotArea, Density);
             if (rect.Contains(point)) {
                 _isDraggingLegend = true;
                 _hasDraggedLegend = false;
                 _legendDragStartMousePos = point;
-                _legendMouseOffset = new SKPoint(point.X - rect.Left, point.Y - rect.Top);
+                _legendDragStartOffset = Legend.FloatingOffset
+                    ?? new SKPoint(rect.Left - LastPlotArea.Left, rect.Top - LastPlotArea.Top);
                 return;
             }
         }
@@ -950,8 +953,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             }
 
             if (_hasDraggedLegend) {
-                var newX = currentPoint.X - _legendMouseOffset.X - LastPlotArea.Left;
-                var newY = currentPoint.Y - _legendMouseOffset.Y - LastPlotArea.Top;
+                var deltaX = currentPoint.X - _legendDragStartMousePos.X;
+                var deltaY = currentPoint.Y - _legendDragStartMousePos.Y;
+                var newX = _legendDragStartOffset.X + deltaX;
+                var newY = _legendDragStartOffset.Y + deltaY;
                 Legend.FloatingOffset = new SKPoint(newX, newY);
                 _lastInteractionTimestamp = Stopwatch.GetTimestamp();
                 RequestUiRefresh();
