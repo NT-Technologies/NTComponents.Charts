@@ -159,6 +159,9 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     [CascadingParameter]
     protected NTChart<TData> Chart { get; set; } = default!;
 
+    [CascadingParameter]
+    private INestedSeriesParent<TData>? NestedSeriesParent { get; set; }
+
     /// <summary>
     ///     Gets or sets the previous data.
     /// </summary>
@@ -183,6 +186,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
 
     protected virtual void Dispose(bool disposing) {
         if (disposing) {
+            NestedSeriesParent?.UnregisterChildSeries(this);
             Chart?.UnregisterSeries(this);
             Chart?.UnregisterRenderable(this);
         }
@@ -318,8 +322,15 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         Chart?.InvalidateDataCaches();
     }
 
+    protected void NotifyNestedParentSeriesChanged() => NestedSeriesParent?.NotifyChildSeriesChanged();
+
     protected override void OnInitialized() {
         base.OnInitialized();
+        if (NestedSeriesParent is not null) {
+            NestedSeriesParent.RegisterChildSeries(this);
+            return;
+        }
+
         if (Chart is null) {
             throw new ArgumentNullException(nameof(Chart), $"Series must be used within a {nameof(NTChart<TData>)}.");
         }
@@ -353,8 +364,6 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         Chart?.InvalidateDataCaches();
     }
 }
-
-
 
 
 
