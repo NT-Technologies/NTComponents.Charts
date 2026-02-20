@@ -1,0 +1,60 @@
+name: Tag Template
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  run-semantic-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Check if commit is tagged
+        id: check-tags
+        run: |
+          git fetch --tags
+          if git describe --exact-match --match "v*" 2>/dev/null; then
+            echo "is_tagged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Install semantic-release and plugins
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        run: |
+          npm install --no-save semantic-release \
+            @semantic-release/commit-analyzer \
+            @semantic-release/release-notes-generator \
+            @semantic-release/changelog \
+            @semantic-release/git \
+            @semantic-release/github
+
+      - name: Run semantic-release
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git fetch --tags
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npx semantic-release

@@ -4,11 +4,27 @@
         <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
+        <PackageId>NTComponents.Charts</PackageId>
+        <Title>NTComponents.Charts</Title>
+        <Description>Charts package for NTComponents with interactive Blazor visualizations powered by SkiaSharp.</Description>
+        <Authors>NT Technologies</Authors>
+        <RepositoryUrl>https://github.com/NT-Technologies/NTComponents.Charts</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageTags>blazor;charts;visualization;skia;ntcomponents</PackageTags>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>
 	
 	<ItemGroup>
 		<SupportedPlatform Include="browser" />
 	</ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\README.md" Pack="true" PackagePath="\" />
+        <None Include="..\LICENSE.txt" Pack="true" PackagePath="\" />
+    </ItemGroup>
 	
     <ItemGroup>
 		<PackageReference Include="AspNetCore.SassCompiler" Version="1.97.1" />
