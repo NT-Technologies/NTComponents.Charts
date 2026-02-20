@@ -24,6 +24,11 @@ public sealed class TreeMapColorContext<TData> where TData : class {
 /// </summary>
 /// <typeparam name="TData">The type of the data.</typeparam>
 public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeries, INestedSeriesParent<TData> where TData : class {
+    private enum DrillTransitionDirection {
+        None,
+        Down,
+        Up
+    }
     [Parameter]
     public Func<TData, decimal> ValueSelector { get; set; } = _ => 0;
 
@@ -87,6 +92,12 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     /// </summary>
     [Parameter]
     public bool ShowChildPreviews { get; set; } = true;
+
+    /// <summary>
+    ///     Renders a visual cue on group cells that can be drilled into.
+    /// </summary>
+    [Parameter]
+    public bool ShowDrillIndicator { get; set; } = true;
 
     [Parameter]
     public string BackText { get; set; } = "Back";
@@ -195,7 +206,12 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     private int _nodeId;
 
     private SKRect _lastSeriesArea = SKRect.Empty;
+    private SKRect _lastContentArea = SKRect.Empty;
     private SKRect _backButtonRect = SKRect.Empty;
+    private bool _isDrillTransitionActive;
+    private DrillTransitionDirection _drillTransitionDirection;
+    private SKRect _drillTransitionOverlayRect = SKRect.Empty;
+    private SKColor _drillTransitionColor = SKColors.Transparent;
 
     private int _lastConfigurationHash;
 
@@ -206,8 +222,11 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     private SKPaint? _navTextPaint;
     private SKPaint? _navButtonPaint;
     private SKPaint? _navButtonTextPaint;
+    private SKPaint? _drillIndicatorPaint;
+    private SKPaint? _drillIndicatorTextPaint;
     private SKFont? _labelFont;
     private SKFont? _navFont;
+    private SKFont? _drillIndicatorFont;
 
     private int? _hoverAnimFromIndex;
     private int? _hoverAnimToIndex;
@@ -272,6 +291,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             : renderArea;
 
         _lastSeriesArea = renderArea;
+        _lastContentArea = contentArea;
         BuildVisibleLayout(context, current, contentArea);
 
         InitializePaints(context);
@@ -292,6 +312,9 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         var parentEasedProgress = BackEase(parentPhaseProgress);
         var childEasedProgress = BackEase(childPhaseProgress);
         var visibilityFactor = VisibilityFactor;
+        var drillTransitionProgress = _isDrillTransitionActive ? GetAnimationProgress() : 1f;
+        var drillTransitionEased = BackEase(drillTransitionProgress);
+        var applyDrillTransition = _isDrillTransitionActive && drillTransitionProgress < 1f;
 
         UpdateHoverAnimationState();
         var hoverProgress = GetHoverAnimationProgress();
@@ -313,7 +336,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             }
 
             var nodeEasedProgress = rendered.IsInteractive ? parentEasedProgress : childEasedProgress;
-            if (nodePhaseProgress < 1f) {
+            if (!applyDrillTransition && nodePhaseProgress < 1f) {
                 var centerX = rect.MidX;
                 var centerY = rect.MidY;
                 var w = rect.Width * nodeEasedProgress;
@@ -344,6 +367,9 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             }
 
             var nodeAlphaFactor = rendered.IsInteractive ? 1f : nodePhaseProgress;
+            if (applyDrillTransition && rendered.IsInteractive) {
+                nodeAlphaFactor *= drillTransitionProgress;
+            }
             var color = baseColor.WithAlpha((byte)(baseColor.Alpha * visibilityFactor * nodeAlphaFactor));
             _itemPaint!.Color = color;
             context.Canvas.DrawRect(rect, _itemPaint);
@@ -352,15 +378,43 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             _borderPaint!.Color = Chart.GetThemeColor(TnTColor.OutlineVariant).WithAlpha((byte)((210f + (35f * hoverIntensity)) * visibilityFactor));
             context.Canvas.DrawRect(rect, _borderPaint);
 
+            if (styleSeries.ShowDrillIndicator && EnableDrilldown && rendered.IsInteractive && node.IsGroup) {
+                RenderDrillIndicator(context, rect, styleSeries);
+            }
+
             if (styleSeries.ShowLabels) {
                 RenderLabel(context, rect, node, color, labelColorOverride, rendered.HasVisibleChildren, styleSeries);
             }
+        }
+
+        if (applyDrillTransition) {
+            var overlayRect = _drillTransitionDirection == DrillTransitionDirection.Down
+                ? _drillTransitionOverlayRect
+                : contentArea;
+            var overlayBaseAlpha = _drillTransitionDirection == DrillTransitionDirection.Down ? 220f : 170f;
+            var overlayAlpha = (byte)(overlayBaseAlpha * visibilityFactor * (1f - drillTransitionProgress));
+
+            _itemPaint!.Color = _drillTransitionColor.WithAlpha(overlayAlpha);
+            context.Canvas.DrawRect(overlayRect, _itemPaint);
+
+            _borderPaint!.StrokeWidth = baseBorderWidth;
+            _borderPaint!.Color = Chart.GetThemeColor(TnTColor.OutlineVariant).WithAlpha((byte)(200f * visibilityFactor * (1f - drillTransitionProgress)));
+            context.Canvas.DrawRect(overlayRect, _borderPaint);
+        }
+        else if (_isDrillTransitionActive) {
+            _isDrillTransitionActive = false;
+            _drillTransitionDirection = DrillTransitionDirection.None;
+            _drillTransitionOverlayRect = SKRect.Empty;
         }
 
         return renderArea;
     }
 
     public override void HandleMouseDown(MouseEventArgs e) {
+        if (_isDrillTransitionActive) {
+            return;
+        }
+
         if (!EnableDrilldown || _visibleNodes.Count == 0) {
             return;
         }
@@ -371,6 +425,11 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         }
 
         if (_backButtonRect.Contains(point) && _drillPath.Count > 0) {
+            _drillTransitionOverlayRect = _lastContentArea;
+            _drillTransitionColor = Chart.GetThemeColor(TnTColor.SurfaceContainerHigh);
+            _drillTransitionDirection = DrillTransitionDirection.Up;
+            _isDrillTransitionActive = true;
+            ResetAnimation();
             _drillPath.RemoveAt(_drillPath.Count - 1);
             InvalidateLayout();
             return;
@@ -387,6 +446,11 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             }
 
             if (rendered.Node.IsGroup) {
+                _drillTransitionOverlayRect = rendered.Rect;
+                _drillTransitionColor = ResolveNodeColor(rendered.Node, i);
+                _drillTransitionDirection = DrillTransitionDirection.Down;
+                _isDrillTransitionActive = true;
+                ResetAnimation();
                 _drillPath.Add(new DrillStep(rendered.Node.Key, rendered.Node.DisplayLabel));
                 InvalidateLayout();
             }
@@ -403,8 +467,11 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             _navTextPaint?.Dispose();
             _navButtonPaint?.Dispose();
             _navButtonTextPaint?.Dispose();
+            _drillIndicatorPaint?.Dispose();
+            _drillIndicatorTextPaint?.Dispose();
             _labelFont?.Dispose();
             _navFont?.Dispose();
+            _drillIndicatorFont?.Dispose();
 
             _itemPaint = null;
             _borderPaint = null;
@@ -413,8 +480,11 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             _navTextPaint = null;
             _navButtonPaint = null;
             _navButtonTextPaint = null;
+            _drillIndicatorPaint = null;
+            _drillIndicatorTextPaint = null;
             _labelFont = null;
             _navFont = null;
+            _drillIndicatorFont = null;
         }
 
         base.Dispose(disposing);
@@ -605,6 +675,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         hash.Add(EnableDrilldown);
         hash.Add(ShowNavigation);
         hash.Add(ShowChildPreviews);
+        hash.Add(ShowDrillIndicator);
         hash.Add(BackText);
         hash.Add(NavigationHeight);
         hash.Add(Title);
@@ -913,6 +984,15 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             Color = Chart.GetThemeColor(TextColor ?? Chart.TextColor)
         };
 
+        _drillIndicatorPaint ??= new SKPaint {
+            Style = SKPaintStyle.Fill,
+            IsAntialias = true
+        };
+
+        _drillIndicatorTextPaint ??= new SKPaint {
+            IsAntialias = true
+        };
+
         _labelFont ??= new SKFont {
             Embolden = true,
             Typeface = context.DefaultFont.Typeface
@@ -924,9 +1004,17 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             Size = 12f * context.Density
         };
 
+        _drillIndicatorFont ??= new SKFont {
+            Embolden = true,
+            Typeface = context.RegularFont.Typeface,
+            Size = 10f * context.Density
+        };
+
         _navTextPaint.Color = Chart.GetThemeColor(TextColor ?? Chart.TextColor);
         _navButtonTextPaint.Color = Chart.GetThemeColor(TextColor ?? Chart.TextColor);
         _navFont.Size = 12f * context.Density;
+        _drillIndicatorTextPaint.Color = Chart.GetThemeColor(TextColor ?? Chart.TextColor);
+        _drillIndicatorFont.Size = 10f * context.Density;
     }
 
     private void RenderNavigation(NTRenderContext context, SKRect renderArea, TreeNode current, float navHeight) {
@@ -1070,6 +1158,25 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         }
 
         context.Canvas.Restore();
+    }
+
+    private void RenderDrillIndicator(NTRenderContext context, SKRect rect, NTTreeMapSeries<TData> styleSeries) {
+        var minSide = Math.Min(rect.Width, rect.Height);
+        if (minSide < (22f * context.Density)) {
+            return;
+        }
+
+        var size = Math.Clamp(minSide * 0.18f, 10f * context.Density, 16f * context.Density);
+        var inset = 3f * context.Density;
+        var indicatorRect = new SKRect(rect.Right - inset - size, rect.Top + inset, rect.Right - inset, rect.Top + inset + size);
+
+        _drillIndicatorPaint!.Color = Chart.GetThemeColor(TnTColor.SurfaceContainerHighest).WithAlpha((byte)(220 * VisibilityFactor));
+        context.Canvas.DrawRoundRect(indicatorRect, 3f * context.Density, 3f * context.Density, _drillIndicatorPaint);
+
+        _drillIndicatorTextPaint!.Color = Chart.GetThemeColor(styleSeries.TextColor ?? TnTColor.OnSurface).WithAlpha((byte)(255 * VisibilityFactor));
+        _drillIndicatorFont!.Size = Math.Clamp(size * 0.7f, 8f * context.Density, 12f * context.Density);
+        var baseline = indicatorRect.MidY + (_drillIndicatorFont.Size * 0.33f);
+        context.Canvas.DrawText(">", indicatorRect.MidX, baseline, SKTextAlign.Center, _drillIndicatorFont, _drillIndicatorTextPaint);
     }
 
     private float FitTextToBounds(string text, float preferredSize, float minSize, float maxSize, float maxWidth, float maxHeight) {
