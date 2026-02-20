@@ -891,9 +891,30 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             }
         }
 
-        foreach (var s in Series.Where(s => s.IsEffectivelyVisible)) {
-            s.HandleMouseDown(e);
+        if (_chartCoordSystem == ChartCoordinateSystem.TreeMap && _treeMapAreas.Count > 0) {
+            for (var i = Series.Count - 1; i >= 0; i--) {
+                var series = Series[i];
+                if (!series.IsEffectivelyVisible) {
+                    continue;
+                }
+
+                if (!_treeMapAreas.TryGetValue(series, out var seriesArea) ||
+                    seriesArea.Width <= 0 ||
+                    seriesArea.Height <= 0 ||
+                    !seriesArea.Contains(point)) {
+                    continue;
+                }
+
+                series.HandleMouseDown(e);
+                break;
+            }
         }
+        else {
+            foreach (var s in Series.Where(s => s.IsEffectivelyVisible)) {
+                s.HandleMouseDown(e);
+            }
+        }
+
         _lastInteractionTimestamp = Stopwatch.GetTimestamp();
         RequestUiRefresh();
     }
@@ -1041,12 +1062,27 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
                     PerformHitTesting(context, renderArea);
 
-                    foreach (var renderable in _renderablesByOrder[order]) {
-                        if (renderable is not NTBaseSeries<TData> series || !series.IsEffectivelyVisible) {
+                    var renderSeries = _renderablesByOrder[order]
+                        .OfType<NTBaseSeries<TData>>()
+                        .Where(s => s.IsEffectivelyVisible)
+                        .ToList();
+
+                    if (HoveredSeries is not null && renderSeries.Count > 1) {
+                        var hoveredIndex = renderSeries.IndexOf(HoveredSeries);
+                        if (hoveredIndex >= 0 && hoveredIndex < renderSeries.Count - 1) {
+                            var hovered = renderSeries[hoveredIndex];
+                            renderSeries.RemoveAt(hoveredIndex);
+                            renderSeries.Add(hovered);
+                        }
+                    }
+
+                    foreach (var series in renderSeries) {
+
+                        var seriesArea = GetSeriesRenderArea(series, renderArea, totalArea);
+                        if (seriesArea.Width <= 0 || seriesArea.Height <= 0) {
                             continue;
                         }
 
-                        var seriesArea = GetSeriesRenderArea(series, renderArea, totalArea);
                         if (_chartCoordSystem == ChartCoordinateSystem.Cartesian) {
                             canvas.Save();
                             canvas.ClipRect(seriesArea);
@@ -1106,20 +1142,38 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         int? hoveredPointIndex = null;
         TData? hoveredDataPoint = null;
 
-        if (plotArea.Contains(mousePoint)) {
-            for (var i = Series.Count - 1; i >= 0; i--) {
-                var series = Series[i];
-                if (!series.IsEffectivelyVisible) {
+        var canHitTestGlobalPlot = plotArea.Contains(mousePoint);
+        for (var i = Series.Count - 1; i >= 0; i--) {
+            var series = Series[i];
+            if (!series.IsEffectivelyVisible) {
+                continue;
+            }
+
+            (int Index, TData? Data)? hit = null;
+
+            if (_chartCoordSystem == ChartCoordinateSystem.TreeMap) {
+                if (!_treeMapAreas.TryGetValue(series, out var treeMapArea) ||
+                    treeMapArea.Width <= 0 ||
+                    treeMapArea.Height <= 0 ||
+                    !treeMapArea.Contains(mousePoint)) {
                     continue;
                 }
 
-                var hit = series.HitTest(mousePoint, plotArea);
-                if (hit != null) {
-                    hoveredSeries = series;
-                    hoveredPointIndex = hit.Value.Index;
-                    hoveredDataPoint = hit.Value.Data;
+                hit = series.HitTest(mousePoint, treeMapArea);
+            }
+            else {
+                if (!canHitTestGlobalPlot) {
                     break;
                 }
+
+                hit = series.HitTest(mousePoint, plotArea);
+            }
+
+            if (hit != null) {
+                hoveredSeries = series;
+                hoveredPointIndex = hit.Value.Index;
+                hoveredDataPoint = hit.Value.Data;
+                break;
             }
         }
 
@@ -1185,6 +1239,14 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             return;
         }
 
+        var activeDrillSeries = treeMapSeries
+            .OfType<ITreeMapDrillableSeries>()
+            .FirstOrDefault(s => s.IsInDrilldown);
+        if (activeDrillSeries is NTBaseSeries<TData> focusedSeries) {
+            _treeMapAreas[focusedSeries] = plotArea;
+            return;
+        }
+
         if (treeMapSeries.Count == 1) {
             _treeMapAreas[treeMapSeries[0]] = plotArea;
             return;
@@ -1203,13 +1265,14 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private SKRect GetSeriesRenderArea(NTBaseSeries<TData> series, SKRect plotArea, SKRect totalArea) {
         if (series.CoordinateSystem == ChartCoordinateSystem.TreeMap) {
             if (_treeMapAreas.TryGetValue(series, out var area)) {
-                var treeMapSeries = Series.Where(s => s.CoordinateSystem == ChartCoordinateSystem.TreeMap && s.IsEffectivelyVisible).ToList();
-                if (treeMapSeries.Count > 1) {
+                if (_treeMapAreas.Count > 1) {
                     // Shave off top for series title
                     return new SKRect(area.Left, area.Top + 20, area.Right, area.Bottom);
                 }
                 return area;
             }
+
+            return SKRect.Empty;
         }
 
         if (series.CoordinateSystem == ChartCoordinateSystem.Circular &&
@@ -1426,7 +1489,4 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     private record SeriesLayoutItem(NTBaseSeries<TData> Series, decimal Value);
 }
-
-
-
 
