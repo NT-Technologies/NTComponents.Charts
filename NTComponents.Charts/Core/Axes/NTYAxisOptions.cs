@@ -95,6 +95,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         var plotArea = context.PlotArea;
         var isSecondary = IsSecondary(Chart);
         var xLine = isSecondary ? plotArea.Right : plotArea.Left;
+        var suppressGridLinesForHorizontalBars = HasHorizontalBarsForCurrentAxis();
 
         canvas.DrawLine(xLine, plotArea.Top, xLine, plotArea.Bottom, _linePaint);
 
@@ -104,7 +105,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
                 continue;
             }
 
-            if (ShowGridLines) {
+            if (ShowGridLines && !suppressGridLinesForHorizontalBars) {
                 canvas.DrawLine(plotArea.Left, y, plotArea.Right, y, _gridLinePaint);
             }
 
@@ -201,6 +202,19 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             .ToList();
 
         return labels.Count > 0 ? labels : null;
+    }
+
+    private bool HasHorizontalBarsForCurrentAxis() {
+        if (Chart is not NTChart<TData> ntChart) {
+            return false;
+        }
+
+        var useSecondaryAxis = IsSecondary(Chart);
+        return ntChart.Series
+            .OfType<NTBarSeries<TData>>()
+            .Any(s => s.IsEffectivelyVisible
+                      && s.Orientation == NTChartOrientation.Horizontal
+                      && s.UseSecondaryYAxis == useSecondaryAxis);
     }
 
     private void BuildHorizontalCategoryTicks(List<string> labels) {

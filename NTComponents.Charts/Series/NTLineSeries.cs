@@ -72,6 +72,18 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     [Parameter]
     public AggregationMode AggregationMode { get; set; } = AggregationMode.Average;
 
+    /// <summary>
+    ///    Gets or sets the callback invoked when a grouped date point (year/month) is clicked.
+    /// </summary>
+    [Parameter]
+    public EventCallback<NTSeriesDateGroupClickEventArgs<TData>> OnDateGroupClick { get; set; }
+
+    /// <summary>
+    ///    Gets or sets whether clicking a grouped date point (year/month) zooms the X axis to that group range.
+    /// </summary>
+    [Parameter]
+    public bool ZoomToDateGroupOnClick { get; set; } = true;
+
     private SKPaint? _linePaint;
     private SKPaint? _segmentPaint;
     private SKPath? _linePath;
@@ -153,6 +165,52 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         _viewYMax = paddedMax;
     }
 
+    internal bool HandleDateGroupClick(NTSeriesClickEventArgs<TData> clickArgs) {
+        if (clickArgs.DataPoint is null || !Chart.IsXAxisDateTime || !Chart.XAxis.EnableAutoDateGrouping) {
+            return false;
+        }
+
+        var plotWidth = Chart.LastPlotArea.Width > 0f ? Chart.LastPlotArea.Width : 1200f;
+        var density = Math.Max(0.1f, Chart.Density);
+        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis as NTAxisOptions<TData>, true);
+        var groupingLevel = Chart.XAxis.ResolveDateGroupingLevel(xMin, xMax, plotWidth, density);
+        if (groupingLevel is not (NTDateGroupingLevel.Year or NTDateGroupingLevel.Month)) {
+            return false;
+        }
+
+        if (!TryResolveDate(clickArgs.DataPoint, out var clickedDate)) {
+            return false;
+        }
+
+        var (rangeStart, rangeEnd) = GetDateGroupRange(clickedDate, groupingLevel);
+        var zoomApplied = false;
+        if (ZoomToDateGroupOnClick) {
+            _viewXMin = rangeStart.Ticks;
+            _viewXMax = rangeEnd.Ticks;
+            zoomApplied = true;
+        }
+
+        if (OnDateGroupClick.HasDelegate) {
+            var args = new NTSeriesDateGroupClickEventArgs<TData> {
+                Series = this,
+                PointIndex = clickArgs.PointIndex,
+                DataPoint = clickArgs.DataPoint,
+                ClickedDate = clickedDate,
+                GroupDate = rangeStart,
+                GroupingLevel = groupingLevel,
+                RangeStart = rangeStart,
+                RangeEnd = rangeEnd,
+                ZoomApplied = zoomApplied,
+                PointerPosition = clickArgs.PointerPosition,
+                MouseEvent = clickArgs.MouseEvent
+            };
+
+            _ = InvokeAsync(() => OnDateGroupClick.InvokeAsync(args));
+        }
+
+        return zoomApplied;
+    }
+
     private bool TryGetZoomAnchorY(WheelEventArgs e, (double Min, double Max) viewXRange, out decimal anchorY) {
         anchorY = 0m;
         if (Chart.LastPlotArea == default) {
@@ -166,6 +224,41 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
         var xValue = Chart.ScaleXInverse(pointer.X, Chart.LastPlotArea);
         return TryGetRepresentativeYAtX(xValue, viewXRange.Min, viewXRange.Max, out anchorY);
+    }
+
+    private bool TryResolveDate(TData dataPoint, out DateTime date) {
+        var raw = XValue.Invoke(dataPoint);
+        if (raw is DateTime dt) {
+            date = dt;
+            return true;
+        }
+
+        if (raw is DateTimeOffset dto) {
+            date = dto.DateTime;
+            return true;
+        }
+
+        if (raw is DateOnly dateOnly) {
+            date = dateOnly.ToDateTime(TimeOnly.MinValue);
+            return true;
+        }
+
+        date = default;
+        return false;
+    }
+
+    private static (DateTime Start, DateTime End) GetDateGroupRange(DateTime date, NTDateGroupingLevel groupingLevel) {
+        if (groupingLevel == NTDateGroupingLevel.Year) {
+            var start = new DateTime(date.Year, 1, 1, 0, 0, 0, date.Kind);
+            var end = date.Year == DateTime.MaxValue.Year ? DateTime.MaxValue : start.AddYears(1).AddTicks(-1);
+            return (start, end);
+        }
+
+        var monthStart = new DateTime(date.Year, date.Month, 1, 0, 0, 0, date.Kind);
+        var monthEnd = (date.Year == DateTime.MaxValue.Year && date.Month == 12)
+            ? DateTime.MaxValue
+            : monthStart.AddMonths(1).AddTicks(-1);
+        return (monthStart, monthEnd);
     }
 
     private bool TryGetRepresentativeYAtX(double xValue, double xMin, double xMax, out decimal yValue) {

@@ -17,7 +17,7 @@
 		</div>
 	}
 	<div @onmouseout="OnMouseOut" @onclick="OnClick" @onmousemove="OnMouseMove"
-		 @onmousedown="OnMouseDown" @onmouseup="OnMouseUp" @onwheel="OnWheel" @onwheel:preventDefault="IsXZoomEnabled || IsYZoomEnabled"
+		 @onmousedown="OnMouseDown" @onmouseup="OnMouseUp" @onwheel="OnWheel" @onwheel:preventDefault="IsXZoomEnabled || IsYZoomEnabled" @onwheel:stopPropagation="IsXZoomEnabled || IsYZoomEnabled"
 		 style="width: 100%; height: 100%; @CanvasStyle">
 		@if (EnableHardwareAcceleration) {
 			<SKGLView EnableRenderLoop="true" IgnorePixelScaling="false" OnPaintSurface="@OnPaintSurface"

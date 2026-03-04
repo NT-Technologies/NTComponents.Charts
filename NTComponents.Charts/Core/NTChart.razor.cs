@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
+using NTComponents.Charts;
 using NTComponents.Charts.Core.Axes;
 using NTComponents.Charts.Core.Series;
 using NTComponents.Core;
@@ -898,13 +899,24 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
         var hit = HitTestSeriesAtPoint(point, LastPlotArea);
         if (hit.Series is not null) {
-            hit.Series.NotifyClick(new NTSeriesClickEventArgs<TData> {
+            var clickArgs = new NTSeriesClickEventArgs<TData> {
                 Series = hit.Series,
                 PointIndex = hit.Index,
                 DataPoint = hit.Data,
                 PointerPosition = point,
                 MouseEvent = e
-            });
+            };
+
+            var refreshRequested = false;
+            if (hit.Series is NTLineSeries<TData> lineSeries) {
+                refreshRequested = lineSeries.HandleDateGroupClick(clickArgs);
+            }
+
+            hit.Series.NotifyClick(clickArgs);
+
+            if (refreshRequested) {
+                RequestUiRefresh(force: true);
+            }
         }
     }
 
