@@ -202,6 +202,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     private float _targetHoverFactor = 1f;
 
     private DateTime? _visibilityAnimationStartTime;
+    internal bool SuppressInteractionCallbacks { get; set; }
 
     public void Dispose() {
         Dispose(true);
@@ -355,11 +356,35 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     internal void NotifyHoverEnter(NTSeriesHoverEnterEventArgs<TData> args) => NotifyCallback(OnHoverEnter, args);
     internal void NotifyHoverLeave(NTSeriesHoverLeaveEventArgs<TData> args) => NotifyCallback(OnHoverLeave, args);
     internal void NotifyClick(NTSeriesClickEventArgs<TData> args) => NotifyCallback(OnClick, args);
-    internal void NotifyPanStart(NTSeriesPanStartEventArgs<TData> args) => NotifyCallback(OnPanStart, args);
-    internal void NotifyPan(NTSeriesPanEventArgs<TData> args) => NotifyCallback(OnPan, args);
-    internal void NotifyPanEnd(NTSeriesPanEndEventArgs<TData> args) => NotifyCallback(OnPanEnd, args);
-    internal void NotifyZoom(NTSeriesZoomEventArgs<TData> args) => NotifyCallback(OnZoom, args);
-    internal void NotifyResetView(NTSeriesResetViewEventArgs<TData> args) => NotifyCallback(OnResetView, args);
+    internal void NotifyPanStart(NTSeriesPanStartEventArgs<TData> args) {
+        if (!SuppressInteractionCallbacks) {
+            NotifyCallback(OnPanStart, args);
+        }
+    }
+
+    internal void NotifyPan(NTSeriesPanEventArgs<TData> args) {
+        if (!SuppressInteractionCallbacks) {
+            NotifyCallback(OnPan, args);
+        }
+    }
+
+    internal void NotifyPanEnd(NTSeriesPanEndEventArgs<TData> args) {
+        if (!SuppressInteractionCallbacks) {
+            NotifyCallback(OnPanEnd, args);
+        }
+    }
+
+    internal void NotifyZoom(NTSeriesZoomEventArgs<TData> args) {
+        if (!SuppressInteractionCallbacks) {
+            NotifyCallback(OnZoom, args);
+        }
+    }
+
+    internal void NotifyResetView(NTSeriesResetViewEventArgs<TData> args) {
+        if (!SuppressInteractionCallbacks) {
+            NotifyCallback(OnResetView, args);
+        }
+    }
 
     private void NotifyCallback<TArgs>(EventCallback<TArgs> callback, TArgs args) where TArgs : class {
         if (!callback.HasDelegate) {

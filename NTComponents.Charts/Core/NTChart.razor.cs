@@ -908,11 +908,14 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             };
 
             var refreshRequested = false;
+            var suppressPointClick = false;
             if (hit.Series is NTLineSeries<TData> lineSeries) {
-                refreshRequested = lineSeries.HandleDateGroupClick(clickArgs);
+                refreshRequested = lineSeries.HandleDateGroupClick(clickArgs, out suppressPointClick);
             }
 
-            hit.Series.NotifyClick(clickArgs);
+            if (!suppressPointClick) {
+                hit.Series.NotifyClick(clickArgs);
+            }
 
             if (refreshRequested) {
                 RequestUiRefresh(force: true);
@@ -956,8 +959,16 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             }
         }
         else {
-            foreach (var s in Series.Where(s => s.IsEffectivelyVisible)) {
-                s.HandleMouseDown(e);
+            var visibleSeries = Series.Where(s => s.IsEffectivelyVisible).ToList();
+            var callbackLeaderIndex = FindInteractionCallbackLeaderIndex(visibleSeries, ChartInteractions.XPan | ChartInteractions.YPan);
+            for (var i = 0; i < visibleSeries.Count; i++) {
+                var series = visibleSeries[i];
+                series.SuppressInteractionCallbacks = i != callbackLeaderIndex;
+                series.HandleMouseDown(e);
+            }
+
+            foreach (var series in visibleSeries) {
+                series.SuppressInteractionCallbacks = false;
             }
         }
 
@@ -994,8 +1005,16 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             return;
         }
 
-        foreach (var s in Series.Where(s => s.IsEffectivelyVisible)) {
-            s.HandleMouseMove(e);
+        var visibleSeries = Series.Where(s => s.IsEffectivelyVisible).ToList();
+        var callbackLeaderIndex = FindInteractionCallbackLeaderIndex(visibleSeries, ChartInteractions.XPan | ChartInteractions.YPan);
+        for (var i = 0; i < visibleSeries.Count; i++) {
+            var series = visibleSeries[i];
+            series.SuppressInteractionCallbacks = i != callbackLeaderIndex;
+            series.HandleMouseMove(e);
+        }
+
+        foreach (var series in visibleSeries) {
+            series.SuppressInteractionCallbacks = false;
         }
 
         _lastInteractionTimestamp = Stopwatch.GetTimestamp();
@@ -1024,8 +1043,16 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     }
 
     protected virtual void OnMouseUp(MouseEventArgs e) {
-        foreach (var s in Series.Where(s => s.IsEffectivelyVisible)) {
-            s.HandleMouseUp(e);
+        var visibleSeries = Series.Where(s => s.IsEffectivelyVisible).ToList();
+        var callbackLeaderIndex = FindInteractionCallbackLeaderIndex(visibleSeries, ChartInteractions.XPan | ChartInteractions.YPan);
+        for (var i = 0; i < visibleSeries.Count; i++) {
+            var series = visibleSeries[i];
+            series.SuppressInteractionCallbacks = i != callbackLeaderIndex;
+            series.HandleMouseUp(e);
+        }
+
+        foreach (var series in visibleSeries) {
+            series.SuppressInteractionCallbacks = false;
         }
         _isDraggingLegend = false;
         _lastInteractionTimestamp = Stopwatch.GetTimestamp();
@@ -1593,11 +1620,33 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     }
 
     protected virtual void OnWheel(WheelEventArgs e) {
-        foreach (var s in Series.Where(s => s.IsEffectivelyVisible)) {
-            s.HandleMouseWheel(e);
+        var visibleSeries = Series.Where(s => s.IsEffectivelyVisible).ToList();
+        var callbackLeaderIndex = FindInteractionCallbackLeaderIndex(visibleSeries, ChartInteractions.XZoom | ChartInteractions.YZoom);
+        for (var i = 0; i < visibleSeries.Count; i++) {
+            var series = visibleSeries[i];
+            series.SuppressInteractionCallbacks = i != callbackLeaderIndex;
+            series.HandleMouseWheel(e);
+        }
+
+        foreach (var series in visibleSeries) {
+            series.SuppressInteractionCallbacks = false;
         }
         _lastInteractionTimestamp = Stopwatch.GetTimestamp();
         RequestUiRefresh();
+    }
+
+    private static int FindInteractionCallbackLeaderIndex(IReadOnlyList<NTBaseSeries<TData>> visibleSeries, ChartInteractions interactionMask) {
+        if (visibleSeries.Count == 0) {
+            return -1;
+        }
+
+        for (var i = 0; i < visibleSeries.Count; i++) {
+            if ((visibleSeries[i].Interactions & interactionMask) != ChartInteractions.None) {
+                return i;
+            }
+        }
+
+        return 0;
     }
 
     private void CalculateTreeMapAreas(SKRect plotArea) {

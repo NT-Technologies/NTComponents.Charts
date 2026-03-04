@@ -95,7 +95,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
     private List<RenderPointInfo>? _cachedRenderPoints;
     private RenderCacheKey? _cachedRenderKey;
-    private (double MinX, double MaxX, NTDateGroupingLevel Level, decimal MinY, decimal MaxY)? _cachedGroupedSumRange;
+    private (double MinX, double MaxX, NTDateGroupingLevel Level, AggregationMode Mode, decimal MinY, decimal MaxY)? _cachedGroupedRange;
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
@@ -114,7 +114,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         _cachedRenderKey = null;
         _linePathKey = null;
         _hitTestPathKey = null;
-        _cachedGroupedSumRange = null;
+        _cachedGroupedRange = null;
         base.OnDataChanged();
     }
 
@@ -165,7 +165,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         _viewYMax = paddedMax;
     }
 
-    internal bool HandleDateGroupClick(NTSeriesClickEventArgs<TData> clickArgs) {
+    internal bool HandleDateGroupClick(NTSeriesClickEventArgs<TData> clickArgs, out bool suppressPointClick) {
+        suppressPointClick = false;
         if (clickArgs.DataPoint is null || !Chart.IsXAxisDateTime || !Chart.XAxis.EnableAutoDateGrouping) {
             return false;
         }
@@ -183,10 +184,14 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         }
 
         var (rangeStart, rangeEnd) = GetDateGroupRange(clickedDate, groupingLevel);
+        suppressPointClick = OnDateGroupClick.HasDelegate || ZoomToDateGroupOnClick;
         var zoomApplied = false;
         if (ZoomToDateGroupOnClick) {
             _viewXMin = rangeStart.Ticks;
             _viewXMax = rangeEnd.Ticks;
+            // Let chart Y axis re-fit to the newly selected X window.
+            _viewYMin = null;
+            _viewYMax = null;
             zoomApplied = true;
         }
 
@@ -389,7 +394,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     }
 
     public override (decimal Min, decimal Max)? GetYRange(double? xMin = null, double? xMax = null) {
-        if (AggregationMode != AggregationMode.Sum || !Chart.IsXAxisDateTime || !Chart.XAxis.EnableAutoDateGrouping) {
+        if (!Chart.IsXAxisDateTime || !Chart.XAxis.EnableAutoDateGrouping) {
             return base.GetYRange(xMin, xMax);
         }
 
@@ -408,11 +413,12 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             return base.GetYRange(xMin, xMax);
         }
 
-        if (_cachedGroupedSumRange.HasValue &&
-            Math.Abs(_cachedGroupedSumRange.Value.MinX - xRange.Value.Min) < 0.000001 &&
-            Math.Abs(_cachedGroupedSumRange.Value.MaxX - xRange.Value.Max) < 0.000001 &&
-            _cachedGroupedSumRange.Value.Level == level) {
-            return (_cachedGroupedSumRange.Value.MinY, _cachedGroupedSumRange.Value.MaxY);
+        if (_cachedGroupedRange.HasValue &&
+            Math.Abs(_cachedGroupedRange.Value.MinX - xRange.Value.Min) < 0.000001 &&
+            Math.Abs(_cachedGroupedRange.Value.MaxX - xRange.Value.Max) < 0.000001 &&
+            _cachedGroupedRange.Value.Level == level &&
+            _cachedGroupedRange.Value.Mode == AggregationMode) {
+            return (_cachedGroupedRange.Value.MinY, _cachedGroupedRange.Value.MaxY);
         }
 
         var window = GetVisibleWindowIncludingGroupedBuckets(xRange.Value.Min, xRange.Value.Max, level);
@@ -420,32 +426,94 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             return base.GetYRange(xMin, xMax);
         }
 
-        decimal min = decimal.MaxValue;
-        decimal max = decimal.MinValue;
-        var currentBucket = GetDateBucketKey(window[0].X, level);
-        var bucketSum = 0m;
-
-        foreach (var point in window) {
-            var bucket = GetDateBucketKey(point.X, level);
-            if (bucket != currentBucket) {
-                min = Math.Min(min, bucketSum);
-                max = Math.Max(max, bucketSum);
-                currentBucket = bucket;
-                bucketSum = 0m;
-            }
-
-            bucketSum += YValueSelector(point.Data);
-        }
-
-        min = Math.Min(min, bucketSum);
-        max = Math.Max(max, bucketSum);
-
-        if (min == decimal.MaxValue || max == decimal.MinValue) {
+        var groupedRange = GetGroupedDateYRangeForWindow(window, level);
+        if (!groupedRange.HasValue) {
             return base.GetYRange(xMin, xMax);
         }
 
-        _cachedGroupedSumRange = (xRange.Value.Min, xRange.Value.Max, level, min, max);
-        return (min, max);
+        _cachedGroupedRange = (xRange.Value.Min, xRange.Value.Max, level, AggregationMode, groupedRange.Value.Min, groupedRange.Value.Max);
+        return groupedRange.Value;
+    }
+
+    private (decimal Min, decimal Max)? GetGroupedDateYRangeForWindow(List<VisiblePoint> window, NTDateGroupingLevel groupingLevel) {
+        if (window.Count == 0) {
+            return null;
+        }
+
+        var mode = AggregationMode;
+        var medianValues = mode == AggregationMode.Median ? new List<decimal>(32) : null;
+
+        decimal rangeMin = decimal.MaxValue;
+        decimal rangeMax = decimal.MinValue;
+        var currentBucket = GetDateBucketKey(window[0].X, groupingLevel);
+
+        var count = 0;
+        var sum = 0m;
+        var bucketMin = decimal.MaxValue;
+        var bucketMax = decimal.MinValue;
+        var representativeValue = 0m;
+
+        void ResetBucketState(VisiblePoint seed) {
+            count = 0;
+            sum = 0m;
+            bucketMin = decimal.MaxValue;
+            bucketMax = decimal.MinValue;
+            representativeValue = YValueSelector(seed.Data);
+            medianValues?.Clear();
+        }
+
+        void Accumulate(VisiblePoint item) {
+            var value = YValueSelector(item.Data);
+            count++;
+            sum += value;
+            if (value < bucketMin) {
+                bucketMin = value;
+            }
+            if (value > bucketMax) {
+                bucketMax = value;
+            }
+            if ((count & 1) == 1) {
+                representativeValue = value;
+            }
+            medianValues?.Add(value);
+        }
+
+        void FlushBucket() {
+            if (count == 0) {
+                return;
+            }
+
+            var aggregated = mode switch {
+                AggregationMode.Sum => sum,
+                AggregationMode.Min => bucketMin,
+                AggregationMode.Max => bucketMax,
+                AggregationMode.Median => CalculateMedian(medianValues!),
+                AggregationMode.None => representativeValue,
+                _ => sum / count
+            };
+
+            rangeMin = Math.Min(rangeMin, aggregated);
+            rangeMax = Math.Max(rangeMax, aggregated);
+        }
+
+        ResetBucketState(window[0]);
+        foreach (var point in window) {
+            var bucket = GetDateBucketKey(point.X, groupingLevel);
+            if (bucket != currentBucket) {
+                FlushBucket();
+                currentBucket = bucket;
+                ResetBucketState(point);
+            }
+
+            Accumulate(point);
+        }
+
+        FlushBucket();
+        if (rangeMin == decimal.MaxValue || rangeMax == decimal.MinValue) {
+            return null;
+        }
+
+        return (rangeMin, rangeMax);
     }
 
     /// <inheritdoc />
