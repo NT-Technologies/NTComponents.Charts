@@ -16,7 +16,8 @@
 			}
 		</div>
 	}
-	<div @onmouseout="OnMouseOut" @onclick="OnClick" @onmousemove="OnMouseMove"
+	<div class="@(AllowExport || IsXPanEnabled || IsYPanEnabled || IsXZoomEnabled || IsYZoomEnabled ? "nt-chart-canvas-host nt-chart-canvas-host--with-buttons" : "nt-chart-canvas-host")"
+		 @onmouseout="OnMouseOut" @onclick="OnClick" @onmousemove="OnMouseMove"
 		 @onmousedown="OnMouseDown" @onmouseup="OnMouseUp" @onwheel="OnWheel" @onwheel:preventDefault="IsXZoomEnabled || IsYZoomEnabled" @onwheel:stopPropagation="IsXZoomEnabled || IsYZoomEnabled"
 		 style="width: 100%; height: 100%; @CanvasStyle">
 		@if (EnableHardwareAcceleration) {
