@@ -45,3 +45,36 @@ window.NTCharts = {
     }
 };
 
+export function registerWheelHandler(element, dotNetHelper, preventDefault) {
+    if (!element) {
+        return {
+            dispose: function () { }
+        };
+    }
+
+    const handler = (event) => {
+        if (preventDefault) {
+            event.preventDefault();
+        }
+
+        dotNetHelper.invokeMethodAsync('OnNativeWheel', {
+            offsetX: event.offsetX,
+            offsetY: event.offsetY,
+            deltaX: event.deltaX,
+            deltaY: event.deltaY,
+            ctrlKey: event.ctrlKey,
+            shiftKey: event.shiftKey,
+            altKey: event.altKey,
+            metaKey: event.metaKey
+        });
+    };
+
+    element.addEventListener('wheel', handler, { passive: false });
+
+    return {
+        dispose: function () {
+            element.removeEventListener('wheel', handler);
+        }
+    };
+}
+

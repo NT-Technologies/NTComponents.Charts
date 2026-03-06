@@ -325,8 +325,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private float _lastWidth;
     private SKPoint _legendDragStartMousePos;
     private SKPoint _legendDragStartOffset;
+    private ElementReference _interactionHost;
+    private IJSObjectReference? _chartModule;
     private DotNetObjectReference<NTChart<TData>>? _objRef;
     private IJSObjectReference? _themeListener;
+    private IJSObjectReference? _wheelListener;
     private long _lastUiRefreshTimestamp;
     private long _lastInteractionTimestamp;
 
@@ -938,6 +941,13 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     protected override async ValueTask DisposeAsyncCore() {
         _objRef?.Dispose();
+        if (_wheelListener != null) {
+            await _wheelListener.InvokeVoidAsync("dispose");
+            await _wheelListener.DisposeAsync();
+        }
+        if (_chartModule != null) {
+            await _chartModule.DisposeAsync();
+        }
         if (_themeListener != null) {
             await _themeListener.InvokeVoidAsync("dispose");
             await _themeListener.DisposeAsync();
@@ -947,11 +957,32 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
             Density = await JSRuntime.InvokeAsync<float>("eval", "window.devicePixelRatio || 1");
+            _chartModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./_content/NTComponents.Charts/NTComponents.Charts.lib.module.js");
             _objRef = DotNetObjectReference.Create(this);
             _themeListener = await JSRuntime.InvokeAsync<IJSObjectReference>("NTComponents.onThemeChanged", _objRef);
+            _wheelListener = await _chartModule.InvokeAsync<IJSObjectReference>(
+                "registerWheelHandler",
+                _interactionHost,
+                _objRef,
+                IsXZoomEnabled || IsYZoomEnabled);
             await ResolveColorsAsync();
             StateHasChanged();
         }
+    }
+
+    [JSInvokable]
+    public void OnNativeWheel(NTNativeWheelEventArgs e) {
+        OnWheel(new WheelEventArgs {
+            OffsetX = e.OffsetX,
+            OffsetY = e.OffsetY,
+            DeltaX = e.DeltaX,
+            DeltaY = e.DeltaY,
+            CtrlKey = e.CtrlKey,
+            ShiftKey = e.ShiftKey,
+            AltKey = e.AltKey,
+            MetaKey = e.MetaKey,
+            Type = "wheel"
+        });
     }
 
     protected virtual void OnClick(MouseEventArgs e) {
@@ -1963,6 +1994,17 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
         _lastUiRefreshTimestamp = now;
         StateHasChanged();
+    }
+
+    public sealed class NTNativeWheelEventArgs {
+        public double OffsetX { get; init; }
+        public double OffsetY { get; init; }
+        public double DeltaX { get; init; }
+        public double DeltaY { get; init; }
+        public bool CtrlKey { get; init; }
+        public bool ShiftKey { get; init; }
+        public bool AltKey { get; init; }
+        public bool MetaKey { get; init; }
     }
 
     public bool HasViewRange(NTAxisOptions<TData> axis) {
