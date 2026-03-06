@@ -231,6 +231,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             _cachedTicks.Add(new AxisTick(min, FormatLabel(ToLabelValue(min), false)));
             _textFont.MeasureText(_cachedTicks[0].Label, out var bounds);
             _tickLabelHeight = bounds.Height;
+            ApplyLabelRotationIfNeeded(context, plotWidth);
             return;
         }
 
@@ -248,6 +249,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             _cachedTicks.Add(new AxisTick(min, minLabel));
             _cachedTicks.Add(new AxisTick(max, maxLabel));
             _tickLabelHeight = Math.Max(minBounds.Height, maxBounds.Height);
+            ApplyLabelRotationIfNeeded(context, plotWidth);
             return;
         }
 
@@ -268,6 +270,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         }
 
         _tickLabelHeight = Math.Max(minBounds.Height, maxBounds.Height);
+        ApplyLabelRotationIfNeeded(context, plotWidth);
     }
 
     private void BuildDateTimeTicks(NTRenderContext context, double min, double max, float plotWidth) {
@@ -307,6 +310,44 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             maxHeight = Math.Max(maxHeight, bounds.Height);
         }
         _tickLabelHeight = maxHeight <= 0f ? (_textFont.Size + (2f * context.Density)) : maxHeight;
+        ApplyLabelRotationIfNeeded(context, plotWidth);
+    }
+
+    private void ApplyLabelRotationIfNeeded(NTRenderContext context, float plotWidth) {
+        if (_cachedTicks.Count <= 1) {
+            if (_tickLabelHeight <= 0f) {
+                _tickLabelHeight = _textFont.Size + (2f * context.Density);
+            }
+            return;
+        }
+
+        const int maxSamples = 24;
+        var step = Math.Max(1, _cachedTicks.Count / maxSamples);
+        float maxLabelWidth = 0f;
+        float maxLabelHeight = 0f;
+
+        for (var i = 0; i < _cachedTicks.Count; i += step) {
+            _textFont.MeasureText(_cachedTicks[i].Label, out var bounds);
+            maxLabelWidth = Math.Max(maxLabelWidth, bounds.Width);
+            maxLabelHeight = Math.Max(maxLabelHeight, bounds.Height);
+        }
+
+        if ((_cachedTicks.Count - 1) % step != 0) {
+            _textFont.MeasureText(_cachedTicks[^1].Label, out var bounds);
+            maxLabelWidth = Math.Max(maxLabelWidth, bounds.Width);
+            maxLabelHeight = Math.Max(maxLabelHeight, bounds.Height);
+        }
+
+        var labelSlotWidth = plotWidth / Math.Max(1, _cachedTicks.Count - 1);
+        if (maxLabelWidth + (5f * context.Density) > labelSlotWidth) {
+            _rotation = -45f;
+            var radians = Math.Abs(_rotation) * Math.PI / 180.0;
+            _tickLabelHeight = (float)((Math.Sin(radians) * maxLabelWidth) + (Math.Cos(radians) * maxLabelHeight));
+            return;
+        }
+
+        _rotation = 0f;
+        _tickLabelHeight = Math.Max(_tickLabelHeight, maxLabelHeight);
     }
 
     private (float MaxWidth, float MaxHeight) MeasureSampleLabels(NTRenderContext context, int start, int end, Func<int, string> labelFactory) {

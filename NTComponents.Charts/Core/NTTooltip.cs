@@ -30,6 +30,12 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
     [Parameter]
     public TnTColor? TextColor { get; set; }
 
+    /// <summary>
+    ///     Gets or sets whether tooltip line labels are rendered.
+    /// </summary>
+    [Parameter]
+    public bool ShowSeriesLabels { get; set; } = true;
+
     [EditorBrowsable(EditorBrowsableState.Never)]
     public RenderOrdered RenderOrder => RenderOrdered.Tooltip;
 
@@ -123,7 +129,10 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
         }
 
         foreach (var line in tooltipInfo.Lines) {
-            var lineWidth = iconSize + iconSpacing + _labelFont.MeasureText(line.Label + ": ") + _valueFont.MeasureText(line.Value);
+            var labelText = ShowSeriesLabels && !string.IsNullOrWhiteSpace(line.Label)
+                ? line.Label + ": "
+                : string.Empty;
+            var lineWidth = iconSize + iconSpacing + _labelFont.MeasureText(labelText) + _valueFont.MeasureText(line.Value);
             maxWidth = Math.Max(maxWidth, lineWidth);
         }
 
@@ -171,12 +180,17 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
 
             var textX = rect.Left + padding + iconSize + iconSpacing;
             var textY = currentY + (14 * context.Density);
+            var labelText = ShowSeriesLabels && !string.IsNullOrWhiteSpace(line.Label)
+                ? line.Label + ": "
+                : string.Empty;
 
             _labelPaint ??= new SKPaint { IsAntialias = true, Color = subTextColor };
             _labelPaint.Color = subTextColor;
-            canvas.DrawText(line.Label + ": ", textX, textY, SKTextAlign.Left, _labelFont, _labelPaint);
+            if (!string.IsNullOrEmpty(labelText)) {
+                canvas.DrawText(labelText, textX, textY, SKTextAlign.Left, _labelFont, _labelPaint);
+            }
 
-            var labelWidth = _labelFont.MeasureText(line.Label + ": ");
+            var labelWidth = _labelFont.MeasureText(labelText);
 
             _valuePaint ??= new SKPaint { IsAntialias = true, Color = textColor };
             _valuePaint.Color = textColor;
