@@ -458,7 +458,9 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             return;
         }
 
+        var alphaFactor = Math.Clamp(HoverFactor * VisibilityFactor, 0f, 1f);
         var color = overrideColor ?? Chart.GetSeriesTextColor(this);
+        color = color.WithAlpha((byte)Math.Clamp((int)(color.Alpha * alphaFactor), 0, 255));
         var size = (overrideFontSize ?? DataLabelSize) * context.Density;
 
         _labelFont ??= new SKFont {
@@ -489,6 +491,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
 
         if (ShowDataLabelBackground) {
             var bgColor = DataLabelBackgroundColor.HasValue ? Chart.GetThemeColor(DataLabelBackgroundColor.Value) : Chart.GetSeriesColor(this);
+            bgColor = bgColor.WithAlpha((byte)Math.Clamp((int)(bgColor.Alpha * alphaFactor), 0, 255));
 
             _labelBgPaint ??= new SKPaint {
                 Style = SKPaintStyle.Fill,
@@ -510,7 +513,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
                 StrokeWidth = 1,
                 IsAntialias = true
             };
-            _labelBorderPaint.Color = Chart.GetThemeColor(TnTColor.Outline);
+            _labelBorderPaint.Color = Chart.GetThemeColor(TnTColor.Outline).WithAlpha((byte)Math.Clamp((int)(255 * alphaFactor), 0, 255));
             context.Canvas.DrawRoundRect(bgRect, 6 * context.Density, 6 * context.Density, _labelBorderPaint);
         }
 

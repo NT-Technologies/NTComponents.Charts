@@ -94,6 +94,9 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     public EventCallback<NTSeriesHoverLeaveEventArgs<TData>> OnHoverLeave { get; set; }
 
     [Parameter]
+    public EventCallback<NTSeriesVisibilityChangedEventArgs<TData>> OnVisibilityChanged { get; set; }
+
+    [Parameter]
     public EventCallback<NTSeriesClickEventArgs<TData>> OnClick { get; set; }
 
     [Parameter]
@@ -355,6 +358,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
 
     internal void NotifyHoverEnter(NTSeriesHoverEnterEventArgs<TData> args) => NotifyCallback(OnHoverEnter, args);
     internal void NotifyHoverLeave(NTSeriesHoverLeaveEventArgs<TData> args) => NotifyCallback(OnHoverLeave, args);
+    internal void NotifyVisibilityChanged(NTSeriesVisibilityChangedEventArgs<TData> args) => NotifyCallback(OnVisibilityChanged, args);
     internal void NotifyClick(NTSeriesClickEventArgs<TData> args) => NotifyCallback(OnClick, args);
     internal void NotifyPanStart(NTSeriesPanStartEventArgs<TData> args) {
         if (!SuppressInteractionCallbacks) {
@@ -412,7 +416,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         base.OnParametersSet();
 
         if (Visible != _lastVisible) {
-            OnVisibilityChanged();
+            HandleVisibilityChanged();
             _lastVisible = Visible;
         }
 
@@ -422,7 +426,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         }
     }
 
-    private void OnVisibilityChanged() {
+    private void HandleVisibilityChanged() {
         _startVisibility = VisibilityFactor;
         _visibilityAnimationStartTime = DateTime.Now;
 
@@ -432,5 +436,9 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         }
 
         Chart?.InvalidateDataCaches();
+        NotifyVisibilityChanged(new NTSeriesVisibilityChangedEventArgs<TData> {
+            Series = this,
+            Visible = Visible
+        });
     }
 }

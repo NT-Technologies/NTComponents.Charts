@@ -17,6 +17,11 @@ public sealed class NTSeriesHoverLeaveEventArgs<TData> where TData : class {
     public SKPoint? PointerPosition { get; init; }
 }
 
+public sealed class NTSeriesVisibilityChangedEventArgs<TData> where TData : class {
+    public required NTBaseSeries<TData> Series { get; init; }
+    public required bool Visible { get; init; }
+}
+
 public sealed class NTSeriesClickEventArgs<TData> where TData : class {
     public required NTBaseSeries<TData> Series { get; init; }
     public int? PointIndex { get; init; }

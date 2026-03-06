@@ -104,8 +104,7 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
 
         var bgColor = Chart.GetThemeColor(BackgroundColor ?? Chart.HoveredSeries.TooltipBackgroundColor ?? Chart.TooltipBackgroundColor);
         var textColor = Chart.GetThemeColor(TextColor ?? Chart.HoveredSeries.TooltipTextColor ?? Chart.TooltipTextColor);
-        var opacityFactor = GetTooltipOpacityFactor();
-        var subTextColor = textColor.WithAlpha((byte)Math.Clamp((int)(200 * opacityFactor), 0, 255));
+        var subTextColor = textColor.WithAlpha(200);
 
         _headerFont ??= new SKFont { Typeface = context.RegularFont.Typeface, Size = 14 * context.Density };
         _labelFont ??= new SKFont { Typeface = context.RegularFont.Typeface, Size = 12 * context.Density };
@@ -141,11 +140,11 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
         }
 
         _bgPaint ??= new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = true };
-        _bgPaint.Color = bgColor.WithAlpha((byte)Math.Clamp((int)(250 * opacityFactor), 0, 255));
+        _bgPaint.Color = bgColor.WithAlpha(250);
         canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, _bgPaint);
 
         _borderPaint ??= new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = 1, IsAntialias = true };
-        _borderPaint.Color = Chart.GetThemeColor(TnTColor.OutlineVariant).WithAlpha((byte)Math.Clamp((int)(255 * opacityFactor), 0, 255));
+        _borderPaint.Color = Chart.GetThemeColor(TnTColor.OutlineVariant);
         canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, _borderPaint);
 
         var currentY = rect.Top + padding;
@@ -157,7 +156,7 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
             currentY += headerHeight;
 
             _separatorPaint ??= new SKPaint { StrokeWidth = 1, IsAntialias = true, Color = Chart.GetThemeColor(TnTColor.OutlineVariant) };
-            _separatorPaint.Color = Chart.GetThemeColor(TnTColor.OutlineVariant).WithAlpha((byte)Math.Clamp((int)(255 * opacityFactor), 0, 255));
+            _separatorPaint.Color = Chart.GetThemeColor(TnTColor.OutlineVariant);
             canvas.DrawLine(rect.Left, currentY - (4 * context.Density), rect.Right, currentY - (4 * context.Density), _separatorPaint);
             currentY += separatorHeight - (4 * context.Density);
         }
@@ -167,7 +166,7 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
             var centerY = currentY + (lineHeight / 2) - (1 * context.Density);
 
             _iconPaint ??= new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = true };
-            _iconPaint.Color = line.Color.WithAlpha((byte)Math.Clamp((int)(line.Color.Alpha * opacityFactor), 0, 255));
+            _iconPaint.Color = line.Color;
             canvas.DrawCircle(centerX, centerY, iconSize / 2, _iconPaint);
 
             var textX = rect.Left + padding + iconSize + iconSpacing;
@@ -180,25 +179,12 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
             var labelWidth = _labelFont.MeasureText(line.Label + ": ");
 
             _valuePaint ??= new SKPaint { IsAntialias = true, Color = textColor };
-            _valuePaint.Color = textColor.WithAlpha((byte)Math.Clamp((int)(255 * opacityFactor), 0, 255));
+            _valuePaint.Color = textColor;
             canvas.DrawText(line.Value, textX + labelWidth, textY, SKTextAlign.Left, _valueFont, _valuePaint);
 
             currentY += lineHeight;
         }
 
         return renderArea;
-    }
-
-    private float GetTooltipOpacityFactor() {
-        if (Chart.HoveredSeries is null) {
-            return 1f;
-        }
-
-        var opacity = Chart.HoveredSeries.HoverFactor * Chart.HoveredSeries.VisibilityFactor;
-        if (Chart is NTChart<TData> ntChart && ntChart.IsLegendHoverActive) {
-            opacity *= 0.75f;
-        }
-
-        return Math.Clamp(opacity, 0.15f, 1f);
     }
 }

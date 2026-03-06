@@ -247,7 +247,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     public TData? HoveredDataPoint { get; private set; }
     public int? HoveredPointIndex { get; private set; }
     public NTBaseSeries<TData>? HoveredSeries { get; private set; }
-    internal bool IsLegendHoverActive => _isHoveringLegend;
 
     public bool IsXAxisDateTime {
         get {
@@ -300,6 +299,20 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private List<object>? _cachedAllY;
     private Dictionary<object, int>? _cachedXIndexMap;
     public float Density { get; private set; } = 1.0f;
+
+    public NTDateGroupingLevel GetActiveDateGroupingLevel() {
+        if (!IsXAxisDateTime || !XAxis.EnableAutoDateGrouping) {
+            return NTDateGroupingLevel.None;
+        }
+
+        var (min, max) = GetXRange(XAxis as NTAxisOptions<TData>, true);
+        var plotWidth = LastPlotArea.Width > 0f
+            ? LastPlotArea.Width
+            : Math.Max(1f, _lastWidth * Math.Max(0.1f, Density));
+
+        return XAxis.ResolveDateGroupingLevel(min, max, plotWidth, Math.Max(0.1f, Density));
+    }
+
     private bool _hasDraggedLegend;
     private bool _isDraggingLegend;
     private bool _isHoveringLegend;
@@ -640,6 +653,23 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         foreach (var s in Series) {
             s.ResetView();
         }
+        StateHasChanged();
+    }
+
+    /// <summary>
+    ///     Applies an explicit X-axis view range to all visible cartesian series in the chart.
+    /// </summary>
+    /// <param name="min">The minimum X value for the view range, or <see langword="null" /> to clear the range.</param>
+    /// <param name="max">The maximum X value for the view range, or <see langword="null" /> to clear the range.</param>
+    /// <param name="resetYRange">When <see langword="true" />, clears per-series Y view ranges so they refit to the new X window.</param>
+    public void SetViewXRange(double? min, double? max, bool resetYRange = true) {
+        foreach (var series in Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible)) {
+            series.SetViewXRange(min, max);
+            if (resetYRange) {
+                series.SetViewYRange(null, null);
+            }
+        }
+
         StateHasChanged();
     }
 
