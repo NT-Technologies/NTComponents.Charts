@@ -1,3 +1,15 @@
+# [1.1.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.0.0...v1.1.0) (2026-03-06)
+
+
+### Features
+
+* **chart:** add JS interop for wheel event handling ([12682fe](https://github.com/NT-Technologies/NTComponents.Charts/commit/12682fe82d648ef03b873544713518100dfc1a95))
+* **chart:** add series visibility event and new chart controls ([6c5d37d](https://github.com/NT-Technologies/NTComponents.Charts/commit/6c5d37ddb0ca11c0704ce9a2d8e7a828e3e1d992))
+* **chart:** improve axis, tooltip, and date gap handling ([c430ebb](https://github.com/NT-Technologies/NTComponents.Charts/commit/c430ebb2a0f2aef49aa829eca5035dbb1ea3a759))
+* **chart:** improve interaction callback handling for series ([cd18fbf](https://github.com/NT-Technologies/NTComponents.Charts/commit/cd18fbfa0311ef6cad67d64eefe295878233bfbd))
+* **chart:** improve layout for chart buttons and canvas ([33267dc](https://github.com/NT-Technologies/NTComponents.Charts/commit/33267dc782795fe7e0f224957cde700cabc8dbd3))
+* **line-series:** add date group click & zoom support ([f592d67](https://github.com/NT-Technologies/NTComponents.Charts/commit/f592d677d9c002ff086d098700d7e433db98182d))
+
 # 1.0.0 (2026-02-20)
 
 
