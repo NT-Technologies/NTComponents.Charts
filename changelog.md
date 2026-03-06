@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.1.0...v1.2.0) (2026-03-06)
+
+
+### Features
+
+* **chart:** improve axis labels, tooltips, and bar fading ([41307fb](https://github.com/NT-Technologies/NTComponents.Charts/commit/41307fb882c6f9bbfc7379e730f193aa2b95db1a))
+
 # [1.1.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.0.0...v1.1.0) (2026-03-06)
 
 
