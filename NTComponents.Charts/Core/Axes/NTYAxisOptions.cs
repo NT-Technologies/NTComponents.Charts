@@ -6,6 +6,11 @@ using NTComponents.Charts;
 namespace NTComponents.Charts.Core.Axes;
 
 public interface INTYAxis<TData> : INTAxis<TData> where TData : class {
+    /// <summary>
+    ///     Gets the absolute minimum value allowed for the axis range.
+    /// </summary>
+    decimal? AbsoluteMinimum { get; }
+
     static abstract INTYAxis<TData> Default { get; }
 }
 
@@ -34,6 +39,12 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
     public Func<TData, TAxisValue> ValueSelector { get; set; }
 
     /// <summary>
+    ///     Gets or sets the absolute minimum value allowed for the axis range and rendered points.
+    /// </summary>
+    [Parameter]
+    public decimal? AbsoluteMinimum { get; set; }
+
+    /// <summary>
     ///     Gets or sets whether horizontal grid lines are rendered at each Y-axis tick.
     /// </summary>
     [Parameter]
@@ -54,6 +65,13 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         _titleFont?.Dispose();
         Chart.UnregisterAxis(this);
         base.Dispose();
+    }
+
+    public override void Invalidate() {
+        _cacheKey = null;
+        _cachedTicks.Clear();
+        _measuredLabelWidth = 0f;
+        _titleWidth = 0f;
     }
 
     protected override void OnInitialized() {
@@ -243,11 +261,16 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             max += delta;
         }
 
+        if (UsesIntegralTicks()) {
+            BuildIntegralTicks(min, max, plotHeight, density);
+            return;
+        }
+
         var targetTicks = Math.Max(2, (int)(plotHeight / Math.Max(24f, _textFont!.Size + (8 * density))));
         var spacing = (decimal)CalculateNiceSpacing((double)min, (double)max, targetTicks);
         if (spacing <= 0) {
-            _cachedTicks.Add(new AxisTick(min, FormatLabel(min)));
-            _cachedTicks.Add(new AxisTick(max, FormatLabel(max)));
+            AddDistinctTick(min);
+            AddDistinctTick(max);
             return;
         }
 
@@ -257,13 +280,49 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             if (tick < min - epsilon) {
                 continue;
             }
+            AddDistinctTick(tick);
+        }
+
+        if (_cachedTicks.Count == 0) {
+            AddDistinctTick(min);
+            AddDistinctTick(max);
+        }
+
+        void AddDistinctTick(decimal tickValue) {
+            var label = FormatLabel(tickValue);
+            if (_cachedTicks.Count > 0 && _cachedTicks[^1].Label == label) {
+                return;
+            }
+
+            _cachedTicks.Add(new AxisTick(tickValue, label));
+        }
+    }
+
+    private void BuildIntegralTicks(decimal min, decimal max, float plotHeight, float density) {
+        var targetTicks = Math.Max(2, (int)(plotHeight / Math.Max(24f, _textFont!.Size + (8 * density))));
+        var integralMin = (int)Math.Floor(min);
+        var integralMax = (int)Math.Ceiling(max);
+
+        var spacing = Math.Max(1, (int)Math.Ceiling(CalculateNiceSpacing(integralMin, integralMax, targetTicks)));
+        var first = (int)(Math.Ceiling((decimal)integralMin / spacing) * spacing);
+        var epsilon = Math.Max(1m, spacing / 10000m);
+
+        for (var tick = first; tick <= integralMax + epsilon; tick += spacing) {
+            if (tick < integralMin - epsilon) {
+                continue;
+            }
+
             _cachedTicks.Add(new AxisTick(tick, FormatLabel(tick)));
         }
 
         if (_cachedTicks.Count == 0) {
-            _cachedTicks.Add(new AxisTick(min, FormatLabel(min)));
-            _cachedTicks.Add(new AxisTick(max, FormatLabel(max)));
+            _cachedTicks.Add(new AxisTick(integralMin, FormatLabel(integralMin)));
+            if (integralMax != integralMin) {
+                _cachedTicks.Add(new AxisTick(integralMax, FormatLabel(integralMax)));
+            }
         }
+
+        EnsureZeroTick(min, max);
     }
 
     private void BuildLogTicks(decimal min, decimal max) {
@@ -278,12 +337,21 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             if (val < min || val > max) {
                 continue;
             }
-            _cachedTicks.Add(new AxisTick(val, FormatLabel(val)));
+            AddDistinctTick(val);
         }
 
         if (_cachedTicks.Count == 0) {
-            _cachedTicks.Add(new AxisTick((decimal)dMin, FormatLabel((decimal)dMin)));
-            _cachedTicks.Add(new AxisTick((decimal)dMax, FormatLabel((decimal)dMax)));
+            AddDistinctTick((decimal)dMin);
+            AddDistinctTick((decimal)dMax);
+        }
+
+        void AddDistinctTick(decimal tickValue) {
+            var label = FormatLabel(tickValue);
+            if (_cachedTicks.Count > 0 && _cachedTicks[^1].Label == label) {
+                return;
+            }
+
+            _cachedTicks.Add(new AxisTick(tickValue, label));
         }
     }
 
@@ -304,10 +372,35 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             t = (double)((y - min) / range);
         }
 
-        const float p = 3f;
-        var bottom = plotArea.Bottom - p;
-        var height = plotArea.Height - (p * 2);
+        var (topPadding, bottomPadding) = GetVerticalRenderPadding(min);
+        var bottom = plotArea.Bottom - bottomPadding;
+        var height = plotArea.Height - topPadding - bottomPadding;
         return (float)(bottom - (t * height));
+    }
+
+    private void EnsureZeroTick(decimal min, decimal max) {
+        if (min > 0m || max < 0m || _cachedTicks.Any(t => t.Value == 0m)) {
+            return;
+        }
+
+        var zeroTick = new AxisTick(0m, FormatLabel(0m));
+        var insertIndex = _cachedTicks.FindIndex(t => t.Value > 0m);
+        if (insertIndex < 0) {
+            _cachedTicks.Add(zeroTick);
+        }
+        else {
+            _cachedTicks.Insert(insertIndex, zeroTick);
+        }
+    }
+
+    private static (float Top, float Bottom) GetVerticalRenderPadding(decimal min) {
+        const float topPadding = 3f;
+        const float defaultBottomPadding = 3f;
+        const float zeroFloorBottomPadding = 9f;
+
+        return min == 0m
+            ? (topPadding, zeroFloorBottomPadding)
+            : (topPadding, defaultBottomPadding);
     }
 
     private string FormatLabel(decimal value) {
@@ -324,6 +417,18 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         }
 
         return value.ToString("N2");
+    }
+
+    private static bool UsesIntegralTicks() {
+        var type = Nullable.GetUnderlyingType(typeof(TAxisValue)) ?? typeof(TAxisValue);
+        return type == typeof(byte) ||
+               type == typeof(sbyte) ||
+               type == typeof(short) ||
+               type == typeof(ushort) ||
+               type == typeof(int) ||
+               type == typeof(uint) ||
+               type == typeof(long) ||
+               type == typeof(ulong);
     }
 
     private static double CalculateNiceSpacing(double min, double max, int targetTicks) {

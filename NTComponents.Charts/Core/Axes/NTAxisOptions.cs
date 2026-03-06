@@ -46,6 +46,11 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
     [CascadingParameter]
     protected IChart<TData> Chart { get; set; } = default!;
 
+    internal void AttachChart(IChart<TData> chart) {
+        ArgumentNullException.ThrowIfNull(chart, nameof(chart));
+        Chart = chart;
+    }
+
     public virtual void Dispose() {
         Chart?.UnregisterRenderable(this);
         GC.SuppressFinalize(this);
@@ -66,6 +71,9 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
 
     protected override void OnInitialized() {
         base.OnInitialized();
+        if (Chart is null) {
+            throw new InvalidOperationException($"Axis {GetType().Name} must be used within a {nameof(NTChart<TData>)}.");
+        }
         Chart.RegisterRenderable(this);
     }
 }

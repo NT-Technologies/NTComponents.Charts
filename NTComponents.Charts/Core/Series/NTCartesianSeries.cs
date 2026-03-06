@@ -335,6 +335,16 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     public override (double Min, double Max)? GetViewXRange() => (_viewXMin.HasValue && _viewXMax.HasValue) ? (_viewXMin.Value, _viewXMax.Value) : null;
     public override (decimal Min, decimal Max)? GetViewYRange() => (_viewYMin.HasValue && _viewYMax.HasValue) ? (_viewYMin.Value, _viewYMax.Value) : null;
 
+    internal void SetViewXRange(double? min, double? max) {
+        _viewXMin = min;
+        _viewXMax = max;
+    }
+
+    internal void SetViewYRange(decimal? min, decimal? max) {
+        _viewYMin = min;
+        _viewYMax = max;
+    }
+
     /// <inheritdoc />
     public override bool IsPanning => _isPanning;
 

@@ -48,7 +48,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
     }
 
-    public INTXAxis<TData> XAxis { get; private set; } = _defaultXAxis;
+    public INTXAxis<TData> XAxis { get; private set; }
 
     public void RegisterAxis(INTXAxis<TData> axis) {
         ArgumentNullException.ThrowIfNull(axis, nameof(axis));
@@ -64,11 +64,24 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             XAxis = _defaultXAxis;
         }
     }
-    private static readonly INTYAxis<TData> _defaultYAxis = NTYAxisOptions<TData, decimal>.Default;
-    private static readonly INTXAxis<TData> _defaultXAxis = NTXAxisOptions<TData, object>.Default;
+    private readonly INTYAxis<TData> _defaultYAxis;
+    private readonly INTXAxis<TData> _defaultXAxis;
 
-    public INTYAxis<TData> YAxis { get; private set; } = _defaultYAxis;
+    public INTYAxis<TData> YAxis { get; private set; }
     public INTYAxis<TData>? SecondaryYAxis { get; private set; }
+
+    public NTChart() {
+        _defaultYAxis = new NTYAxisOptions<TData, decimal> {
+            ValueSelector = _ => 0m
+        };
+        _defaultXAxis = new NTXAxisOptions<TData, object> {
+            ValueSelector = _ => default!
+        };
+
+        XAxis = _defaultXAxis;
+        YAxis = _defaultYAxis;
+        AttachDefaultAxes();
+    }
 
     public void RegisterAxis(INTYAxis<TData> axis) {
         ArgumentNullException.ThrowIfNull(axis, nameof(axis));
@@ -103,6 +116,22 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private bool _invalidate;
     private readonly Dictionary<RenderOrdered, List<IRenderable>> _renderablesByOrder = Enum.GetValues<RenderOrdered>().ToDictionary(r => r, _ => new List<IRenderable>());
     private bool _defaultAxesAttached;
+
+    private void AttachDefaultAxes() {
+        if (_defaultAxesAttached) {
+            return;
+        }
+
+        if (_defaultXAxis is NTAxisOptions<TData> xAxis) {
+            xAxis.AttachChart(this);
+        }
+
+        if (_defaultYAxis is NTAxisOptions<TData> yAxis) {
+            yAxis.AttachChart(this);
+        }
+
+        _defaultAxesAttached = true;
+    }
     public void RegisterRenderable(IRenderable renderable) {
         ArgumentNullException.ThrowIfNull(renderable, nameof(renderable));
         var list =
@@ -218,6 +247,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     public TData? HoveredDataPoint { get; private set; }
     public int? HoveredPointIndex { get; private set; }
     public NTBaseSeries<TData>? HoveredSeries { get; private set; }
+    internal bool IsLegendHoverActive => _isHoveringLegend;
 
     public bool IsXAxisDateTime {
         get {
@@ -509,6 +539,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     public (decimal Min, decimal Max) GetYRange(NTAxisOptions<TData>? axis, bool padded = false) {
         var useSecondaryAxis = axis is not null && SecondaryYAxis is not null && ReferenceEquals(axis, SecondaryYAxis);
+        var absoluteMinimum = (axis as INTYAxis<TData>)?.AbsoluteMinimum;
 
 
         var cartesianSeries = Series
@@ -578,7 +609,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
 
         if (!padded || hasViewRange) {
-            return NormalizeRange(min, max);
+            return NormalizeYRange(min, max, absoluteMinimum);
         }
 
         var rangeSize = Math.Max(0.0000001m, max - min);
@@ -586,18 +617,19 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         if (verticalBars.Count > 0) {
             // Keep the lower bound anchored for bar charts (0/data-min/override-min),
             // and only pad the top.
-            return NormalizeRange(min, max + rangePadding);
+            return NormalizeYRange(min, max + rangePadding, absoluteMinimum);
         }
 
         // Horizontal bar charts use Y as the category axis and need half-category edge padding.
         if (hasHorizontalBars) {
             rangePadding = Math.Max(rangePadding, 0.5m);
         }
-        return NormalizeRange(min - rangePadding, max + rangePadding);
+        return NormalizeYRange(min - rangePadding, max + rangePadding, absoluteMinimum);
     }
     [JSInvokable]
     public async Task OnThemeChanged() {
         await ResolveColorsAsync();
+        Invalidate();
         StateHasChanged();
     }
 
@@ -660,7 +692,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     private float ScaleY(decimal y, NTAxisOptions<TData>? axis, SKRect plotArea) {
         var (min, max) = GetScaleYRange(axis);
+        var absoluteMinimum = (axis as INTYAxis<TData>)?.AbsoluteMinimum;
         var scale = axis?.Scale ?? NTAxisScale.Linear;
+
+        if (absoluteMinimum.HasValue && y < absoluteMinimum.Value) {
+            y = absoluteMinimum.Value;
+        }
 
         double t;
         if (scale == NTAxisScale.Logarithmic) {
@@ -677,9 +714,9 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             t = (double)((y - min) / range);
         }
 
-        const float p = 3f;
-        var bottom = plotArea.Bottom - p;
-        var height = plotArea.Height - (p * 2);
+        var (topPadding, bottomPadding) = GetVerticalRenderPadding(min);
+        var bottom = plotArea.Bottom - bottomPadding;
+        var height = plotArea.Height - topPadding - bottomPadding;
         return (float)(bottom - (t * height));
     }
 
@@ -690,10 +727,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         var (min, max) = GetScaleYRange(axis);
         var scale = axis?.Scale ?? NTAxisScale.Linear;
 
-        const float p = 3f;
         double t;
-        var bottom = plotArea.Bottom - p;
-        var height = plotArea.Height - (p * 2);
+        var (topPadding, bottomPadding) = GetVerticalRenderPadding(min);
+        var bottom = plotArea.Bottom - bottomPadding;
+        var height = plotArea.Height - topPadding - bottomPadding;
         t = height <= 0 ? 0 : (bottom - coord) / height;
 
         if (scale == NTAxisScale.Logarithmic) {
@@ -702,6 +739,16 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             return (decimal)Math.Pow(10, Math.Log10(dMin) + (t * (Math.Log10(dMax) - Math.Log10(dMin))));
         }
         return min + ((decimal)t * (max - min));
+    }
+
+    private static (float Top, float Bottom) GetVerticalRenderPadding(decimal min) {
+        const float topPadding = 3f;
+        const float defaultBottomPadding = 3f;
+        const float zeroFloorBottomPadding = 9f;
+
+        return min == 0m
+            ? (topPadding, zeroFloorBottomPadding)
+            : (topPadding, defaultBottomPadding);
     }
 
     internal void RegisterSeries(NTBaseSeries<TData> series) {
@@ -1226,35 +1273,22 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             if (Legend.LastDrawArea.Contains(mousePoint)) {
                 _isHoveringLegend = true;
             }
+
+            var hoveredLegendItem = Legend.GetItemAtPoint(mousePoint, plotArea, Legend.LastDrawArea, Density);
+            if (hoveredLegendItem?.Series is not null) {
+                SetHoveredState(
+                    hoveredLegendItem.Series,
+                    hoveredLegendItem.Index,
+                    GetLegendHoverDataPoint(hoveredLegendItem),
+                    mousePoint);
+                return;
+            }
         }
 
         var (hoveredSeries, hoveredPointIndex, hoveredDataPoint) = HitTestSeriesAtPoint(mousePoint, plotArea);
 
         if (hoveredSeries != null) {
-            HoveredSeries = hoveredSeries;
-            HoveredPointIndex = hoveredPointIndex;
-            HoveredDataPoint = hoveredDataPoint;
-            _hoverMissStreak = 0;
-            _lastHoverHitTimestamp = Stopwatch.GetTimestamp();
-
-            if (!ReferenceEquals(_lastHoverNotifiedSeries, hoveredSeries) || _lastHoverNotifiedPointIndex != hoveredPointIndex) {
-                if (_lastHoverNotifiedSeries is not null) {
-                    _lastHoverNotifiedSeries.NotifyHoverLeave(new NTSeriesHoverLeaveEventArgs<TData> {
-                        Series = _lastHoverNotifiedSeries,
-                        PointIndex = _lastHoverNotifiedPointIndex
-                    });
-                }
-
-                hoveredSeries.NotifyHoverEnter(new NTSeriesHoverEnterEventArgs<TData> {
-                    Series = hoveredSeries,
-                    PointIndex = hoveredPointIndex,
-                    DataPoint = hoveredDataPoint,
-                    PointerPosition = mousePoint
-                });
-
-                _lastHoverNotifiedSeries = hoveredSeries;
-                _lastHoverNotifiedPointIndex = hoveredPointIndex;
-            }
+            SetHoveredState(hoveredSeries, hoveredPointIndex, hoveredDataPoint, mousePoint);
             return;
         }
 
@@ -1268,6 +1302,37 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             }
         }
 
+        ClearHoveredState(mousePoint);
+    }
+
+    private void SetHoveredState(NTBaseSeries<TData> hoveredSeries, int? hoveredPointIndex, TData? hoveredDataPoint, SKPoint mousePoint) {
+        HoveredSeries = hoveredSeries;
+        HoveredPointIndex = hoveredPointIndex;
+        HoveredDataPoint = hoveredDataPoint;
+        _hoverMissStreak = 0;
+        _lastHoverHitTimestamp = Stopwatch.GetTimestamp();
+
+        if (!ReferenceEquals(_lastHoverNotifiedSeries, hoveredSeries) || _lastHoverNotifiedPointIndex != hoveredPointIndex) {
+            if (_lastHoverNotifiedSeries is not null) {
+                _lastHoverNotifiedSeries.NotifyHoverLeave(new NTSeriesHoverLeaveEventArgs<TData> {
+                    Series = _lastHoverNotifiedSeries,
+                    PointIndex = _lastHoverNotifiedPointIndex
+                });
+            }
+
+            hoveredSeries.NotifyHoverEnter(new NTSeriesHoverEnterEventArgs<TData> {
+                Series = hoveredSeries,
+                PointIndex = hoveredPointIndex,
+                DataPoint = hoveredDataPoint,
+                PointerPosition = mousePoint
+            });
+
+            _lastHoverNotifiedSeries = hoveredSeries;
+            _lastHoverNotifiedPointIndex = hoveredPointIndex;
+        }
+    }
+
+    private void ClearHoveredState(SKPoint mousePoint) {
         HoveredSeries = null;
         HoveredPointIndex = null;
         HoveredDataPoint = null;
@@ -1282,6 +1347,14 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             _lastHoverNotifiedSeries = null;
             _lastHoverNotifiedPointIndex = null;
         }
+    }
+
+    private static TData? GetLegendHoverDataPoint(LegendItemInfo<TData> legendItem) {
+        if (legendItem.Series is null || !legendItem.Index.HasValue || legendItem.Index.Value < 0) {
+            return null;
+        }
+
+        return legendItem.Series.Data.ElementAtOrDefault(legendItem.Index.Value);
     }
 
     private (NTBaseSeries<TData>? Series, int? Index, TData? Data) HitTestSeriesAtPoint(SKPoint point, SKRect plotArea) {
@@ -1899,6 +1972,26 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         if (max == min) {
             var delta = Math.Abs(min) > 1 ? Math.Abs(min * 0.01m) : 1m;
             return (min - delta, max + delta);
+        }
+
+        return (min, max);
+    }
+
+    private static (decimal Min, decimal Max) NormalizeYRange(decimal min, decimal max, decimal? absoluteMinimum) {
+        if (absoluteMinimum.HasValue) {
+            min = Math.Max(min, absoluteMinimum.Value);
+            max = Math.Max(max, absoluteMinimum.Value);
+        }
+
+        if (max < min) {
+            (min, max) = (max, min);
+        }
+
+        if (max == min) {
+            var delta = Math.Abs(min) > 1 ? Math.Abs(min * 0.01m) : 1m;
+            return absoluteMinimum.HasValue
+                ? (min, max + delta)
+                : (min - delta, max + delta);
         }
 
         return (min, max);

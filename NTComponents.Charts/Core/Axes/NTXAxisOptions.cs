@@ -69,6 +69,16 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         base.Dispose();
     }
 
+    public override void Invalidate() {
+        _cacheKey = null;
+        _cachedTicks.Clear();
+        _groupedDateTickCache.Clear();
+        _rotation = 0f;
+        _tickLabelHeight = 0f;
+        _titleHeight = null;
+        _activeDateGroupingLevel = NTDateGroupingLevel.None;
+    }
+
     /// <inheritdoc />
     public override SKRect Measure(NTRenderContext context, SKRect renderArea) {
         if (!Visible) {
@@ -577,6 +587,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             IsAntialias = true,
             Color = context.TextColor
         };
+        _textPaint.Color = context.TextColor;
         _textFont ??= new SKFont(context.DefaultFont.Typeface, AxisFontSize * context.Density);
         _textFont.Size = AxisFontSize * context.Density;
 
@@ -584,6 +595,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             IsAntialias = true,
             Color = context.TextColor
         };
+        _titlePaint.Color = context.TextColor;
         _titleFont ??= new SKFont(context.DefaultFont.Typeface, TitleFontSize * context.Density);
         _titleFont.Size = TitleFontSize * context.Density;
 
