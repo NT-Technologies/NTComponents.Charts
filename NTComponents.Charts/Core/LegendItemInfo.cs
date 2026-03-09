@@ -9,5 +9,7 @@ internal class LegendItemInfo<TData> where TData : class
    public SKColor Color { get; set; }
    public NTBaseSeries<TData>? Series { get; set; }
    public int? Index { get; set; }
+   public string? Key { get; set; }
    public bool IsVisible { get; set; } = true;
+   public bool InteractsWithChart { get; set; } = true;
 }

@@ -25,7 +25,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         var xValue = XValue.Invoke(data);
         var yValue = YValueSelector(data);
         var header = Chart.XAxis.FormatValue(xValue, forTooltip: true);
-        return new TooltipInfo {
+        var defaultInfo = new TooltipInfo {
             Header = header,
             Lines =
             [
@@ -37,6 +37,8 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
                 }
             ]
         };
+
+        return ResolveTooltipInfo(data, defaultInfo, Chart.HoveredPointIndex);
     }
 
     /// <inheritdoc />

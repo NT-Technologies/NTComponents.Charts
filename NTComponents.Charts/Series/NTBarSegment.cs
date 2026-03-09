@@ -1,3 +1,5 @@
+using SkiaSharp;
+
 namespace NTComponents.Charts;
 
 /// <summary>
@@ -7,6 +9,7 @@ public sealed class NTBarSegment {
     public required decimal Value { get; init; }
     public string? Label { get; init; }
     public TnTColor? Color { get; init; }
+    public SKColor? CustomColor { get; init; }
 }
 
 /// <summary>

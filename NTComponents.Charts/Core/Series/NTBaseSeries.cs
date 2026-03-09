@@ -139,6 +139,12 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     public TnTColor? TooltipTextColor { get; set; }
 
     /// <summary>
+    ///     Gets or sets an optional callback that can replace the default tooltip payload for this series.
+    /// </summary>
+    [Parameter]
+    public Func<NTSeriesTooltipContext<TData>, TooltipInfo>? TooltipInfoSelector { get; set; }
+
+    /// <summary>
     ///    Gets or sets the interaction modes enabled for this series.
     /// </summary>
     [Parameter]
@@ -251,6 +257,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
             Label = Title ?? $"Series {Chart.GetSeriesIndex(this) + 1}",
             Color = Chart.GetSeriesColor(this),
             Series = this,
+            Key = Title ?? $"Series {Chart.GetSeriesIndex(this) + 1}",
             IsVisible = Visible
         };
     }
@@ -261,10 +268,12 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     /// <param name="data">The data point.</param>
     /// <returns>The tooltip info.</returns>
     internal virtual TooltipInfo GetTooltipInfo(TData data) {
-        return new TooltipInfo {
+        var defaultInfo = new TooltipInfo {
             Header = null,
             Lines = [new TooltipLine { Label = Title ?? "Series", Value = string.Empty, Color = Chart.GetSeriesColor(this) }]
         };
+
+        return ResolveTooltipInfo(data, defaultInfo);
     }
 
     TooltipInfo ISeries.GetTooltipInfo(object data) => GetTooltipInfo((TData)data);
@@ -306,6 +315,20 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
             Visible = !Visible;
         }
     }
+
+    internal virtual void ToggleLegendItem(LegendItemInfo<TData> item) => ToggleLegendItem(item.Index);
+
+    internal virtual bool IsLegendItemHovered(LegendItemInfo<TData> item) {
+        if (!item.InteractsWithChart) {
+            return false;
+        }
+
+        return item.Index.HasValue
+            ? (Chart.HoveredSeries == item.Series && Chart.HoveredPointIndex == item.Index.Value)
+            : (Chart.HoveredSeries == item.Series);
+    }
+
+    internal virtual float GetLegendItemAlphaFactor(LegendItemInfo<TData> item) => HoverFactor;
 
     public virtual void HandleMouseDown(MouseEventArgs e) { }
     public virtual void HandleMouseMove(MouseEventArgs e) { }
@@ -360,6 +383,40 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     internal void NotifyHoverLeave(NTSeriesHoverLeaveEventArgs<TData> args) => NotifyCallback(OnHoverLeave, args);
     internal void NotifyVisibilityChanged(NTSeriesVisibilityChangedEventArgs<TData> args) => NotifyCallback(OnVisibilityChanged, args);
     internal void NotifyClick(NTSeriesClickEventArgs<TData> args) => NotifyCallback(OnClick, args);
+
+    /// <summary>
+    ///     Applies the optional tooltip selector to a default tooltip payload.
+    /// </summary>
+    /// <param name="data">The hovered data item.</param>
+    /// <param name="defaultInfo">The default tooltip payload.</param>
+    /// <param name="pointIndex">The hovered point index when available.</param>
+    /// <param name="segmentLabel">The hovered segment label when available.</param>
+    /// <param name="segmentValue">The hovered segment value when available.</param>
+    /// <param name="segmentColor">The hovered segment color when available.</param>
+    /// <returns>The final tooltip payload.</returns>
+    protected TooltipInfo ResolveTooltipInfo(
+        TData data,
+        TooltipInfo defaultInfo,
+        int? pointIndex = null,
+        string? segmentLabel = null,
+        decimal? segmentValue = null,
+        SKColor? segmentColor = null) {
+        if (TooltipInfoSelector is null) {
+            return defaultInfo;
+        }
+
+        var customInfo = TooltipInfoSelector(new NTSeriesTooltipContext<TData> {
+            Series = this,
+            Data = data,
+            PointIndex = pointIndex,
+            DefaultInfo = defaultInfo,
+            SegmentLabel = segmentLabel,
+            SegmentValue = segmentValue,
+            SegmentColor = segmentColor
+        });
+
+        return customInfo ?? defaultInfo;
+    }
     internal void NotifyPanStart(NTSeriesPanStartEventArgs<TData> args) {
         if (!SuppressInteractionCallbacks) {
             NotifyCallback(OnPanStart, args);

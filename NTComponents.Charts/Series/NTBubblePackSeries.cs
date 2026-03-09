@@ -539,6 +539,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             Label = Title ?? "Bubble Pack",
             Color = Chart.GetSeriesColor(this),
             Series = this,
+            Key = Title ?? "Bubble Pack",
             Index = null,
             IsVisible = Visible
         };

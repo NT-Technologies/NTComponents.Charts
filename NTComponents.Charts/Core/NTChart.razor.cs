@@ -245,6 +245,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     public SKFont DefaultFont => _defaultFont;
     public TData? HoveredDataPoint { get; private set; }
+    internal LegendItemInfo<TData>? HoveredLegendItem { get; private set; }
     public int? HoveredPointIndex { get; private set; }
     public NTBaseSeries<TData>? HoveredSeries { get; private set; }
 
@@ -317,6 +318,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private bool _isDraggingLegend;
     private bool _isHoveringLegend;
     private NTBaseSeries<TData>? _lastHoverNotifiedSeries;
+    private string? _lastHoverNotifiedLegendKey;
     private int? _lastHoverNotifiedPointIndex;
     private long _lastHoverHitTimestamp;
     private int _hoverMissStreak;
@@ -997,8 +999,8 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             var clickedItem = Legend.GetItemAtPoint(point, LastPlotArea, Legend.LastDrawArea, Density);
 
             if (clickedItem != null) {
-                if (clickedItem.Series != null) {
-                    clickedItem.Series.ToggleLegendItem(clickedItem.Index);
+                if (clickedItem.InteractsWithChart && clickedItem.Series != null) {
+                    clickedItem.Series.ToggleLegendItem(clickedItem);
                     RequestUiRefresh(force: true);
                 }
                 return;
@@ -1145,6 +1147,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         HoveredSeries = null;
         HoveredPointIndex = null;
         HoveredDataPoint = null;
+        HoveredLegendItem = null;
         _isHoveringLegend = false;
         _hoverMissStreak = 0;
         RequestUiRefresh(force: true);
@@ -1336,12 +1339,13 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             }
 
             var hoveredLegendItem = Legend.GetItemAtPoint(mousePoint, plotArea, Legend.LastDrawArea, Density);
-            if (hoveredLegendItem?.Series is not null) {
+            if (hoveredLegendItem?.Series is not null && hoveredLegendItem.InteractsWithChart) {
                 SetHoveredState(
                     hoveredLegendItem.Series,
                     hoveredLegendItem.Index,
                     GetLegendHoverDataPoint(hoveredLegendItem),
-                    mousePoint);
+                    mousePoint,
+                    hoveredLegendItem);
                 return;
             }
         }
@@ -1366,14 +1370,18 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         ClearHoveredState(mousePoint);
     }
 
-    private void SetHoveredState(NTBaseSeries<TData> hoveredSeries, int? hoveredPointIndex, TData? hoveredDataPoint, SKPoint mousePoint) {
+    private void SetHoveredState(NTBaseSeries<TData> hoveredSeries, int? hoveredPointIndex, TData? hoveredDataPoint, SKPoint mousePoint, LegendItemInfo<TData>? hoveredLegendItem = null) {
         HoveredSeries = hoveredSeries;
         HoveredPointIndex = hoveredPointIndex;
         HoveredDataPoint = hoveredDataPoint;
+        HoveredLegendItem = hoveredLegendItem;
         _hoverMissStreak = 0;
         _lastHoverHitTimestamp = Stopwatch.GetTimestamp();
 
-        if (!ReferenceEquals(_lastHoverNotifiedSeries, hoveredSeries) || _lastHoverNotifiedPointIndex != hoveredPointIndex) {
+        var hoveredLegendKey = hoveredLegendItem?.Key;
+        if (!ReferenceEquals(_lastHoverNotifiedSeries, hoveredSeries) ||
+            _lastHoverNotifiedPointIndex != hoveredPointIndex ||
+            !string.Equals(_lastHoverNotifiedLegendKey, hoveredLegendKey, StringComparison.Ordinal)) {
             if (_lastHoverNotifiedSeries is not null) {
                 _lastHoverNotifiedSeries.NotifyHoverLeave(new NTSeriesHoverLeaveEventArgs<TData> {
                     Series = _lastHoverNotifiedSeries,
@@ -1390,6 +1398,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
             _lastHoverNotifiedSeries = hoveredSeries;
             _lastHoverNotifiedPointIndex = hoveredPointIndex;
+            _lastHoverNotifiedLegendKey = hoveredLegendKey;
         }
     }
 
@@ -1397,6 +1406,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         HoveredSeries = null;
         HoveredPointIndex = null;
         HoveredDataPoint = null;
+        HoveredLegendItem = null;
         _hoverMissStreak = 0;
 
         if (_lastHoverNotifiedSeries is not null) {
@@ -1407,6 +1417,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             });
             _lastHoverNotifiedSeries = null;
             _lastHoverNotifiedPointIndex = null;
+            _lastHoverNotifiedLegendKey = null;
         }
     }
 

@@ -61,6 +61,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     private SKPaint? _labelBorderPaint;
     private SKFont? _labelFont;
     private readonly List<(SKRect Rect, int Index, int? SegmentIndex, TData Data, string? SegmentLabel, decimal SegmentValue, SKColor SegmentColor)> _lastBarRects = [];
+    private readonly HashSet<string> _hiddenSegmentLabels = new(StringComparer.OrdinalIgnoreCase);
     private int? _lastHoveredSegmentPointIndex;
     private int? _lastHoveredSegmentIndex;
     private string? _lastHoveredSegmentLabel;
@@ -174,18 +175,17 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             var value = GetBarTotalValue(item);
             var segments = GetPointSegments(item, value);
 
-            if (segments.Count <= 1) {
+            if (SegmentSelector is null) {
                 _barPaint.Color = pointColor;
                 _highlightPaint.Color = pointColor.WithAlpha(255);
                 DrawBar(canvas, rect, isPointHovered ? _highlightPaint : _barPaint, context.Density);
                 _lastBarRects.Add((rect, i, null, item, null, value, pointColor));
             }
-            else {
+            else if (segments.Count > 0) {
                 DrawSegmentedBar(context, rect, item, i, segments, pointColor, isPointHovered, pointAlphaFactor);
             }
 
-            // For segmented bars, render only per-segment labels.
-            if (segments.Count <= 1) {
+            if (ShowDataLabels && SegmentSelector is null) {
                 var labelColor = args.DataLabelColor;
                 var labelSize = args.DataLabelSize ?? DataLabelSize;
 
@@ -534,13 +534,13 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     internal override TooltipInfo GetTooltipInfo(TData data) {
         var baseInfo = base.GetTooltipInfo(data);
         if (SegmentSelector is null || Chart.HoveredSeries != this || Chart.HoveredPointIndex is null) {
-            return baseInfo;
+            return ResolveTooltipInfo(data, baseInfo, Chart.HoveredPointIndex);
         }
 
         if (_lastHoveredSegmentPointIndex == Chart.HoveredPointIndex &&
             _lastHoveredSegmentIndex.HasValue &&
             _lastHoveredSegmentValue.HasValue) {
-            return new TooltipInfo {
+            var defaultInfo = new TooltipInfo {
                 Header = baseInfo.Header,
                 Lines = [
                     new TooltipLine {
@@ -555,9 +555,17 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                     }
                 ]
             };
+
+            return ResolveTooltipInfo(
+                data,
+                defaultInfo,
+                Chart.HoveredPointIndex,
+                _lastHoveredSegmentLabel,
+                _lastHoveredSegmentValue,
+                _lastHoveredSegmentColor);
         }
 
-        return new TooltipInfo {
+        var nonSegmentedDefaultInfo = new TooltipInfo {
             Header = baseInfo.Header,
             Lines = [
                 new TooltipLine {
@@ -567,6 +575,8 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 }
             ]
         };
+
+        return ResolveTooltipInfo(data, nonSegmentedDefaultInfo, Chart.HoveredPointIndex);
     }
 
     /// <inheritdoc />
@@ -592,6 +602,109 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         return null;
     }
 
+    internal override void ToggleLegendItem(LegendItemInfo<TData> item) {
+        if (SegmentSelector is not null && !string.IsNullOrWhiteSpace(item.Key)) {
+            var key = item.Key.Trim();
+            if (!_hiddenSegmentLabels.Add(key)) {
+                _hiddenSegmentLabels.Remove(key);
+            }
+
+            ResetAnimation();
+            Chart?.InvalidateDataCaches();
+            return;
+        }
+
+        base.ToggleLegendItem(item);
+    }
+
+    internal override IEnumerable<LegendItemInfo<TData>> GetLegendItems() {
+        if (SegmentSelector is null) {
+            return base.GetLegendItems();
+        }
+
+        var dataList = Data?.ToList() ?? [];
+        if (dataList.Count == 0) {
+            return base.GetLegendItems();
+        }
+
+        var segmentItems = new Dictionary<string, LegendItemInfo<TData>>(StringComparer.OrdinalIgnoreCase);
+        var seriesColor = Chart.GetSeriesColor(this);
+
+        for (var dataIndex = 0; dataIndex < dataList.Count; dataIndex++) {
+            var item = dataList[dataIndex];
+            var segments = SegmentSelector(item) ?? [];
+            var segmentIndex = 0;
+
+            foreach (var segment in segments) {
+                if (Math.Abs(segment.Value) <= 0m || string.IsNullOrWhiteSpace(segment.Label)) {
+                    segmentIndex++;
+                    continue;
+                }
+
+                var label = segment.Label.Trim();
+                if (!segmentItems.ContainsKey(label)) {
+                    segmentItems[label] = new LegendItemInfo<TData> {
+                        Label = label,
+                        Color = ResolveSegmentColor(item, dataIndex, segment, segmentIndex, seriesColor),
+                        Series = this,
+                        Key = label,
+                        IsVisible = Visible && !_hiddenSegmentLabels.Contains(label)
+                    };
+                }
+
+                segmentIndex++;
+            }
+        }
+
+        return segmentItems.Count > 0
+            ? segmentItems
+                .OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(entry => entry.Value)
+            : base.GetLegendItems();
+    }
+
+    internal override bool IsLegendItemHovered(LegendItemInfo<TData> item) {
+        if (SegmentSelector is not null && !string.IsNullOrWhiteSpace(item.Key)) {
+            var hoveredLegendKey = Chart.HoveredLegendItem?.Series == this
+                ? Chart.HoveredLegendItem.Key
+                : null;
+
+            if (!string.IsNullOrWhiteSpace(hoveredLegendKey)) {
+                return string.Equals(item.Key, hoveredLegendKey, StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (Chart.HoveredSeries == this && !string.IsNullOrWhiteSpace(_lastHoveredSegmentLabel)) {
+                return string.Equals(item.Key, _lastHoveredSegmentLabel, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        }
+
+        return base.IsLegendItemHovered(item);
+    }
+
+    internal override float GetLegendItemAlphaFactor(LegendItemInfo<TData> item) {
+        var baseAlphaFactor = base.GetLegendItemAlphaFactor(item);
+
+        if (SegmentSelector is null || string.IsNullOrWhiteSpace(item.Key)) {
+            return baseAlphaFactor;
+        }
+
+        var hoveredLegendKey = Chart.HoveredLegendItem?.Series == this
+            ? Chart.HoveredLegendItem.Key
+            : null;
+
+        if (string.IsNullOrWhiteSpace(hoveredLegendKey)) {
+            return baseAlphaFactor;
+        }
+
+        if (string.Equals(item.Key, hoveredLegendKey, StringComparison.OrdinalIgnoreCase)) {
+            return baseAlphaFactor;
+        }
+
+        return Math.Clamp(baseAlphaFactor * NonHoveredBarOpacity, 0f, 1f);
+    }
+
     private decimal GetBarTotalValue(TData item) {
         if (SegmentSelector is null) {
             return YValueSelector(item);
@@ -599,6 +712,10 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
         decimal total = 0m;
         foreach (var segment in SegmentSelector(item) ?? []) {
+            if (!IsSegmentVisible(segment)) {
+                continue;
+            }
+
             total += segment.Value;
         }
 
@@ -611,11 +728,12 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         }
 
         var segments = (SegmentSelector(item) ?? [])
+            .Where(IsSegmentVisible)
             .Where(s => Math.Abs(s.Value) > 0m)
             .ToList();
 
         if (segments.Count == 0) {
-            return [new NTBarSegment { Value = totalValue }];
+            return [];
         }
 
         return segments;
@@ -644,13 +762,16 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 var segmentRect = new SKRect(rect.Left, cursor - segmentHeight, rect.Right, cursor);
                 cursor -= segmentHeight;
 
-                var segmentColor = ApplyAlphaFactor(ResolveSegmentColor(data, dataIndex, segment, segmentIndex, fallbackColor), pointAlphaFactor);
+                var segmentAlphaFactor = GetSegmentAlphaFactor(pointAlphaFactor, segment.Label);
+                var segmentColor = ApplyAlphaFactor(ResolveSegmentColor(data, dataIndex, segment, segmentIndex, fallbackColor), segmentAlphaFactor);
                 var isSegmentHovered = isPointHovered && _lastHoveredSegmentPointIndex == dataIndex && _lastHoveredSegmentIndex == segmentIndex;
                 _barPaint!.Color = segmentColor;
                 _highlightPaint!.Color = segmentColor.WithAlpha(255);
                 DrawBar(context.Canvas, segmentRect, isSegmentHovered ? _highlightPaint : _barPaint, context.Density);
                 _lastBarRects.Add((segmentRect, dataIndex, segmentIndex, data, segment.Label, segment.Value, segmentColor));
-                DrawSegmentDataLabel(context, segmentRect, segment.Value, segmentColor, isHorizontal: false, pointAlphaFactor);
+                if (ShowDataLabels) {
+                    DrawSegmentDataLabel(context, segmentRect, segment.Value, segmentColor, isHorizontal: false, segmentAlphaFactor);
+                }
             }
 
             return;
@@ -673,13 +794,16 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             var segmentRect = new SKRect(cursorX, rect.Top, cursorX + segmentWidth, rect.Bottom);
             cursorX += segmentWidth;
 
-            var segmentColor = ApplyAlphaFactor(ResolveSegmentColor(data, dataIndex, segment, segmentIndex, fallbackColor), pointAlphaFactor);
+            var segmentAlphaFactor = GetSegmentAlphaFactor(pointAlphaFactor, segment.Label);
+            var segmentColor = ApplyAlphaFactor(ResolveSegmentColor(data, dataIndex, segment, segmentIndex, fallbackColor), segmentAlphaFactor);
             var isSegmentHovered = isPointHovered && _lastHoveredSegmentPointIndex == dataIndex && _lastHoveredSegmentIndex == segmentIndex;
             _barPaint!.Color = segmentColor;
             _highlightPaint!.Color = segmentColor.WithAlpha(255);
             DrawBar(context.Canvas, segmentRect, isSegmentHovered ? _highlightPaint : _barPaint, context.Density);
             _lastBarRects.Add((segmentRect, dataIndex, segmentIndex, data, segment.Label, segment.Value, segmentColor));
-            DrawSegmentDataLabel(context, segmentRect, segment.Value, segmentColor, isHorizontal: true, pointAlphaFactor);
+            if (ShowDataLabels) {
+                DrawSegmentDataLabel(context, segmentRect, segment.Value, segmentColor, isHorizontal: true, segmentAlphaFactor);
+            }
         }
     }
 
@@ -701,9 +825,11 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         _labelFont.MeasureText(text, out var bounds);
         var textWidth = bounds.Width;
         var textHeight = bounds.Height;
-        var pad = 6f * context.Density;
-        var minWidth = textWidth + (pad * 2f);
-        var minHeight = textHeight + (pad * 1.6f);
+        var horizontalPad = 4f * context.Density;
+        var minWidth = textWidth + (horizontalPad * 2f);
+        var minHeight = isHorizontal
+            ? textHeight + (2f * context.Density)
+            : textHeight + (8f * context.Density);
 
         if (segmentRect.Width < minWidth || segmentRect.Height < minHeight) {
             return;
@@ -715,6 +841,10 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     }
 
     private SKColor ResolveSegmentColor(TData data, int dataIndex, NTBarSegment segment, int segmentIndex, SKColor fallbackColor) {
+        if (segment.CustomColor.HasValue) {
+            return segment.CustomColor.Value;
+        }
+
         if (segment.Color.HasValue && segment.Color.Value != TnTColor.None) {
             return Chart.GetThemeColor(segment.Color.Value);
         }
@@ -750,6 +880,30 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         }
 
         return Math.Clamp(alphaFactor * NonHoveredBarOpacity, 0f, 1f);
+    }
+
+    private float GetSegmentAlphaFactor(float baseAlphaFactor, string? segmentLabel) {
+        var hoveredLegendKey = Chart.HoveredLegendItem?.Series == this
+            ? Chart.HoveredLegendItem.Key
+            : null;
+
+        if (string.IsNullOrWhiteSpace(hoveredLegendKey)) {
+            return baseAlphaFactor;
+        }
+
+        if (string.Equals(segmentLabel?.Trim(), hoveredLegendKey, StringComparison.OrdinalIgnoreCase)) {
+            return baseAlphaFactor;
+        }
+
+        return Math.Clamp(baseAlphaFactor * NonHoveredBarOpacity, 0f, 1f);
+    }
+
+    private bool IsSegmentVisible(NTBarSegment segment) {
+        if (string.IsNullOrWhiteSpace(segment.Label)) {
+            return true;
+        }
+
+        return !_hiddenSegmentLabels.Contains(segment.Label.Trim());
     }
 
     private static SKColor ApplyAlphaFactor(SKColor color, float alphaFactor) {

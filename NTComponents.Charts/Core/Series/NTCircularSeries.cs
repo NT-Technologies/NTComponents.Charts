@@ -114,6 +114,7 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
             Color = Chart.GetThemeColor(color),
             Series = this,
             Index = i,
+            Key = label,
             IsVisible = Visible && !_hiddenIndices.Contains(i)
          };
       }
