@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.2.0...v1.3.0) (2026-03-09)
+
+
+### Features
+
+* **bar:** segmented bar legend items & custom tooltips ([28e6f85](https://github.com/NT-Technologies/NTComponents.Charts/commit/28e6f857c7c7e4552b70a5edffcc0c1560f93567))
+
 # [1.2.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.1.0...v1.2.0) (2026-03-06)
 
 
