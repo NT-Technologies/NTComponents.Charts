@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.3.0...v1.4.0) (2026-03-09)
+
+
+### Features
+
+* **x-axis:** add integral tick handling for X axis ([0cdf439](https://github.com/NT-Technologies/NTComponents.Charts/commit/0cdf439c8149ebd542081e28d4e7da1a7bad185d))
+
 # [1.3.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.2.0...v1.3.0) (2026-03-09)
 
 
