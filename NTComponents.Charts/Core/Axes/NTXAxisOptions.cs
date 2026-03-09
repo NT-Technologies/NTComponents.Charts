@@ -3,6 +3,7 @@ using SkiaSharp;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using NTComponents.Charts;
+using NTComponents.Charts.Core.Series;
 
 namespace NTComponents.Charts.Core.Axes;
 
@@ -148,6 +149,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         var plotArea = context.PlotArea;
         var (min, max) = Chart.GetXRange(this, true);
         var allXCount = IsCategorical ? Chart.GetAllXValues().Count : 0;
+        var usesIntegralTicks = !IsCategorical && !Chart.IsXAxisDateTime && UsesIntegralTicks();
         var key = new AxisCacheKey(
             IsCategorical,
             allXCount,
@@ -159,6 +161,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             LabelFormat,
             Title,
             TitleFontSize,
+            usesIntegralTicks,
             EnableAutoDateGrouping,
             DateGroupingThreshold);
 
@@ -176,7 +179,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             BuildCategoricalTicks(context, plotArea, min, max);
         }
         else {
-            BuildContinuousTicks(context, min, max, plotArea.Width);
+            BuildContinuousTicks(context, min, max, plotArea.Width, usesIntegralTicks);
         }
     }
 
@@ -217,13 +220,18 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         }
     }
 
-    private void BuildContinuousTicks(NTRenderContext context, double min, double max, float plotWidth) {
+    private void BuildContinuousTicks(NTRenderContext context, double min, double max, float plotWidth, bool usesIntegralTicks) {
         if (double.IsNaN(min) || double.IsNaN(max) || double.IsInfinity(min) || double.IsInfinity(max)) {
             return;
         }
 
         if (Chart.IsXAxisDateTime) {
             BuildDateTimeTicks(context, min, max, plotWidth);
+            return;
+        }
+
+        if (usesIntegralTicks) {
+            BuildIntegralTicks(context, min, max, plotWidth);
             return;
         }
 
@@ -271,6 +279,62 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
         _tickLabelHeight = Math.Max(minBounds.Height, maxBounds.Height);
         ApplyLabelRotationIfNeeded(context, plotWidth);
+    }
+
+    private void BuildIntegralTicks(NTRenderContext context, double min, double max, float plotWidth) {
+        if (max < min) {
+            (min, max) = (max, min);
+        }
+
+        if (Math.Abs(max - min) < double.Epsilon) {
+            _cachedTicks.Add(new AxisTick(Math.Round(min), FormatLabel(ToLabelValue(Math.Round(min)), false)));
+            _textFont.MeasureText(_cachedTicks[0].Label, out var bounds);
+            _tickLabelHeight = bounds.Height;
+            ApplyLabelRotationIfNeeded(context, plotWidth);
+            return;
+        }
+
+        var integralMin = Math.Floor(min);
+        var integralMax = Math.Ceiling(max);
+
+        var minLabel = FormatLabel(ToLabelValue(integralMin), false);
+        var maxLabel = FormatLabel(ToLabelValue(integralMax), false);
+        _textFont.MeasureText(minLabel, out var minBounds);
+        _textFont.MeasureText(maxLabel, out var maxBounds);
+        var estWidth = Math.Max(minBounds.Width, maxBounds.Width);
+
+        var targetTicks = EstimateTargetTicks(plotWidth, estWidth, context.Density);
+        var spacing = Math.Max(1d, Math.Ceiling(CalculateNiceSpacing(integralMin, integralMax, targetTicks)));
+        var firstTick = Math.Ceiling(integralMin / spacing) * spacing;
+        var epsilon = Math.Max(1d, spacing / 10000d);
+
+        for (var tick = firstTick; tick <= integralMax + epsilon; tick += spacing) {
+            if (tick < integralMin - epsilon) {
+                continue;
+            }
+
+            AddDistinctTick(tick);
+        }
+
+        if (_cachedTicks.Count == 0) {
+            AddDistinctTick(integralMin);
+            if (integralMax != integralMin) {
+                AddDistinctTick(integralMax);
+            }
+        }
+
+        EnsureZeroTick(min, max);
+        _tickLabelHeight = Math.Max(minBounds.Height, maxBounds.Height);
+        ApplyLabelRotationIfNeeded(context, plotWidth);
+
+        void AddDistinctTick(double tickValue) {
+            var label = FormatLabel(ToLabelValue(tickValue), false);
+            if (_cachedTicks.Count > 0 && _cachedTicks[^1].Label == label) {
+                return;
+            }
+
+            _cachedTicks.Add(new AxisTick(tickValue, label));
+        }
     }
 
     private void BuildDateTimeTicks(NTRenderContext context, double min, double max, float plotWidth) {
@@ -384,6 +448,98 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         var densityBoost = preferDensity ? 1.25f : 1.45f;
         var minTicks = preferDensity ? 8 : 4;
         return Math.Max(minTicks, (int)((plotWidth / width) * densityBoost));
+    }
+
+    private bool UsesIntegralTicks() {
+        var type = Nullable.GetUnderlyingType(typeof(TAxisType)) ?? typeof(TAxisType);
+        if (IsIntegralNumericType(type)) {
+            return true;
+        }
+
+        if (!RequestsIntegralLabels()) {
+            return false;
+        }
+
+        return VisibleAxisValuesAreIntegral();
+    }
+
+    private bool VisibleAxisValuesAreIntegral() {
+        if (Chart is not NTChart<TData> ntChart) {
+            return false;
+        }
+
+        var hasValues = false;
+        foreach (var series in ntChart.Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible)) {
+            foreach (var item in series.Data) {
+                if (!TryConvertToDouble(ValueSelector(item), out var value)) {
+                    return false;
+                }
+
+                hasValues = true;
+                if (!IsWholeNumber(value)) {
+                    return false;
+                }
+            }
+        }
+
+        return hasValues;
+    }
+
+    private bool RequestsIntegralLabels() {
+        if (string.IsNullOrWhiteSpace(LabelFormat)) {
+            return false;
+        }
+
+        return !LabelFormat.Contains('.', StringComparison.Ordinal);
+    }
+
+    private static bool TryConvertToDouble(object? value, out double result) {
+        if (value is null) {
+            result = 0;
+            return false;
+        }
+
+        if (value is IConvertible convertible) {
+            try {
+                result = convertible.ToDouble(null);
+                return !double.IsNaN(result) && !double.IsInfinity(result);
+            }
+            catch {
+                result = 0;
+                return false;
+            }
+        }
+
+        result = 0;
+        return false;
+    }
+
+    private static bool IsIntegralNumericType(Type type) {
+        return type == typeof(byte) ||
+               type == typeof(sbyte) ||
+               type == typeof(short) ||
+               type == typeof(ushort) ||
+               type == typeof(int) ||
+               type == typeof(uint) ||
+               type == typeof(long) ||
+               type == typeof(ulong);
+    }
+
+    private static bool IsWholeNumber(double value) => Math.Abs(value - Math.Round(value)) < 1e-9;
+
+    private void EnsureZeroTick(double min, double max) {
+        if (min > 0d || max < 0d || _cachedTicks.Any(t => Math.Abs(t.Value) < 1e-9)) {
+            return;
+        }
+
+        var zeroTick = new AxisTick(0d, FormatLabel(ToLabelValue(0d), false));
+        var insertIndex = _cachedTicks.FindIndex(t => t.Value > 0d);
+        if (insertIndex < 0) {
+            _cachedTicks.Add(zeroTick);
+        }
+        else {
+            _cachedTicks.Insert(insertIndex, zeroTick);
+        }
     }
 
     private static double CalculateNiceSpacing(double min, double max, int targetTicks) {
@@ -663,6 +819,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         string? LabelFormat,
         string? Title,
         float TitleFontSize,
+        bool UsesIntegralTicks,
         bool EnableAutoDateGrouping,
         int DateGroupingThreshold);
 
