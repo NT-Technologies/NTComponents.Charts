@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.4.0...v1.5.0) (2026-03-10)
+
+
+### Features
+
+* **charts:** add SkiaSharp native assets for Linux ([3ed0212](https://github.com/NT-Technologies/NTComponents.Charts/commit/3ed021268b92049af51ac42fda119318a09db2ef))
+
 # [1.4.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.3.0...v1.4.0) (2026-03-09)
 
 
