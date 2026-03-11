@@ -243,7 +243,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     [Parameter]
     public TnTColor TooltipTextColor { get; set; } = TnTColor.OnSurfaceVariant;
 
-    public SKFont DefaultFont => _defaultFont;
+    public SKFont DefaultFont => _defaultFont ??= CreateFont(
+        "Roboto",
+        SKFontStyleWeight.Bold,
+        fallbackWeight: SKFontStyleWeight.Normal);
     public TData? HoveredDataPoint { get; private set; }
     internal LegendItemInfo<TData>? HoveredLegendItem { get; private set; }
     public int? HoveredPointIndex { get; private set; }
@@ -266,7 +269,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     internal bool IsYPanEnabled => Series.Any(s => s.Interactions.HasFlag(ChartInteractions.YPan));
     internal bool IsYZoomEnabled => Series.Any(s => s.Interactions.HasFlag(ChartInteractions.YZoom));
     public NTLegend<TData>? Legend { get; private set; }
-    public SKFont RegularFont => _regularFont;
+    public SKFont RegularFont => _regularFont ??= CreateFont(
+        "Roboto",
+        SKFontStyleWeight.Medium,
+        fallbackWeight: SKFontStyleWeight.Normal);
     public List<NTBaseSeries<TData>> Series { get; } = [];
 
     protected string CanvasStyle {
@@ -292,8 +298,8 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     public SKPoint? LastMousePosition { get; private set; }
     internal SKRect LastPlotArea { get; private set; }
-    private static readonly SKFont _defaultFont = new(SKTypeface.FromFamilyName("Roboto", SKFontStyleWeight.Bold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright), 12);
-    private static readonly SKFont _regularFont = new(SKTypeface.FromFamilyName("Roboto", SKFontStyleWeight.Medium, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright), 12);
+    private SKFont? _defaultFont;
+    private SKFont? _regularFont;
     private readonly Dictionary<TnTColor, SKColor> _resolvedColors = [];
     private readonly Dictionary<NTBaseSeries<TData>, SKRect> _treeMapAreas = [];
     private List<object>? _cachedAllX;
@@ -357,6 +363,31 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private SKPaint? _annotationTextPaint;
     private SKPaint? _annotationLabelBgPaint;
     private SKFont? _annotationFont;
+
+    private static SKFont CreateFont(string familyName, SKFontStyleWeight preferredWeight, SKFontStyleWeight fallbackWeight) {
+        var typeface =
+            TryCreateTypeface(familyName, preferredWeight) ??
+            TryCreateTypeface(familyName, fallbackWeight) ??
+            SKTypeface.Default;
+
+        return new SKFont(typeface, 12);
+    }
+
+    private static SKTypeface? TryCreateTypeface(string familyName, SKFontStyleWeight weight) {
+        try {
+            return SKTypeface.FromFamilyName(
+                familyName,
+                weight,
+                SKFontStyleWidth.Normal,
+                SKFontStyleSlant.Upright);
+        }
+        catch (DllNotFoundException) {
+            return null;
+        }
+        catch (TypeInitializationException) {
+            return null;
+        }
+    }
 
     /// <summary>
     ///     Exports the current chart as a PNG image.
@@ -925,6 +956,8 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
+            _defaultFont?.Dispose();
+            _regularFont?.Dispose();
             _errorPaint?.Dispose();
             _errorFont?.Dispose();
             _debugBgPaint?.Dispose();
@@ -1202,8 +1235,8 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             Info = info,
             TotalArea = totalArea,
             Density = Density,
-            DefaultFont = _defaultFont,
-            RegularFont = _regularFont,
+            DefaultFont = DefaultFont,
+            RegularFont = RegularFont,
             TextColor = GetThemeColor(TextColor),
             PlotArea = renderArea
         };
@@ -1756,7 +1789,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         };
 
         if (_debugFont == null) {
-            var typeface = SKTypeface.FromFamilyName("monospace");
+            var typeface = TryCreateTypeface("monospace", SKFontStyleWeight.Normal) ?? SKTypeface.Default;
             _debugFont = new SKFont(typeface, 12 * context.Density);
         }
         _debugFont.Size = 12 * context.Density;
