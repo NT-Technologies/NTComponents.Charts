@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.5.0...v1.6.0) (2026-03-11)
+
+
+### Features
+
+* **chart:** improve font loading and resource management ([1457b21](https://github.com/NT-Technologies/NTComponents.Charts/commit/1457b215abe34608014d202a111a217128b4d7bb))
+
 # [1.5.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.4.0...v1.5.0) (2026-03-10)
 
 
