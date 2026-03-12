@@ -59,6 +59,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     private float? _titleHeight;
     private NTDateGroupingLevel _activeDateGroupingLevel = NTDateGroupingLevel.None;
     private readonly Dictionary<DateTickCacheKey, List<AxisTick>> _groupedDateTickCache = [];
+    private const float RotatedLabelDegrees = -45f;
 
     public override void Dispose() {
         _textPaint?.Dispose();
@@ -92,8 +93,11 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         BuildTicks(context, renderArea);
 
         var tickHeight = 5 * context.Density;
-        var totalHeight = _titleHeight.Value + _tickLabelHeight + tickHeight + (10 * context.Density);
-        return new SKRect(renderArea.Left, renderArea.Top, renderArea.Right, renderArea.Bottom - totalHeight);
+        var labelBottomPadding = GetTitleReservedHeight(context.Density);
+        var labelBandBottom = renderArea.Bottom - labelBottomPadding;
+        var labelBandTop = labelBandBottom - _tickLabelHeight;
+        var axisY = labelBandTop - tickHeight;
+        return new SKRect(renderArea.Left, renderArea.Top, renderArea.Right, axisY);
     }
 
     /// <inheritdoc />
@@ -106,8 +110,9 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         BuildTicks(context, renderArea);
 
         var plotArea = context.PlotArea;
-        var axisY = plotArea.Bottom;
         var tickHeight = 5 * context.Density;
+        var axisY = plotArea.Bottom;
+        var labelBandTop = axisY + tickHeight;
 
         context.Canvas.DrawLine(plotArea.Left, axisY, plotArea.Right, axisY, _linePaint);
 
@@ -119,15 +124,18 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
             context.Canvas.DrawLine(x, axisY, x, axisY + tickHeight, _linePaint);
 
-            var textBaseline = axisY + tickHeight + _tickLabelHeight + (2 * context.Density);
-            if (_rotation == 0f) {
-                context.Canvas.DrawText(tick.Label, x, textBaseline, SKTextAlign.Center, _textFont, _textPaint);
+            var labelLayout = GetTickLabelLayout(tick.Label);
+            var labelBounds = labelLayout.Bounds;
+            var textBaseline = labelBandTop - labelBounds.Top;
+            var textX = ClampLabelAnchorX(x, labelBounds, context.TotalArea, context.Density);
+            if (labelLayout.RotationDegrees == 0f) {
+                context.Canvas.DrawText(tick.Label, textX, textBaseline, labelLayout.TextAlign, _textFont, _textPaint);
             }
             else {
                 context.Canvas.Save();
-                context.Canvas.Translate(x, textBaseline);
-                context.Canvas.RotateDegrees(_rotation);
-                context.Canvas.DrawText(tick.Label, 0, 0, SKTextAlign.Center, _textFont, _textPaint);
+                context.Canvas.Translate(textX, textBaseline);
+                context.Canvas.RotateDegrees(labelLayout.RotationDegrees);
+                context.Canvas.DrawText(tick.Label, 0, 0, labelLayout.TextAlign, _textFont, _textPaint);
                 context.Canvas.Restore();
             }
         }
@@ -137,7 +145,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             context.Canvas.DrawText(Title, plotArea.MidX, titleY, SKTextAlign.Center, _titleFont, _titlePaint);
         }
 
-        return renderArea;
+        return new SKRect(renderArea.Left, renderArea.Top, renderArea.Right, axisY);
     }
 
     protected override void OnInitialized() {
@@ -146,7 +154,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     }
 
     private void BuildTicks(NTRenderContext context, SKRect renderArea) {
-        var plotArea = context.PlotArea;
+        var plotArea = renderArea;
         var (min, max) = Chart.GetXRange(this, true);
         var allXCount = IsCategorical ? Chart.GetAllXValues().Count : 0;
         var usesIntegralTicks = !IsCategorical && !Chart.IsXAxisDateTime && UsesIntegralTicks();
@@ -196,7 +204,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         }
 
         var visibleCount = end - start + 1;
-        var (maxLabelWidth, maxLabelHeight) = MeasureSampleLabels(context, start, end, idx => FormatLabel(allX[idx], false));
+        var (maxLabelWidth, _) = MeasureSampleLabels(context, start, end, idx => FormatLabel(allX[idx], false));
 
         var targetTicks = EstimateTargetTicks(plotArea.Width, maxLabelWidth, context.Density, preferDensity: true);
         var step = Math.Max(1, (int)Math.Floor(visibleCount / (double)targetTicks));
@@ -211,13 +219,10 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
         var labelSlotWidth = plotArea.Width / Math.Max(1, _cachedTicks.Count - 1);
         if (maxLabelWidth + (5 * context.Density) > labelSlotWidth) {
-            _rotation = -45f;
-            var rad = Math.Abs(_rotation) * Math.PI / 180.0;
-            _tickLabelHeight = (float)((Math.Sin(rad) * maxLabelWidth) + (Math.Cos(rad) * maxLabelHeight));
+            _rotation = RotatedLabelDegrees;
         }
-        else {
-            _tickLabelHeight = maxLabelHeight;
-        }
+
+        UpdateTickLabelHeight(context);
     }
 
     private void BuildContinuousTicks(NTRenderContext context, double min, double max, float plotWidth, bool usesIntegralTicks) {
@@ -238,7 +243,6 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         if (Math.Abs(max - min) < double.Epsilon) {
             _cachedTicks.Add(new AxisTick(min, FormatLabel(ToLabelValue(min), false)));
             _textFont.MeasureText(_cachedTicks[0].Label, out var bounds);
-            _tickLabelHeight = bounds.Height;
             ApplyLabelRotationIfNeeded(context, plotWidth);
             return;
         }
@@ -256,7 +260,6 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         if (spacing <= 0 || double.IsInfinity(spacing) || double.IsNaN(spacing)) {
             _cachedTicks.Add(new AxisTick(min, minLabel));
             _cachedTicks.Add(new AxisTick(max, maxLabel));
-            _tickLabelHeight = Math.Max(minBounds.Height, maxBounds.Height);
             ApplyLabelRotationIfNeeded(context, plotWidth);
             return;
         }
@@ -277,7 +280,6 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             _cachedTicks.Add(new AxisTick(max, maxLabel));
         }
 
-        _tickLabelHeight = Math.Max(minBounds.Height, maxBounds.Height);
         ApplyLabelRotationIfNeeded(context, plotWidth);
     }
 
@@ -288,8 +290,6 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
         if (Math.Abs(max - min) < double.Epsilon) {
             _cachedTicks.Add(new AxisTick(Math.Round(min), FormatLabel(ToLabelValue(Math.Round(min)), false)));
-            _textFont.MeasureText(_cachedTicks[0].Label, out var bounds);
-            _tickLabelHeight = bounds.Height;
             ApplyLabelRotationIfNeeded(context, plotWidth);
             return;
         }
@@ -324,7 +324,6 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         }
 
         EnsureZeroTick(min, max);
-        _tickLabelHeight = Math.Max(minBounds.Height, maxBounds.Height);
         ApplyLabelRotationIfNeeded(context, plotWidth);
 
         void AddDistinctTick(double tickValue) {
@@ -340,9 +339,8 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     private void BuildDateTimeTicks(NTRenderContext context, double min, double max, float plotWidth) {
         if (Math.Abs(max - min) < double.Epsilon) {
             _cachedTicks.Add(new AxisTick(min, FormatLabel(ToLabelValue(min), false)));
-            _textFont.MeasureText(_cachedTicks[0].Label, out var bounds);
-            _tickLabelHeight = bounds.Height;
             _activeDateGroupingLevel = NTDateGroupingLevel.Day;
+            UpdateTickLabelHeight(context);
             return;
         }
 
@@ -367,20 +365,13 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             }
         }
 
-        float maxHeight = 0f;
-        var sampleStep = Math.Max(1, _cachedTicks.Count / 24);
-        for (var i = 0; i < _cachedTicks.Count; i += sampleStep) {
-            _textFont.MeasureText(_cachedTicks[i].Label, out var bounds);
-            maxHeight = Math.Max(maxHeight, bounds.Height);
-        }
-        _tickLabelHeight = maxHeight <= 0f ? (_textFont.Size + (2f * context.Density)) : maxHeight;
         ApplyLabelRotationIfNeeded(context, plotWidth);
     }
 
     private void ApplyLabelRotationIfNeeded(NTRenderContext context, float plotWidth) {
         if (_cachedTicks.Count <= 1) {
             if (_tickLabelHeight <= 0f) {
-                _tickLabelHeight = _textFont.Size + (2f * context.Density);
+                UpdateTickLabelHeight(context);
             }
             return;
         }
@@ -388,30 +379,26 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         const int maxSamples = 24;
         var step = Math.Max(1, _cachedTicks.Count / maxSamples);
         float maxLabelWidth = 0f;
-        float maxLabelHeight = 0f;
 
         for (var i = 0; i < _cachedTicks.Count; i += step) {
             _textFont.MeasureText(_cachedTicks[i].Label, out var bounds);
             maxLabelWidth = Math.Max(maxLabelWidth, bounds.Width);
-            maxLabelHeight = Math.Max(maxLabelHeight, bounds.Height);
         }
 
         if ((_cachedTicks.Count - 1) % step != 0) {
             _textFont.MeasureText(_cachedTicks[^1].Label, out var bounds);
             maxLabelWidth = Math.Max(maxLabelWidth, bounds.Width);
-            maxLabelHeight = Math.Max(maxLabelHeight, bounds.Height);
         }
 
         var labelSlotWidth = plotWidth / Math.Max(1, _cachedTicks.Count - 1);
         if (maxLabelWidth + (5f * context.Density) > labelSlotWidth) {
-            _rotation = -45f;
-            var radians = Math.Abs(_rotation) * Math.PI / 180.0;
-            _tickLabelHeight = (float)((Math.Sin(radians) * maxLabelWidth) + (Math.Cos(radians) * maxLabelHeight));
-            return;
+            _rotation = RotatedLabelDegrees;
+        }
+        else {
+            _rotation = 0f;
         }
 
-        _rotation = 0f;
-        _tickLabelHeight = Math.Max(_tickLabelHeight, maxLabelHeight);
+        UpdateTickLabelHeight(context);
     }
 
     private (float MaxWidth, float MaxHeight) MeasureSampleLabels(NTRenderContext context, int start, int end, Func<int, string> labelFactory) {
@@ -583,6 +570,78 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         font.MeasureText(Title, out var bounds);
         return bounds.Height + (5 * context.Density);
     }
+
+    private void UpdateTickLabelHeight(NTRenderContext context) {
+        if (_cachedTicks.Count == 0) {
+            _tickLabelHeight = 0f;
+            return;
+        }
+
+        var maxLabelHeight = 0f;
+        for (var i = 0; i < _cachedTicks.Count; i++) {
+            var layout = GetTickLabelLayout(_cachedTicks[i].Label);
+            maxLabelHeight = Math.Max(maxLabelHeight, layout.Bounds.Height);
+        }
+
+        _tickLabelHeight = maxLabelHeight;
+    }
+
+    private TickLabelLayout GetTickLabelLayout(string label) {
+        _textFont.MeasureText(label, out var bounds);
+        if (_rotation == 0f) {
+            var centeredOffset = (bounds.Left + bounds.Right) / 2f;
+            return new TickLabelLayout(OffsetBounds(bounds, -centeredOffset), SKTextAlign.Center, 0f);
+        }
+
+        var rightAlignedBounds = OffsetBounds(bounds, -bounds.Right);
+        return new TickLabelLayout(RotateBounds(rightAlignedBounds, RotatedLabelDegrees), SKTextAlign.Right, RotatedLabelDegrees);
+    }
+
+    private static SKRect OffsetBounds(SKRect bounds, float deltaX) => new(bounds.Left + deltaX, bounds.Top, bounds.Right + deltaX, bounds.Bottom);
+
+    private static SKRect RotateBounds(SKRect bounds, float degrees) {
+        var radians = degrees * (MathF.PI / 180f);
+        var cos = MathF.Cos(radians);
+        var sin = MathF.Sin(radians);
+
+        var corners = new[] {
+            new SKPoint(bounds.Left, bounds.Top),
+            new SKPoint(bounds.Right, bounds.Top),
+            new SKPoint(bounds.Right, bounds.Bottom),
+            new SKPoint(bounds.Left, bounds.Bottom)
+        };
+
+        float minX = float.MaxValue;
+        float minY = float.MaxValue;
+        float maxX = float.MinValue;
+        float maxY = float.MinValue;
+
+        foreach (var corner in corners) {
+            var rotatedX = (corner.X * cos) - (corner.Y * sin);
+            var rotatedY = (corner.X * sin) + (corner.Y * cos);
+            minX = Math.Min(minX, rotatedX);
+            minY = Math.Min(minY, rotatedY);
+            maxX = Math.Max(maxX, rotatedX);
+            maxY = Math.Max(maxY, rotatedY);
+        }
+
+        return new SKRect(minX, minY, maxX, maxY);
+    }
+
+    private static float ClampLabelAnchorX(float desiredX, SKRect labelBounds, SKRect totalArea, float density) {
+        var horizontalPadding = 2f * density;
+        var minX = totalArea.Left + horizontalPadding - labelBounds.Left;
+        var maxX = totalArea.Right - horizontalPadding - labelBounds.Right;
+        if (minX > maxX) {
+            return desiredX;
+        }
+
+        return Math.Clamp(desiredX, minX, maxX);
+    }
+
+    private float GetTitleReservedHeight(float density) => string.IsNullOrEmpty(Title)
+        ? 0f
+        : _titleHeight.GetValueOrDefault() + (4f * density);
 
     public string FormatValue(object? value, bool forTooltip = false) => FormatLabel(value, forTooltip);
 
@@ -807,6 +866,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     }
 
     private readonly record struct AxisTick(double Value, string Label);
+    private readonly record struct TickLabelLayout(SKRect Bounds, SKTextAlign TextAlign, float RotationDegrees);
 
     private readonly record struct AxisCacheKey(
         bool IsCategorical,

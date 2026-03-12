@@ -182,7 +182,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 _lastBarRects.Add((rect, i, null, item, null, value, pointColor));
             }
             else if (segments.Count > 0) {
-                DrawSegmentedBar(context, rect, item, i, segments, pointColor, isPointHovered, pointAlphaFactor);
+                DrawSegmentedBar(context, renderArea, rect, item, i, value, segments, pointColor, isPointHovered, pointAlphaFactor);
             }
 
             if (ShowDataLabels && SegmentSelector is null) {
@@ -739,7 +739,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         return segments;
     }
 
-    private void DrawSegmentedBar(NTRenderContext context, SKRect rect, TData data, int dataIndex, IReadOnlyList<NTBarSegment> segments, SKColor fallbackColor, bool isPointHovered, float pointAlphaFactor) {
+    private void DrawSegmentedBar(NTRenderContext context, SKRect renderArea, SKRect rect, TData data, int dataIndex, decimal totalValue, IReadOnlyList<NTBarSegment> segments, SKColor fallbackColor, bool isPointHovered, float pointAlphaFactor) {
         if (rect.Width <= 0 || rect.Height <= 0 || segments.Count == 0) {
             return;
         }
@@ -774,6 +774,10 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 }
             }
 
+            if (ShowDataLabels) {
+                DrawSegmentTotalLabel(context, renderArea, rect, totalValue, fallbackColor, isHorizontal: false, pointAlphaFactor);
+            }
+
             return;
         }
 
@@ -804,6 +808,10 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             if (ShowDataLabels) {
                 DrawSegmentDataLabel(context, segmentRect, segment.Value, segmentColor, isHorizontal: true, segmentAlphaFactor);
             }
+        }
+
+        if (ShowDataLabels) {
+            DrawSegmentTotalLabel(context, renderArea, rect, totalValue, fallbackColor, isHorizontal: true, pointAlphaFactor);
         }
     }
 
@@ -838,6 +846,126 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var baselineY = segmentRect.MidY + (textHeight / 2f) - (1f * context.Density);
         var centerX = isHorizontal ? segmentRect.MidX : segmentRect.MidX;
         context.Canvas.DrawText(text, centerX, baselineY, SKTextAlign.Center, _labelFont, _labelPaint);
+    }
+
+    private void DrawSegmentTotalLabel(NTRenderContext context, SKRect renderArea, SKRect barRect, decimal value, SKColor accentColor, bool isHorizontal, float alphaFactor) {
+        var text = string.Format(DataLabelFormat, value);
+        var labelSize = DataLabelSize * context.Density;
+
+        _labelFont ??= new SKFont {
+            Embolden = true,
+            Typeface = context.DefaultFont.Typeface
+        };
+        _labelFont.Size = labelSize;
+
+        _labelPaint ??= new SKPaint {
+            IsAntialias = true
+        };
+        _labelPaint.Color = ApplyAlphaFactor(ResolveTotalLabelTextColor(accentColor), alphaFactor);
+
+        _labelFont.MeasureText(text, out var bounds);
+        var textWidth = bounds.Width;
+        var textHeight = bounds.Height;
+        var textPadding = 4f * context.Density;
+
+        if (isHorizontal) {
+            var baselineY = barRect.MidY + (textHeight / 2f) - (1f * context.Density);
+            var textX = barRect.Right + (6f * context.Density);
+
+            if (ShowDataLabelBackground) {
+                var bgRect = new SKRect(
+                    textX - textPadding,
+                    baselineY - textHeight - textPadding,
+                    textX + textWidth + textPadding,
+                    baselineY + textPadding);
+
+                if (bgRect.Right > renderArea.Right) {
+                    var shiftLeft = bgRect.Right - renderArea.Right;
+                    bgRect.Offset(-shiftLeft, 0f);
+                    textX -= shiftLeft;
+                }
+
+                if (bgRect.Left < renderArea.Left) {
+                    var shiftRight = renderArea.Left - bgRect.Left;
+                    bgRect.Offset(shiftRight, 0f);
+                    textX += shiftRight;
+                }
+
+                DrawDataLabelBackground(context, bgRect, accentColor, alphaFactor);
+            }
+            else if (textX + textWidth > renderArea.Right) {
+                textX = Math.Max(renderArea.Left, renderArea.Right - textWidth);
+            }
+
+            context.Canvas.DrawText(text, textX, baselineY, SKTextAlign.Left, _labelFont, _labelPaint);
+            return;
+        }
+
+        var baselineAbove = barRect.Top - (4f * context.Density);
+        var minBaseline = renderArea.Top + textHeight + textPadding;
+        if (baselineAbove < minBaseline) {
+            baselineAbove = minBaseline;
+        }
+
+        var centerX = barRect.MidX;
+        if (ShowDataLabelBackground) {
+            var bgRect = new SKRect(
+                centerX - (textWidth / 2f) - textPadding,
+                baselineAbove - textHeight - textPadding,
+                centerX + (textWidth / 2f) + textPadding,
+                baselineAbove + textPadding);
+
+            if (bgRect.Left < renderArea.Left) {
+                bgRect.Offset(renderArea.Left - bgRect.Left, 0f);
+            }
+
+            if (bgRect.Right > renderArea.Right) {
+                bgRect.Offset(renderArea.Right - bgRect.Right, 0f);
+            }
+
+            centerX = bgRect.MidX;
+            DrawDataLabelBackground(context, bgRect, accentColor, alphaFactor);
+        }
+        else {
+            centerX = Math.Clamp(centerX, renderArea.Left + (textWidth / 2f), renderArea.Right - (textWidth / 2f));
+        }
+
+        context.Canvas.DrawText(text, centerX, baselineAbove, SKTextAlign.Center, _labelFont, _labelPaint);
+    }
+
+    private void DrawDataLabelBackground(NTRenderContext context, SKRect bgRect, SKColor accentColor, float alphaFactor) {
+        _labelBgPaint ??= new SKPaint {
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill
+        };
+        _labelBgPaint.Color = ApplyAlphaFactor(ResolveTotalLabelBackgroundColor(accentColor), alphaFactor);
+        context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBgPaint);
+
+        _labelBorderPaint ??= new SKPaint {
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = context.Density
+        };
+        _labelBorderPaint.Color = ApplyAlphaFactor(Chart.GetThemeColor(TnTColor.OutlineVariant), alphaFactor);
+        context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBorderPaint);
+    }
+
+    private SKColor ResolveTotalLabelTextColor(SKColor accentColor) {
+        if (DataLabelColor.HasValue) {
+            return Chart.GetThemeColor(DataLabelColor.Value);
+        }
+
+        return ShowDataLabelBackground
+            ? GetContrastTextColor(ResolveTotalLabelBackgroundColor(accentColor))
+            : Chart.GetSeriesTextColor(this);
+    }
+
+    private SKColor ResolveTotalLabelBackgroundColor(SKColor accentColor) {
+        if (DataLabelBackgroundColor.HasValue) {
+            return Chart.GetThemeColor(DataLabelBackgroundColor.Value);
+        }
+
+        return accentColor.WithAlpha(235);
     }
 
     private SKColor ResolveSegmentColor(TData data, int dataIndex, NTBarSegment segment, int segmentIndex, SKColor fallbackColor) {
