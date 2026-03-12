@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.6.0...v1.7.0) (2026-03-12)
+
+
+### Features
+
+* **chart:** improve axis label layout and segmented bar totals ([931d82e](https://github.com/NT-Technologies/NTComponents.Charts/commit/931d82e244c9074eb8af8909099f553a5d73260e))
+
 # [1.6.0](https://github.com/NT-Technologies/NTComponents.Charts/compare/v1.5.0...v1.6.0) (2026-03-11)
 
 
