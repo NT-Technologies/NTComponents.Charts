@@ -8,6 +8,9 @@ namespace NTComponents.Charts.Core;
 /// </summary>
 public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
 
+    /// <summary>
+    ///     Gets or sets the parent <see cref="NTChart{TData}"/> instance provided via cascading parameter.
+    /// </summary>
     [CascadingParameter]
     protected NTChart<TData> Chart { get; set; } = default!;
 
@@ -54,6 +57,7 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
     /// </summary>
     public SKPoint? FloatingOffset { get; set; }
 
+    /// <inheritdoc />
     protected override void OnInitialized() {
         base.OnInitialized();
         if (Chart is null) {
@@ -63,14 +67,17 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
         Chart.RegisterRenderable(this);
     }
 
+    /// <inheritdoc />
     public void Dispose() {
         _font?.Dispose();
         Chart?.UnregisterLegend(this);
         Chart?.UnregisterRenderable(this);
     }
 
+    /// <inheritdoc />
     public RenderOrdered RenderOrder => RenderOrdered.Legend;
 
+    /// <inheritdoc />
     public void Invalidate() {
         _font?.Dispose();
         _font = null;

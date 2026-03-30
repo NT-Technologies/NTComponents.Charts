@@ -4,16 +4,20 @@
         <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
+        <LangVersion>latest</LangVersion>
         <PackageId>NTComponents.Charts</PackageId>
         <Title>NTComponents.Charts</Title>
         <Description>Charts package for NTComponents with interactive Blazor visualizations powered by SkiaSharp.</Description>
         <Authors>NT Technologies</Authors>
+        <Company>NT Technologies</Company>
+        <PackageProjectUrl>https://github.com/NT-Technologies/NTComponents.Charts</PackageProjectUrl>
         <RepositoryUrl>https://github.com/NT-Technologies/NTComponents.Charts</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PackageTags>blazor;charts;visualization;skia;ntcomponents</PackageTags>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
         <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+        <PackageIcon>Logo.png</PackageIcon>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<EnforceCodeStyleInBuild>True</EnforceCodeStyleInBuild>
 		<WarningLevel>8</WarningLevel>
@@ -27,10 +31,11 @@
     <ItemGroup>
         <None Include="..\README.md" Pack="true" PackagePath="\" />
         <None Include="..\LICENSE.txt" Pack="true" PackagePath="\" />
+        <None Include="..\Logo.png" Pack="true" PackagePath="\" />
     </ItemGroup>
 	
     <ItemGroup>
-		<PackageReference Include="AspNetCore.SassCompiler" Version="1.97.1" />
+		<PackageReference Include="AspNetCore.SassCompiler" Version="1.98.0" />
 		<PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.2" />
 		<PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" Version="3.119.2" />
 		<PackageReference Include="SkiaSharp.Views.Blazor" Version="3.119.2" />
@@ -46,13 +51,13 @@
 	
 	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
 		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly">
-			<Version>9.0.13</Version>
+			<Version>9.0.14</Version>
 		</PackageReference>
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
 		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly">
-			<Version>10.0.3</Version>
+			<Version>10.0.5</Version>
 		</PackageReference>
 	</ItemGroup>
 

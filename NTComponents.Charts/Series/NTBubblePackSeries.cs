@@ -11,11 +11,17 @@ namespace NTComponents.Charts;
 ///     Context used by <see cref="NTBubblePackSeries{TData}.ColorSelector"/> to choose a bubble color.
 /// </summary>
 public sealed class BubbleColorContext<TData> where TData : class {
+    /// <summary>Gets the zero-based nesting depth of this bubble in the hierarchy.</summary>
     public required int Depth { get; init; }
+    /// <summary>Gets a value indicating whether this bubble represents a group node rather than a leaf data item.</summary>
     public required bool IsGroup { get; init; }
+    /// <summary>Gets the key string identifying this bubble (group name or leaf label).</summary>
     public required string Key { get; init; }
+    /// <summary>Gets the ordered list of ancestor keys forming the path from the root to this bubble.</summary>
     public required IReadOnlyList<string> Path { get; init; }
+    /// <summary>Gets the aggregated value associated with this bubble.</summary>
     public required decimal Value { get; init; }
+    /// <summary>Gets the bound data item for leaf bubbles, or <see langword="null"/> for group nodes.</summary>
     public TData? Data { get; init; }
 }
 
@@ -27,6 +33,9 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     private const float MinZoomScale = 0.45f;
     private const float MaxZoomScale = 3.2f;
 
+    /// <summary>
+    ///     Gets or sets the selector that extracts the numeric value used to size each bubble from a data item.
+    /// </summary>
     [Parameter]
     public Func<TData, decimal> ValueSelector { get; set; } = _ => 0;
 
@@ -54,27 +63,51 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     [Parameter]
     public Func<BubbleColorContext<TData>, TnTColor>? ColorSelector { get; set; }
 
+    /// <summary>
+    ///     Gets or sets the composite format string used to format data values in bubble labels (e.g., <c>"{0:N0}"</c>).
+    /// </summary>
     [Parameter]
     public string DataLabelFormat { get; set; } = "{0:N0}";
 
+    /// <summary>
+    ///     Gets or sets a value indicating whether labels are rendered inside bubbles.
+    /// </summary>
     [Parameter]
     public bool ShowLabels { get; set; } = true;
 
+    /// <summary>
+    ///     Gets or sets a value indicating whether the numeric value is appended to the bubble label.
+    /// </summary>
     [Parameter]
     public bool ShowValuesInLabels { get; set; } = false;
 
+    /// <summary>
+    ///     Gets or sets the minimum font size (in points) used when scaling labels to fit inside a bubble.
+    /// </summary>
     [Parameter]
     public float MinLabelFontSize { get; set; } = 8f;
 
+    /// <summary>
+    ///     Gets or sets the maximum font size (in points) used when scaling labels to fit inside a bubble.
+    /// </summary>
     [Parameter]
     public float MaxLabelFontSize { get; set; } = 26f;
 
+    /// <summary>
+    ///     Gets or sets the minimum radius (in pixels) for any rendered bubble.
+    /// </summary>
     [Parameter]
     public float MinBubbleRadius { get; set; } = 14f;
 
+    /// <summary>
+    ///     Gets or sets the maximum radius (in pixels) for any rendered bubble.
+    /// </summary>
     [Parameter]
     public float MaxBubbleRadius { get; set; } = 120f;
 
+    /// <summary>
+    ///     Gets or sets the gap (in pixels) maintained between adjacent bubbles during packing.
+    /// </summary>
     [Parameter]
     public float BubbleSpacing { get; set; } = 2f;
 
@@ -96,6 +129,9 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     [Parameter]
     public float LabelPadding { get; set; } = 12f;
 
+    /// <summary>
+    ///     Gets or sets a value indicating whether clicking a group bubble drills down into it.
+    /// </summary>
     [Parameter]
     public bool EnableDrilldown { get; set; } = true;
 
@@ -105,15 +141,27 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     [Parameter]
     public bool ConstrainToCanvas { get; set; } = false;
 
+    /// <summary>
+    ///     Gets or sets a value indicating whether the breadcrumb navigation bar is rendered above the chart.
+    /// </summary>
     [Parameter]
     public bool ShowNavigation { get; set; } = true;
 
+    /// <summary>
+    ///     Gets or sets a value indicating whether a visual drill-indicator chevron is rendered on drillable group bubbles.
+    /// </summary>
     [Parameter]
     public bool ShowDrillIndicator { get; set; } = true;
 
+    /// <summary>
+    ///     Gets or sets the label shown on the navigation back button.
+    /// </summary>
     [Parameter]
     public string BackText { get; set; } = "Back";
 
+    /// <summary>
+    ///     Gets or sets the height (in density-independent pixels) of the navigation bar.
+    /// </summary>
     [Parameter]
     public float NavigationHeight { get; set; } = 30f;
 
@@ -147,9 +195,15 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     [Parameter]
     public float ThrowStrength { get; set; } = 1f;
 
+    /// <summary>
+    ///     Gets or sets the number of physics integration sub-steps performed per frame for improved collision accuracy.
+    /// </summary>
     [Parameter]
     public int PhysicsSubsteps { get; set; } = 2;
 
+    /// <summary>
+    ///     Gets or sets optional child content used to nest deeper <see cref="NTBubblePackSeries{TData}"/> levels.
+    /// </summary>
     [Parameter]
     public RenderFragment? ChildContent { get; set; }
 
@@ -185,6 +239,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
 
     private readonly record struct DrillStep(string Key, string Label);
 
+    /// <inheritdoc />
     public override ChartCoordinateSystem CoordinateSystem => ChartCoordinateSystem.TreeMap;
 
     bool ITreeMapDrillableSeries.IsInDrilldown => EnableDrilldown && _drillPath.Count > 0;
@@ -261,6 +316,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         }
     }
 
+    /// <inheritdoc />
     protected override void OnDataChanged() {
         base.OnDataChanged();
         _root = null;
@@ -271,6 +327,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         NotifyNestedParentSeriesChanged();
     }
 
+    /// <inheritdoc />
     protected override void OnParametersSet() {
         EnsureZoomOnlyInteractions();
         base.OnParametersSet();
@@ -287,6 +344,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         }
     }
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder builder) {
         if (ChildContent is null) {
             return;
@@ -299,6 +357,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         builder.CloseComponent();
     }
 
+    /// <inheritdoc />
     public override SKRect Render(NTRenderContext context, SKRect renderArea) {
         if (renderArea.Width <= 0 || renderArea.Height <= 0 || Data is null) {
             return renderArea;
@@ -392,6 +451,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         return renderArea;
     }
 
+    /// <inheritdoc />
     public override void HandleMouseDown(MouseEventArgs e) {
         var pointView = ToCanvasPoint(e);
         if (!_lastSeriesArea.Contains(pointView)) {
@@ -421,6 +481,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         _lastDragUpdateUtc = DateTime.UtcNow;
     }
 
+    /// <inheritdoc />
     public override void HandleMouseMove(MouseEventArgs e) {
         if (_pointerDownNodeId is null) {
             return;
@@ -461,6 +522,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         _lastDragUpdateUtc = nowUtc;
     }
 
+    /// <inheritdoc />
     public override void HandleMouseUp(MouseEventArgs e) {
         if (_pointerDownNodeId is null) {
             return;
@@ -489,6 +551,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         _pointerDownNodeId = null;
     }
 
+    /// <inheritdoc />
     public override void HandleMouseWheel(WheelEventArgs e) {
         if ((!Interactions.HasFlag(ChartInteractions.XZoom) && !Interactions.HasFlag(ChartInteractions.YZoom)) ||
             _lastContentArea.Width <= 0f ||
@@ -517,12 +580,14 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         });
     }
 
+    /// <inheritdoc />
     public override void ResetView() {
         _zoomScaleX = 1f;
         _zoomScaleY = 1f;
         base.ResetView();
     }
 
+    /// <inheritdoc />
     public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
         var viewOrigin = new SKPoint(_lastContentArea.MidX, _lastContentArea.MidY);
         var worldPoint = ViewToWorld(point, viewOrigin);
@@ -581,6 +646,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         };
     }
 
+    /// <inheritdoc />
     protected override void Dispose(bool disposing) {
         if (disposing) {
             _bubblePaint?.Dispose();

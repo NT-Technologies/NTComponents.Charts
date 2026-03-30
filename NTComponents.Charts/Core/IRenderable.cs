@@ -7,6 +7,9 @@ using System.Threading.Tasks;
 
 namespace NTComponents.Charts.Core;
 
+/// <summary>
+///     Defines a component that participates in the chart's render pipeline and can draw onto the canvas.
+/// </summary>
 public interface IRenderable : IDisposable {
     /// <summary>
     ///   Gets the render order of this component.

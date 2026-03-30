@@ -12,6 +12,9 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
    /// <inheritdoc />
    public override ChartCoordinateSystem CoordinateSystem => ChartCoordinateSystem.Circular;
 
+   /// <summary>
+   ///     Gets or sets the function that extracts the numeric value from a data item.
+   /// </summary>
    [Parameter, EditorRequired]
    public Func<TData, decimal> ValueSelector { get; set; } = default!;
 
@@ -39,7 +42,6 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
 
    /// <summary>
    ///     Gets or sets the format for the data labels.
-
    /// </summary>
    [Parameter]
    public string DataLabelFormat { get; set; } = "{0:0.#}";
@@ -69,10 +71,14 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
    [Parameter]
    public float InnerRadiusRatio { get; set; } = 0f;
 
+   /// <summary>
+   ///     Gets the computed slice geometry information for the current data set.
+   /// </summary>
    protected List<PieSliceInfo> SliceInfos { get; } = new();
 
    private HashSet<int> _hiddenIndices = new();
 
+   /// <inheritdoc />
    protected override void OnDataChanged()
    {
       base.OnDataChanged();
@@ -120,6 +126,11 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
       }
    }
 
+   /// <summary>
+   ///     Computes <see cref="SliceInfos"/> for the current data set within the given render area,
+   ///     respecting hidden indices and animation progress.
+   /// </summary>
+   /// <param name="renderArea">The bounding rectangle available for rendering the chart.</param>
    protected void CalculateSlices(SKRect renderArea)
    {
       SliceInfos.Clear();
@@ -157,12 +168,20 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
       }
    }
 
+   /// <summary>
+   ///     Holds the computed geometry for a single pie or donut slice.
+   /// </summary>
    protected struct PieSliceInfo
    {
+      /// <summary>Gets or sets the zero-based index of this slice within the data collection.</summary>
       public int Index { get; set; }
+      /// <summary>Gets or sets the angle (in degrees) at which this slice starts, measured clockwise from 12 o'clock.</summary>
       public float StartAngle { get; set; }
+      /// <summary>Gets or sets the angular size (in degrees) of this slice.</summary>
       public float SweepAngle { get; set; }
+      /// <summary>Gets or sets the raw data value represented by this slice.</summary>
       public float Value { get; set; }
+      /// <summary>Gets or sets the data item associated with this slice.</summary>
       public TData Data { get; set; }
    }
 }

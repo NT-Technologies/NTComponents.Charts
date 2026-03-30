@@ -10,6 +10,9 @@ namespace NTComponents.Charts.Core.Axes;
 /// </summary>
 public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where TData : class {
 
+    /// <summary>
+    ///     Gets or sets the font size used for axis tick labels.
+    /// </summary>
     [Parameter]
     public float AxisFontSize { get; set; } = 12;
 
@@ -34,6 +37,9 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
     [Parameter]
     public string? Title { get; set; }
 
+    /// <summary>
+    ///     Gets or sets the font size used for the axis title.
+    /// </summary>
     [Parameter]
     public float TitleFontSize { get; set; } = 16;
 
@@ -43,6 +49,9 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
     [Parameter]
     public bool Visible { get; set; } = true;
 
+    /// <summary>
+    ///     Gets or sets the parent chart that owns this axis.
+    /// </summary>
     [CascadingParameter]
     protected IChart<TData> Chart { get; set; } = default!;
 
@@ -51,6 +60,7 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
         Chart = chart;
     }
 
+    /// <inheritdoc />
     public virtual void Dispose() {
         Chart?.UnregisterRenderable(this);
         GC.SuppressFinalize(this);
@@ -67,8 +77,15 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
     /// <returns>The space that would be left over in the <paramref name="renderArea"/> after rendering the axis.</returns>
     public virtual SKRect Measure(NTRenderContext context, SKRect renderArea) => renderArea;
 
+    /// <summary>
+    ///     Renders the axis onto the canvas within the given render area.
+    /// </summary>
+    /// <param name="context">The current frame's render context.</param>
+    /// <param name="renderArea">The available render area.</param>
+    /// <returns>The remaining render area after the axis has been drawn.</returns>
     public abstract SKRect Render(NTRenderContext context, SKRect renderArea);
 
+    /// <inheritdoc />
     protected override void OnInitialized() {
         base.OnInitialized();
         if (Chart is null) {

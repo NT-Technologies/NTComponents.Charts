@@ -25,6 +25,12 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
    private SKPaint? _areaPaint;
    private SKPath? _areaPath;
 
+   /// <summary>
+   ///    Renders the area series onto the provided canvas within the given render area.
+   /// </summary>
+   /// <param name="context">The rendering context containing the canvas and theme information.</param>
+   /// <param name="renderArea">The bounding rectangle available for rendering.</param>
+   /// <returns>The render area after rendering.</returns>
    public override SKRect Render(NTRenderContext context, SKRect renderArea) {
       //var canvas = context.Canvas;
       //if (Data == null || !Data.Any()) return renderArea;
@@ -61,6 +67,7 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
       return base.Render(context, renderArea);
    }
 
+   /// <inheritdoc />
    protected override void Dispose(bool disposing) {
       if (disposing) {
          _areaPaint?.Dispose();

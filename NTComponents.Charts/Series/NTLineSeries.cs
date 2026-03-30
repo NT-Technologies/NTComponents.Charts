@@ -97,6 +97,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     private RenderCacheKey? _cachedRenderKey;
     private (double MinX, double MaxX, NTDateGroupingLevel Level, AggregationMode Mode, decimal MinY, decimal MaxY)? _cachedGroupedRange;
 
+    /// <inheritdoc />
     protected override void Dispose(bool disposing) {
         if (disposing) {
             _linePaint?.Dispose();
@@ -109,6 +110,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         base.Dispose(disposing);
     }
 
+    /// <inheritdoc />
     protected override void OnDataChanged() {
         _cachedRenderPoints = null;
         _cachedRenderKey = null;
@@ -118,6 +120,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         base.OnDataChanged();
     }
 
+    /// <inheritdoc />
     public override void HandleMouseWheel(WheelEventArgs e) {
         base.HandleMouseWheel(e);
 
@@ -382,6 +385,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return lo;
     }
 
+    /// <inheritdoc />
     public override (decimal Min, decimal Max)? GetYRange(double? xMin = null, double? xMax = null) {
         if (!Chart.IsXAxisDateTime || !Chart.XAxis.EnableAutoDateGrouping) {
             return base.GetYRange(xMin, xMax);
@@ -632,6 +636,15 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return renderArea;
     }
 
+    /// <summary>
+    ///     Returns the screen-space points for this series within the given render area and axis range.
+    /// </summary>
+    /// <param name="renderArea">The bounding rectangle of the plot area.</param>
+    /// <param name="xMin">The minimum X axis value in data coordinates.</param>
+    /// <param name="xMax">The maximum X axis value in data coordinates.</param>
+    /// <param name="yMin">The minimum Y axis value in data coordinates.</param>
+    /// <param name="yMax">The maximum Y axis value in data coordinates.</param>
+    /// <returns>A list of <see cref="SKPoint"/> values mapped to screen coordinates.</returns>
     protected List<SKPoint> GetPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {
         var points = GetRenderPoints(renderArea, xMin, xMax, Chart.YAxis as NTAxisOptions<TData>, Chart.Density, out _);
         return points.Select(p => p.Point).ToList();
@@ -1215,6 +1228,11 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return (float)(left + (t * width));
     }
 
+    /// <summary>
+    ///     Builds an <see cref="SKPath"/> from the given screen-space points using the configured <see cref="Interpolation"/> mode.
+    /// </summary>
+    /// <param name="points">The ordered list of screen-space points to connect.</param>
+    /// <returns>An <see cref="SKPath"/> that traces through the points.</returns>
     protected SKPath BuildPath(List<SKPoint> points) {
         var path = new SKPath();
         if (points.Count < 2) {

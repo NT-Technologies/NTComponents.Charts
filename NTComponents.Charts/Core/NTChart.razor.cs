@@ -31,6 +31,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
     }
 
+    /// <inheritdoc />
     protected override void OnParametersSet() {
         base.OnParametersSet();
         if (TitleOptions is null) {
@@ -48,8 +49,15 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
     }
 
+    /// <summary>
+    ///     Gets the X axis registered with this chart.
+    /// </summary>
     public INTXAxis<TData> XAxis { get; private set; }
 
+    /// <summary>
+    ///     Registers an X axis with the chart. Only one X axis may be registered at a time.
+    /// </summary>
+    /// <param name="axis">The X axis to register.</param>
     public void RegisterAxis(INTXAxis<TData> axis) {
         ArgumentNullException.ThrowIfNull(axis, nameof(axis));
         if (!ReferenceEquals(XAxis, _defaultXAxis)) {
@@ -59,6 +67,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         XAxis = axis;
     }
 
+    /// <summary>
+    ///     Unregisters the given X axis from the chart, restoring the default X axis.
+    /// </summary>
+    /// <param name="axis">The X axis to unregister.</param>
     public void UnregisterAxis(INTXAxis<TData> axis) {
         if (ReferenceEquals(XAxis, axis)) {
             XAxis = _defaultXAxis;
@@ -67,9 +79,19 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private readonly INTYAxis<TData> _defaultYAxis;
     private readonly INTXAxis<TData> _defaultXAxis;
 
+    /// <summary>
+    ///     Gets the primary Y axis registered with this chart.
+    /// </summary>
     public INTYAxis<TData> YAxis { get; private set; }
+
+    /// <summary>
+    ///     Gets the secondary Y axis registered with this chart, if any.
+    /// </summary>
     public INTYAxis<TData>? SecondaryYAxis { get; private set; }
 
+    /// <summary>
+    ///     Initializes a new instance of <see cref="NTChart{TData}" /> with default X and Y axes.
+    /// </summary>
     public NTChart() {
         _defaultYAxis = new NTYAxisOptions<TData, decimal> {
             ValueSelector = _ => 0m
@@ -83,6 +105,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         AttachDefaultAxes();
     }
 
+    /// <summary>
+    ///     Registers a Y axis with the chart. A primary and optional secondary Y axis are supported.
+    /// </summary>
+    /// <param name="axis">The Y axis to register.</param>
     public void RegisterAxis(INTYAxis<TData> axis) {
         ArgumentNullException.ThrowIfNull(axis, nameof(axis));
         if (ReferenceEquals(YAxis, _defaultYAxis)) {
@@ -96,6 +122,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
     }
 
+    /// <summary>
+    ///     Unregisters the given Y axis from the chart, promoting the secondary axis to primary if needed.
+    /// </summary>
+    /// <param name="axis">The Y axis to unregister.</param>
     public void UnregisterAxis(INTYAxis<TData> axis) {
         if (ReferenceEquals(YAxis, axis)) {
             if (SecondaryYAxis is not null) {
@@ -132,6 +162,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
         _defaultAxesAttached = true;
     }
+    /// <summary>
+    ///     Registers a renderable object so it participates in the chart's render pipeline.
+    /// </summary>
+    /// <param name="renderable">The renderable to register.</param>
     public void RegisterRenderable(IRenderable renderable) {
         ArgumentNullException.ThrowIfNull(renderable, nameof(renderable));
         var list =
@@ -141,11 +175,18 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             _invalidate = true;
         }
     }
+    /// <summary>
+    ///     Unregisters a renderable object from the chart's render pipeline.
+    /// </summary>
+    /// <param name="renderable">The renderable to unregister.</param>
     public void UnregisterRenderable(IRenderable renderable) {
         _renderablesByOrder[renderable.RenderOrder].Remove(renderable);
         _invalidate = true;
     }
 
+    /// <summary>
+    ///     Invalidates all registered renderables, forcing a full redraw on the next paint cycle.
+    /// </summary>
     public void Invalidate() {
         foreach (var renderable in _renderablesByOrder.SelectMany(kvp => kvp.Value)) {
             renderable.Invalidate();
@@ -159,6 +200,9 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     [Parameter]
     public bool AllowExport { get; set; } = true;
 
+    /// <summary>
+    ///     Gets or sets the background color of the chart canvas.
+    /// </summary>
     [Parameter]
     public TnTColor BackgroundColor { get; set; } = TnTColor.Surface;
 
@@ -190,6 +234,9 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         .AddFromAdditionalAttributes(AdditionalAttributes)
         .Build();
 
+    /// <summary>
+    ///     Gets or sets whether to use GPU-accelerated (WebGL) rendering when available.
+    /// </summary>
     [Parameter]
     public bool EnableHardwareAcceleration { get; set; } = true;
 
@@ -243,15 +290,32 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     [Parameter]
     public TnTColor TooltipTextColor { get; set; } = TnTColor.OnSurfaceVariant;
 
+    /// <summary>
+    ///     Gets the bold default font used for chart titles and labels.
+    /// </summary>
     public SKFont DefaultFont => _defaultFont ??= CreateFont(
         "Roboto",
         SKFontStyleWeight.Bold,
         fallbackWeight: SKFontStyleWeight.Normal);
+    /// <summary>
+    ///     Gets the data point currently under the mouse cursor, or <see langword="null" /> if none.
+    /// </summary>
     public TData? HoveredDataPoint { get; private set; }
     internal LegendItemInfo<TData>? HoveredLegendItem { get; private set; }
+
+    /// <summary>
+    ///     Gets the zero-based index of the data point currently hovered, or <see langword="null" /> if none.
+    /// </summary>
     public int? HoveredPointIndex { get; private set; }
+
+    /// <summary>
+    ///     Gets the series that contains the currently hovered data point, or <see langword="null" /> if none.
+    /// </summary>
     public NTBaseSeries<TData>? HoveredSeries { get; private set; }
 
+    /// <summary>
+    ///     Gets a value indicating whether the X axis of any series uses <see cref="DateTime" /> values.
+    /// </summary>
     public bool IsXAxisDateTime {
         get {
             foreach (var s in Series) {
@@ -268,13 +332,26 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     internal bool IsXZoomEnabled => Series.Any(s => s.Interactions.HasFlag(ChartInteractions.XZoom));
     internal bool IsYPanEnabled => Series.Any(s => s.Interactions.HasFlag(ChartInteractions.YPan));
     internal bool IsYZoomEnabled => Series.Any(s => s.Interactions.HasFlag(ChartInteractions.YZoom));
+    /// <summary>
+    ///     Gets the <see cref="NTLegend{TData}" /> registered with this chart, or <see langword="null" /> if none.
+    /// </summary>
     public NTLegend<TData>? Legend { get; private set; }
+
+    /// <summary>
+    ///     Gets the medium-weight regular font used for axis labels and other secondary text.
+    /// </summary>
     public SKFont RegularFont => _regularFont ??= CreateFont(
         "Roboto",
         SKFontStyleWeight.Medium,
         fallbackWeight: SKFontStyleWeight.Normal);
+    /// <summary>
+    ///     Gets the list of all series added to this chart.
+    /// </summary>
     public List<NTBaseSeries<TData>> Series { get; } = [];
 
+    /// <summary>
+    ///     Gets the CSS cursor style for the chart canvas based on current interaction state.
+    /// </summary>
     protected string CanvasStyle {
         get {
             if (_isDraggingLegend) {
@@ -293,9 +370,15 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
     }
 
+    /// <summary>
+    ///     Gets the JavaScript runtime used for JS interop operations.
+    /// </summary>
     [Inject]
     protected IJSRuntime JSRuntime { get; set; } = default!;
 
+    /// <summary>
+    ///     Gets the last recorded mouse position in device pixels, or <see langword="null" /> if the mouse is outside the chart.
+    /// </summary>
     public SKPoint? LastMousePosition { get; private set; }
     internal SKRect LastPlotArea { get; private set; }
     private SKFont? _defaultFont;
@@ -305,8 +388,14 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private List<object>? _cachedAllX;
     private List<object>? _cachedAllY;
     private Dictionary<object, int>? _cachedXIndexMap;
+    /// <summary>
+    ///     Gets the device pixel ratio (physical-to-logical pixel density) of the display.
+    /// </summary>
     public float Density { get; private set; } = 1.0f;
 
+    /// <summary>
+    ///     Returns the active date-grouping level based on the current X-axis view range and available canvas width.
+    /// </summary>
     public NTDateGroupingLevel GetActiveDateGroupingLevel() {
         if (!IsXAxisDateTime || !XAxis.EnableAutoDateGrouping) {
             return NTDateGroupingLevel.None;
@@ -351,8 +440,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private (decimal Min, decimal Max) _frameSecondaryYRange;
 
     // Cached paints and fonts to avoid allocations in render loop
-    private SKPaint? _errorPaint;
-    private SKFont? _errorFont;
     private SKPaint? _debugBgPaint;
     private SKPaint? _debugTextPaint;
     private SKFont? _debugFont;
@@ -451,6 +538,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         return _cachedAllY;
     }
 
+    /// <summary>
+    ///     Converts a raw X data value to a scaled numeric coordinate used for rendering.
+    /// </summary>
+    /// <param name="originalX">The original X value from the data source.</param>
+    /// <returns>A <see cref="double" /> representing the scaled X coordinate.</returns>
     public double GetScaledXValue(object? originalX) {
         if (originalX == null) {
             return 0;
@@ -470,6 +562,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         return originalX is IConvertible convertible ? convertible.ToDouble(null) : 0;
     }
 
+    /// <summary>
+    ///     Converts a raw Y data value to a scaled decimal coordinate used for rendering.
+    /// </summary>
+    /// <param name="originalY">The original Y value from the data source.</param>
+    /// <returns>A <see cref="decimal" /> representing the scaled Y coordinate.</returns>
     public decimal GetScaledYValue(object? originalY) {
         if (originalY == null) {
             return 0;
@@ -481,6 +578,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         return originalY is IConvertible convertible ? convertible.ToDecimal(null) : 0;
     }
 
+    /// <summary>
+    ///     Calculates the X data range for the given axis across all visible cartesian series.
+    /// </summary>
+    /// <param name="axis">The axis whose range to calculate, or <see langword="null" /> to use the current X axis.</param>
+    /// <param name="padded">When <see langword="true" />, applies <see cref="RangePadding" /> to the result.</param>
+    /// <returns>A tuple containing the minimum and maximum X values.</returns>
     public (double Min, double Max) GetXRange(NTAxisOptions<TData>? axis, bool padded = false) {
         var cartesianSeries = Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible).ToList();
         if (!cartesianSeries.Any()) {
@@ -586,6 +689,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         return NormalizeRange(dataMin - rangePadding, dataMax + rangePadding);
     }
 
+    /// <summary>
+    ///     Calculates the Y data range for the given axis across all visible cartesian series.
+    /// </summary>
+    /// <param name="axis">The axis whose range to calculate, or <see langword="null" /> to use the primary Y axis.</param>
+    /// <param name="padded">When <see langword="true" />, applies <see cref="RangePadding" /> to the result.</param>
+    /// <returns>A tuple containing the minimum and maximum Y values.</returns>
     public (decimal Min, decimal Max) GetYRange(NTAxisOptions<TData>? axis, bool padded = false) {
         var useSecondaryAxis = axis is not null && SecondaryYAxis is not null && ReferenceEquals(axis, SecondaryYAxis);
         var absoluteMinimum = (axis as INTYAxis<TData>)?.AbsoluteMinimum;
@@ -675,6 +784,9 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
         return NormalizeYRange(min - rangePadding, max + rangePadding, absoluteMinimum);
     }
+    /// <summary>
+    ///     Invoked by the browser when the active theme changes; resolves updated theme colors and triggers a redraw.
+    /// </summary>
     [JSInvokable]
     public async Task OnThemeChanged() {
         await ResolveColorsAsync();
@@ -709,6 +821,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         StateHasChanged();
     }
 
+    /// <summary>
+    ///     Converts a data X value to a canvas X pixel coordinate within the given plot area.
+    /// </summary>
+    /// <param name="x">The scaled X value to convert.</param>
+    /// <param name="plotArea">The bounding rectangle of the plot area on the canvas.</param>
+    /// <returns>The pixel X coordinate as a <see cref="float" />.</returns>
     public float ScaleX(double x, SKRect plotArea) {
         var (min, max) = GetScaleXRange();
         var scale = (XAxis as NTAxisOptions<TData>)?.Scale ?? NTAxisScale.Linear;
@@ -734,6 +852,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         return (float)(left + (t * width));
     }
 
+    /// <summary>
+    ///     Converts a canvas X pixel coordinate back to a data X value.
+    /// </summary>
+    /// <param name="coord">The pixel X coordinate on the canvas.</param>
+    /// <param name="plotArea">The bounding rectangle of the plot area on the canvas.</param>
+    /// <returns>The corresponding data X value as a <see cref="double" />.</returns>
     public double ScaleXInverse(float coord, SKRect plotArea) {
         var (min, max) = GetScaleXRange();
         var scale = (XAxis as NTAxisOptions<TData>)?.Scale ?? NTAxisScale.Linear;
@@ -754,6 +878,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
 
 
+    /// <summary>
+    ///     Converts a data Y value to a canvas Y pixel coordinate using the primary Y axis.
+    /// </summary>
+    /// <param name="y">The decimal Y value to convert.</param>
+    /// <param name="plotArea">The bounding rectangle of the plot area on the canvas.</param>
+    /// <returns>The pixel Y coordinate as a <see cref="float" />.</returns>
     public float ScaleY(decimal y, SKRect plotArea) => ScaleY(y, YAxis as NTAxisOptions<TData>, plotArea);
 
     private float ScaleY(decimal y, NTAxisOptions<TData>? axis, SKRect plotArea) {
@@ -828,6 +958,9 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
 
 
+    /// <summary>
+    ///     Gets or sets the title configuration for the chart. Set to <see langword="null" /> to hide the title.
+    /// </summary>
     [Parameter]
     public NTTitleOptions? TitleOptions { get; set; }
 
@@ -939,6 +1072,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         return luminance > 128 ? SKColors.Black : SKColors.White;
     }
 
+    /// <summary>
+    ///     Resolves a <see cref="TnTColor" /> enum value to its corresponding SkiaSharp <see cref="SKColor" />.
+    /// </summary>
+    /// <param name="color">The theme color to resolve.</param>
+    /// <returns>The resolved <see cref="SKColor" />, or <see cref="SKColors.Black" /> if not yet resolved.</returns>
     public SKColor GetThemeColor(TnTColor color) => _resolvedColors.TryGetValue(color, out var skColor) ? skColor : SKColors.Black;
 
     internal void UnregisterSeries(NTBaseSeries<TData> series) {
@@ -954,12 +1092,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         _cachedXIndexMap = null;
     }
 
+    /// <inheritdoc />
     protected override void Dispose(bool disposing) {
         if (disposing) {
             _defaultFont?.Dispose();
             _regularFont?.Dispose();
-            _errorPaint?.Dispose();
-            _errorFont?.Dispose();
             _debugBgPaint?.Dispose();
             _debugTextPaint?.Dispose();
             _debugFont?.Dispose();
@@ -974,6 +1111,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         base.Dispose(disposing);
     }
 
+    /// <inheritdoc />
     protected override async ValueTask DisposeAsyncCore() {
         _objRef?.Dispose();
         if (_wheelListener != null) {
@@ -989,6 +1127,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
     }
 
+    /// <inheritdoc />
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
             Density = await JSRuntime.InvokeAsync<float>("eval", "window.devicePixelRatio || 1");
@@ -1005,6 +1144,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
     }
 
+    /// <summary>
+    ///     Invoked by the JavaScript wheel event handler with native wheel event data.
+    /// </summary>
+    /// <param name="e">The native wheel event arguments from the browser.</param>
     [JSInvokable]
     public void OnNativeWheel(NTNativeWheelEventArgs e) {
         OnWheel(new WheelEventArgs {
@@ -1020,6 +1163,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         });
     }
 
+    /// <summary>
+    ///     Handles a mouse click on the chart canvas, dispatching to legend items or series as appropriate.
+    /// </summary>
+    /// <param name="e">The mouse event arguments.</param>
     protected virtual void OnClick(MouseEventArgs e) {
         if (_hasDraggedLegend) {
             _hasDraggedLegend = false;
@@ -1066,6 +1213,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
     }
 
+    /// <summary>
+    ///     Handles a mouse button press on the chart canvas, initiating panning or legend drag as appropriate.
+    /// </summary>
+    /// <param name="e">The mouse event arguments.</param>
     protected virtual void OnMouseDown(MouseEventArgs e) {
         var point = new SKPoint((float)e.OffsetX * Density, (float)e.OffsetY * Density);
 
@@ -1119,6 +1270,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         RequestUiRefresh();
     }
 
+    /// <summary>
+    ///     Handles mouse movement over the chart canvas, updating hover state, panning, and legend dragging.
+    /// </summary>
+    /// <param name="e">The mouse event arguments.</param>
     protected virtual void OnMouseMove(MouseEventArgs e) {
         var nextMousePosition = new SKPoint((float)e.OffsetX * Density, (float)e.OffsetY * Density);
         var hadLastMousePosition = LastMousePosition.HasValue;
@@ -1166,6 +1321,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
     }
 
+    /// <summary>
+    ///     Handles the mouse leaving the chart canvas, clearing all hover and interaction state.
+    /// </summary>
+    /// <param name="e">The mouse event arguments.</param>
     protected virtual void OnMouseOut(MouseEventArgs e) {
         if (_lastHoverNotifiedSeries is not null) {
             _lastHoverNotifiedSeries.NotifyHoverLeave(new NTSeriesHoverLeaveEventArgs<TData> {
@@ -1186,6 +1345,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         RequestUiRefresh(force: true);
     }
 
+    /// <summary>
+    ///     Handles a mouse button release on the chart canvas, finalizing panning or legend drag.
+    /// </summary>
+    /// <param name="e">The mouse event arguments.</param>
     protected virtual void OnMouseUp(MouseEventArgs e) {
         var visibleSeries = Series.Where(s => s.IsEffectivelyVisible).ToList();
         var callbackLeaderIndex = FindInteractionCallbackLeaderIndex(visibleSeries, ChartInteractions.XPan | ChartInteractions.YPan);
@@ -1203,8 +1366,16 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         RequestUiRefresh();
     }
 
+    /// <summary>
+    ///     Handles the SkiaSharp WebGL paint surface event by forwarding to the core paint method.
+    /// </summary>
+    /// <param name="e">The GL surface paint event arguments.</param>
     protected void OnPaintSurface(SKPaintGLSurfaceEventArgs e) => OnPaintSurface(e.Surface.Canvas, e.Info);
 
+    /// <summary>
+    ///     Handles the SkiaSharp software paint surface event by forwarding to the core paint method.
+    /// </summary>
+    /// <param name="e">The software surface paint event arguments.</param>
     protected void OnPaintSurface(SKPaintSurfaceEventArgs e) => OnPaintSurface(e.Surface.Canvas, e.Info);
 
     /// <summary>
@@ -1415,12 +1586,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         if (!ReferenceEquals(_lastHoverNotifiedSeries, hoveredSeries) ||
             _lastHoverNotifiedPointIndex != hoveredPointIndex ||
             !string.Equals(_lastHoverNotifiedLegendKey, hoveredLegendKey, StringComparison.Ordinal)) {
-            if (_lastHoverNotifiedSeries is not null) {
-                _lastHoverNotifiedSeries.NotifyHoverLeave(new NTSeriesHoverLeaveEventArgs<TData> {
-                    Series = _lastHoverNotifiedSeries,
-                    PointIndex = _lastHoverNotifiedPointIndex
-                });
-            }
+            _lastHoverNotifiedSeries?.NotifyHoverLeave(new NTSeriesHoverLeaveEventArgs<TData> {
+                Series = _lastHoverNotifiedSeries,
+                PointIndex = _lastHoverNotifiedPointIndex
+            });
 
             hoveredSeries.NotifyHoverEnter(new NTSeriesHoverEnterEventArgs<TData> {
                 Series = hoveredSeries,
@@ -1797,6 +1966,10 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         context.Canvas.DrawText($"Render: {_lastRenderTimeMs:F2} ms", 10 * context.Density, 16 * context.Density, _debugFont, _debugTextPaint);
     }
 
+    /// <summary>
+    ///     Handles a mouse wheel event on the chart canvas, forwarding to all visible series for zoom handling.
+    /// </summary>
+    /// <param name="e">The wheel event arguments.</param>
     protected virtual void OnWheel(WheelEventArgs e) {
         var visibleSeries = Series.Where(s => s.IsEffectivelyVisible).ToList();
         var callbackLeaderIndex = FindInteractionCallbackLeaderIndex(visibleSeries, ChartInteractions.XZoom | ChartInteractions.YZoom);
@@ -1989,6 +2162,12 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
     }
 
+    /// <summary>
+    ///     Converts a canvas Y pixel coordinate back to a data Y value using the primary Y axis.
+    /// </summary>
+    /// <param name="coord">The pixel Y coordinate on the canvas.</param>
+    /// <param name="plotArea">The bounding rectangle of the plot area on the canvas.</param>
+    /// <returns>The corresponding data Y value as a <see cref="decimal" />.</returns>
     public decimal ScaleYInverse(float coord, SKRect plotArea) => ScaleYInverse(coord, YAxis as NTAxisOptions<TData>, plotArea);
 
     private (double Min, double Max) GetScaleXRange() {
@@ -2040,17 +2219,40 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         StateHasChanged();
     }
 
+    /// <summary>
+    ///     Represents native wheel event data passed from the JavaScript interop layer.
+    /// </summary>
     public sealed class NTNativeWheelEventArgs {
+        /// <summary>Gets the X offset of the pointer relative to the chart element.</summary>
         public double OffsetX { get; init; }
+
+        /// <summary>Gets the Y offset of the pointer relative to the chart element.</summary>
         public double OffsetY { get; init; }
+
+        /// <summary>Gets the horizontal wheel delta.</summary>
         public double DeltaX { get; init; }
+
+        /// <summary>Gets the vertical wheel delta.</summary>
         public double DeltaY { get; init; }
+
+        /// <summary>Gets a value indicating whether the Ctrl key was held during the wheel event.</summary>
         public bool CtrlKey { get; init; }
+
+        /// <summary>Gets a value indicating whether the Shift key was held during the wheel event.</summary>
         public bool ShiftKey { get; init; }
+
+        /// <summary>Gets a value indicating whether the Alt key was held during the wheel event.</summary>
         public bool AltKey { get; init; }
+
+        /// <summary>Gets a value indicating whether the Meta (Command/Windows) key was held during the wheel event.</summary>
         public bool MetaKey { get; init; }
     }
 
+    /// <summary>
+    ///     Determines whether any visible series has an active view range set for the given axis.
+    /// </summary>
+    /// <param name="axis">The axis to check for an active view range.</param>
+    /// <returns><see langword="true" /> if at least one series has a view range on the axis; otherwise <see langword="false" />.</returns>
     public bool HasViewRange(NTAxisOptions<TData> axis) {
         if (ReferenceEquals(axis, XAxis)) {
             return Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible).Any(s => s.GetViewXRange().HasValue);

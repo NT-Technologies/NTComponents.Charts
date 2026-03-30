@@ -86,6 +86,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         return (series.Count, index);
     }
 
+    /// <inheritdoc />
     protected override void Dispose(bool disposing) {
         if (disposing) {
             _barPaint?.Dispose();

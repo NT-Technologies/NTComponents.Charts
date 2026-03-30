@@ -10,6 +10,9 @@ namespace NTComponents.Charts;
 /// </summary>
 /// <typeparam name="TData">The type of the data.</typeparam>
 public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
+   /// <summary>
+   ///    Gets or sets the distance (in pixels) by which a slice is displaced from the center when exploded.
+   /// </summary>
    [Parameter]
    public float ExplosionDistance { get; set; } = 10f;
 
@@ -27,7 +30,7 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
 
    /// <summary>
    ///    Gets or sets the fixed inner radius (in device-independent pixels).
-   ///    If greater than zero, this value takes precedence over <see cref="InnerRadiusRatio"/>.
+   ///    If greater than zero, this value takes precedence over <see cref="NTCircularSeries{TData}.InnerRadiusRatio"/>.
    /// </summary>
    [Parameter]
    public float InnerRadius { get; set; } = 0f;
@@ -40,6 +43,7 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
    private SKPaint? _labelPaint;
    private SKFont? _labelFont;
 
+   /// <inheritdoc />
    public override SKRect Render(NTRenderContext context, SKRect renderArea) {
       CalculateSlices(renderArea);
       if (!SliceInfos.Any()) return renderArea;
@@ -223,6 +227,7 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
       context.Canvas.DrawText(text, lx, baselineY, SKTextAlign.Center, _labelFont, _labelPaint);
    }
 
+   /// <inheritdoc />
    protected override void Dispose(bool disposing) {
       if (disposing) {
          _slicePaint?.Dispose();
@@ -237,6 +242,7 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
       base.Dispose(disposing);
    }
 
+   /// <inheritdoc />
    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
       float radius = Math.Min(renderArea.Width, renderArea.Height) / 2f;
       float innerRadius = GetInnerRadius(radius, Chart.Density);

@@ -4,7 +4,27 @@ using NTComponents.Core;
 
 namespace NTComponents.Charts.Core;
 
+/// <summary>
+/// Provides extension methods for <see cref="NTRenderContext"/> to draw chart primitives
+/// such as data points and data labels onto a SkiaSharp canvas.
+/// </summary>
 public static class NTRenderContextExtensions {
+   /// <summary>
+   /// Draws a single data point on the chart canvas using the specified style, shape, and color.
+   /// </summary>
+   /// <typeparam name="TData">The type of data items bound to the chart.</typeparam>
+   /// <param name="context">The render context that provides canvas and density information.</param>
+   /// <param name="chart">The chart instance used to resolve theme colors.</param>
+   /// <param name="series">The series that owns the data point being drawn.</param>
+   /// <param name="x">The horizontal canvas coordinate of the point center.</param>
+   /// <param name="y">The vertical canvas coordinate of the point center.</param>
+   /// <param name="color">The fill or stroke color of the point.</param>
+   /// <param name="style">Determines whether the point is filled, outlined, or hidden.</param>
+   /// <param name="size">The logical (pre-density-scaled) diameter of the point.</param>
+   /// <param name="shape">The geometric shape used to render the point.</param>
+   /// <param name="strokeColor">
+   /// An optional stroke color applied when <paramref name="style"/> is <see cref="PointStyle.Outlined"/>.
+   /// </param>
    public static void DrawPoint<TData>(
        this NTRenderContext context,
        NTChart<TData> chart,
@@ -36,6 +56,17 @@ public static class NTRenderContextExtensions {
       }
    }
 
+   /// <summary>
+   /// Draws the geometric shape for a data point directly onto the provided <see cref="SKCanvas"/>.
+   /// This method handles the low-level shape rendering and is intended to be called after all
+   /// paint configuration has been applied.
+   /// </summary>
+   /// <param name="canvas">The SkiaSharp canvas to draw on.</param>
+   /// <param name="x">The horizontal canvas coordinate of the shape center.</param>
+   /// <param name="y">The vertical canvas coordinate of the shape center.</param>
+   /// <param name="scaledSize">The density-adjusted diameter of the shape.</param>
+   /// <param name="shape">The geometric shape to render.</param>
+   /// <param name="paint">The paint object that controls color, style, and anti-aliasing.</param>
    public static void DrawPointInternal(SKCanvas canvas, float x, float y, float scaledSize, PointShape shape, SKPaint paint) {
       var halfSize = scaledSize / 2;
 
@@ -68,6 +99,28 @@ public static class NTRenderContextExtensions {
       }
    }
 
+   /// <summary>
+   /// Draws a formatted data label near the specified canvas coordinates, optionally rendering
+   /// a rounded-rectangle background with a drop shadow and theme-colored border behind the text.
+   /// </summary>
+   /// <typeparam name="TData">The type of data items bound to the chart.</typeparam>
+   /// <param name="context">The render context that provides canvas, density, and font information.</param>
+   /// <param name="chart">The chart instance used to resolve theme and series colors.</param>
+   /// <param name="series">The series associated with the data point being labeled.</param>
+   /// <param name="x">The horizontal canvas coordinate at which the label is anchored.</param>
+   /// <param name="y">The vertical canvas coordinate at which the label is anchored.</param>
+   /// <param name="value">The numeric value to format and display as the label text.</param>
+   /// <param name="renderArea">The bounding rectangle of the chart's render area, used to clamp label position.</param>
+   /// <param name="format">A composite format string (e.g. <c>"{0:N2}"</c>) applied to <paramref name="value"/>.</param>
+   /// <param name="textColor">An optional override for the label text color; defaults to the series text color.</param>
+   /// <param name="fontSize">An optional override for the logical font size; defaults to 12.</param>
+   /// <param name="textAlign">Horizontal alignment of the label text relative to <paramref name="x"/>.</param>
+   /// <param name="showBackground">
+   /// When <see langword="true"/>, a filled rounded rectangle is drawn behind the label text.
+   /// </param>
+   /// <param name="backgroundColor">
+   /// An optional override for the background rectangle color; defaults to the series color.
+   /// </param>
    public static void DrawDataLabel<TData>(
        this NTRenderContext context,
        NTChart<TData> chart,

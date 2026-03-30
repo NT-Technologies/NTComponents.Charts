@@ -5,12 +5,22 @@ using SkiaSharp;
 
 namespace NTComponents.Charts.Core.Series;
 
+/// <summary>
+///     Base class for all cartesian (X/Y axis) chart series.
+/// </summary>
+/// <typeparam name="TData">The type of the data items.</typeparam>
 public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesianSeries where TData : class {
+    /// <summary>
+    ///     Represents a pre-scaled data point used for visibility and hit-testing calculations.
+    /// </summary>
     protected readonly record struct VisiblePoint(TData Data, int Index, double X);
 
     /// <inheritdoc />
     public override ChartCoordinateSystem CoordinateSystem => ChartCoordinateSystem.Cartesian;
 
+    /// <summary>
+    ///     Gets or sets the function that extracts the Y-axis value from a data item.
+    /// </summary>
     [Parameter, EditorRequired]
     public Func<TData, decimal> YValueSelector { get; set; } = default!;
 
@@ -198,9 +208,13 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     [Parameter]
     public TnTColor? DataLabelBackgroundColor { get; set; }
 
+    /// <summary>The minimum X value of the current view window, set by pan or zoom interactions.</summary>
     protected double? _viewXMin;
+    /// <summary>The maximum X value of the current view window, set by pan or zoom interactions.</summary>
     protected double? _viewXMax;
+    /// <summary>The minimum Y value of the current view window, set by pan or zoom interactions.</summary>
     protected decimal? _viewYMin;
+    /// <summary>The maximum Y value of the current view window, set by pan or zoom interactions.</summary>
     protected decimal? _viewYMax;
 
     private (double Min, double Max)? _cachedTotalXRange;
@@ -214,14 +228,17 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     private SKPaint? _labelBgPaint;
     private SKPaint? _labelBorderPaint;
     private SKFont? _labelFont;
-    private readonly SKPath? _trianglePath;
-    private readonly SKPath? _diamondPath;
 
+    /// <summary>Indicates whether a pan gesture is currently in progress.</summary>
     protected bool _isPanning;
+    /// <summary>The screen-space position where the current pan gesture began.</summary>
     protected SKPoint _panStartPoint;
+    /// <summary>The X-axis view range captured at the start of the pan gesture.</summary>
     protected (double Min, double Max)? _panStartXRange;
+    /// <summary>The Y-axis view range captured at the start of the pan gesture.</summary>
     protected (decimal Min, decimal Max)? _panStartYRange;
 
+    /// <inheritdoc />
     public override void HandleMouseDown(MouseEventArgs e) {
         var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
         if (Interactions.HasFlag(ChartInteractions.XPan) || Interactions.HasFlag(ChartInteractions.YPan)) {
@@ -240,6 +257,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         }
     }
 
+    /// <inheritdoc />
     public override void HandleMouseMove(MouseEventArgs e) {
         var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
         if (_isPanning && Chart.LastPlotArea != default) {
@@ -270,6 +288,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         }
     }
 
+    /// <inheritdoc />
     public override void HandleMouseUp(MouseEventArgs e) {
         if (_isPanning) {
             var point = new SKPoint((float)e.OffsetX * Chart.Density, (float)e.OffsetY * Chart.Density);
@@ -284,6 +303,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         _isPanning = false;
     }
 
+    /// <inheritdoc />
     public override void HandleMouseWheel(WheelEventArgs e) {
         if ((!Interactions.HasFlag(ChartInteractions.XZoom) && !Interactions.HasFlag(ChartInteractions.YZoom)) || Chart.LastPlotArea == default) {
             return;
@@ -326,6 +346,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         });
     }
 
+    /// <inheritdoc />
     public override void ResetView() {
         _viewXMin = null;
         _viewXMax = null;
@@ -334,7 +355,9 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         base.ResetView();
     }
 
+    /// <inheritdoc />
     public override (double Min, double Max)? GetViewXRange() => (_viewXMin.HasValue && _viewXMax.HasValue) ? (_viewXMin.Value, _viewXMax.Value) : null;
+    /// <inheritdoc />
     public override (decimal Min, decimal Max)? GetViewYRange() => (_viewYMin.HasValue && _viewYMax.HasValue) ? (_viewYMin.Value, _viewYMax.Value) : null;
 
     internal void SetViewXRange(double? min, double? max) {
@@ -350,6 +373,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     /// <inheritdoc />
     public override bool IsPanning => _isPanning;
 
+    /// <inheritdoc />
     protected override void Dispose(bool disposing) {
         if (disposing) {
             _pointPaint?.Dispose();
@@ -357,13 +381,14 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             _labelBgPaint?.Dispose();
             _labelBorderPaint?.Dispose();
             _labelFont?.Dispose();
-            _trianglePath?.Dispose();
-            _diamondPath?.Dispose();
         }
         base.Dispose(disposing);
     }
 
+    /// <summary>Gets or sets the animation start values used as the baseline when transitioning between data sets.</summary>
     protected decimal[]? AnimationStartValues { get; set; }
+
+    /// <summary>Gets or sets the current interpolated animation values during an in-progress transition.</summary>
     protected decimal[]? AnimationCurrentValues { get; set; }
 
     /// <inheritdoc />
@@ -380,6 +405,10 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         base.OnDataChanged();
     }
 
+    /// <summary>Returns the list of data points whose X values fall within the specified visible window, with optional overscan padding.</summary>
+    /// <param name="minX">The minimum X boundary of the visible window.</param>
+    /// <param name="maxX">The maximum X boundary of the visible window.</param>
+    /// <param name="overscan">Number of extra points to include beyond each edge for smooth rendering.</param>
     protected List<VisiblePoint> GetVisibleWindow(double minX, double maxX, int overscan = 1) {
         var points = GetSortedVisiblePoints();
         if (points.Count == 0) {
@@ -455,6 +484,15 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         return lo - 1;
     }
 
+    /// <summary>Renders a formatted data label at the specified canvas position.</summary>
+    /// <param name="context">The current render context.</param>
+    /// <param name="x">The X canvas coordinate for the label.</param>
+    /// <param name="y">The Y canvas coordinate for the label.</param>
+    /// <param name="value">The numeric value to format and display.</param>
+    /// <param name="renderArea">The bounding rectangle used to keep the label within the plot area.</param>
+    /// <param name="overrideColor">Optional color override; when set, the label is always drawn regardless of <c>ShowDataLabels</c>.</param>
+    /// <param name="overrideFontSize">Optional font size override.</param>
+    /// <param name="textAlign">The horizontal alignment of the label text.</param>
     protected void RenderDataLabel(NTRenderContext context, float x, float y, decimal value, SKRect renderArea, SKColor? overrideColor = null, float? overrideFontSize = null, SKTextAlign textAlign = SKTextAlign.Center) {
         if (overrideColor == null && !ShowDataLabels) {
             return;
@@ -522,6 +560,14 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         context.Canvas.DrawText(text, x, drawY, textAlign, _labelFont, _labelPaint);
     }
 
+    /// <summary>Renders a styled data point marker at the specified canvas position.</summary>
+    /// <param name="context">The current render context.</param>
+    /// <param name="x">The X canvas coordinate for the point.</param>
+    /// <param name="y">The Y canvas coordinate for the point.</param>
+    /// <param name="color">The fill or stroke color of the point.</param>
+    /// <param name="pointSize">Optional size override; defaults to the series <c>PointSize</c>.</param>
+    /// <param name="pointShape">Optional shape override; defaults to the series <c>PointShape</c>.</param>
+    /// <param name="strokeColor">Optional stroke color for outlined point styles.</param>
     protected void RenderPoint(NTRenderContext context, float x, float y, SKColor color, float? pointSize = null, PointShape? pointShape = null, SKColor? strokeColor = null) {
         if (PointStyle == PointStyle.None) {
             return;

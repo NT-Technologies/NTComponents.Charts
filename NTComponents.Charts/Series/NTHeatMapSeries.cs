@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Components;
+﻿using Microsoft.AspNetCore.Components;
 using NTComponents.Charts.Core.Series;
 using NTComponents.Charts.Core;
 using SkiaSharp;
@@ -10,12 +10,21 @@ namespace NTComponents.Charts;
 /// </summary>
 /// <typeparam name="TData">The type of the data.</typeparam>
 public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : class {
+   /// <summary>
+   ///    Gets or sets the selector that extracts the numeric weight value from a data item, used to determine cell intensity.
+   /// </summary>
    [Parameter, EditorRequired]
    public Func<TData, decimal> WeightSelector { get; set; } = default!;
 
+   /// <summary>
+   ///    Gets or sets the theme color applied to cells with the lowest weight value.
+   /// </summary>
    [Parameter]
    public TnTColor MinColor { get; set; } = TnTColor.SurfaceContainerLowest;
 
+   /// <summary>
+   ///    Gets or sets the theme color applied to cells with the highest weight value.
+   /// </summary>
    [Parameter]
    public TnTColor MaxColor { get; set; } = TnTColor.Primary;
 
@@ -27,12 +36,19 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
 
    private SKPaint? _cellPaint;
 
+   /// <summary>
+   ///    Renders the heatmap series onto the provided canvas within the given render area.
+   /// </summary>
+   /// <param name="context">The rendering context containing the canvas and theme information.</param>
+   /// <param name="renderArea">The bounding rectangle available for rendering.</param>
+   /// <returns>The render area after rendering.</returns>
    public override SKRect Render(NTRenderContext context, SKRect renderArea) {
     
 
       return renderArea;
    }
 
+   /// <inheritdoc />
    protected override void Dispose(bool disposing) {
       if (disposing) {
          _cellPaint?.Dispose();
@@ -49,6 +65,12 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
       return new SKColor(r, g, b, a);
    }
 
+   /// <summary>
+   ///    Performs a hit test against the rendered heatmap cells to identify which data item (if any) is at the given point.
+   /// </summary>
+   /// <param name="point">The point in screen coordinates to test.</param>
+   /// <param name="renderArea">The bounding rectangle used during the last render pass.</param>
+   /// <returns>The index and data item at the point, or <see langword="null"/> if no hit was found.</returns>
    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
   
 

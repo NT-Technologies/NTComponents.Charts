@@ -9,6 +9,9 @@ namespace NTComponents.Charts.Core;
 /// </summary>
 public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TData : class {
 
+    /// <summary>
+    ///     Gets or sets the parent chart instance provided via cascading parameter.
+    /// </summary>
     [CascadingParameter]
     protected IChart<TData> Chart { get; set; } = default!;
 
@@ -36,6 +39,7 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
     [Parameter]
     public bool ShowSeriesLabels { get; set; } = true;
 
+    /// <inheritdoc />
     [EditorBrowsable(EditorBrowsableState.Never)]
     public RenderOrdered RenderOrder => RenderOrdered.Tooltip;
 
@@ -50,6 +54,7 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
     private SKPaint? _labelPaint;
     private SKPaint? _valuePaint;
 
+    /// <inheritdoc />
     protected override void OnInitialized() {
         base.OnInitialized();
         if (Chart is null) {
@@ -58,6 +63,7 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
         Chart.RegisterRenderable(this);
     }
 
+    /// <inheritdoc />
     public void Dispose() {
         Chart?.UnregisterRenderable(this);
         _bgPaint?.Dispose();
@@ -72,6 +78,7 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
         _valuePaint?.Dispose();
     }
 
+    /// <inheritdoc />
     public void Invalidate() {
         _bgPaint?.Dispose();
         _bgPaint = null;
@@ -95,6 +102,7 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
         _valuePaint = null;
     }
 
+    /// <inheritdoc />
     public SKRect Render(NTRenderContext context, SKRect renderArea) {
         if (!Enabled || Chart.HoveredDataPoint == null || Chart.LastMousePosition == null || Chart.HoveredSeries == null || !Chart.HoveredSeries.Visible) {
             return renderArea;

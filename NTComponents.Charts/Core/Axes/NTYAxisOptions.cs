@@ -5,12 +5,17 @@ using NTComponents.Charts;
 
 namespace NTComponents.Charts.Core.Axes;
 
+/// <summary>
+///     Represents the Y axis of a chart that displays data of type <typeparamref name="TData"/>.
+/// </summary>
+/// <typeparam name="TData">The type of data items used in the chart.</typeparam>
 public interface INTYAxis<TData> : INTAxis<TData> where TData : class {
     /// <summary>
     ///     Gets the absolute minimum value allowed for the axis range.
     /// </summary>
     decimal? AbsoluteMinimum { get; }
 
+    /// <summary>Gets the default Y axis configuration for the chart.</summary>
     static abstract INTYAxis<TData> Default { get; }
 }
 
@@ -31,10 +36,14 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
     private float _measuredLabelWidth;
     private float _titleWidth;
 
+    /// <summary>Gets the default Y axis configuration for the chart.</summary>
     public static INTYAxis<TData> Default { get; } = new NTYAxisOptions<TData, TAxisValue>() {
         ValueSelector = _ => TAxisValue.Zero
     };
 
+    /// <summary>
+    ///     Gets or sets the selector that extracts the Y axis value from a data item.
+    /// </summary>
     [Parameter, EditorRequired]
     public Func<TData, TAxisValue> ValueSelector { get; set; }
 
@@ -56,6 +65,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
     [Parameter]
     public TnTColor GridLineColor { get; set; } = TnTColor.OutlineVariant;
 
+    /// <inheritdoc />
     public override void Dispose() {
         _textPaint?.Dispose();
         _titlePaint?.Dispose();
@@ -67,6 +77,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         base.Dispose();
     }
 
+    /// <inheritdoc />
     public override void Invalidate() {
         _cacheKey = null;
         _cachedTicks.Clear();
@@ -74,6 +85,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         _titleWidth = 0f;
     }
 
+    /// <inheritdoc />
     protected override void OnInitialized() {
         base.OnInitialized();
         Chart.RegisterAxis(this);

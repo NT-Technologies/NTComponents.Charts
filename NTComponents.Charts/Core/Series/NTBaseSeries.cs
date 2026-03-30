@@ -4,6 +4,11 @@ using SkiaSharp;
 
 namespace NTComponents.Charts.Core.Series;
 
+/// <summary>
+///     Abstract base class for all chart series. Provides common parameters, animation, hover,
+///     visibility, and interaction handling shared by every concrete series type.
+/// </summary>
+/// <typeparam name="TData">The type of data items bound to this series.</typeparam>
 public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData : class {
 
     /// <summary>
@@ -29,6 +34,9 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     /// </summary>
     public abstract ChartCoordinateSystem CoordinateSystem { get; }
 
+    /// <summary>
+    ///     Gets or sets the data items bound to this series.
+    /// </summary>
     [Parameter]
     public IEnumerable<TData> Data { get; set; } = [];
 
@@ -87,30 +95,57 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     [Parameter]
     public Action<NTDataPointRenderArgs<TData>>? OnDataPointRender { get; set; }
 
+    /// <summary>
+    ///     Gets or sets a callback invoked when the pointer enters a data point on this series.
+    /// </summary>
     [Parameter]
     public EventCallback<NTSeriesHoverEnterEventArgs<TData>> OnHoverEnter { get; set; }
 
+    /// <summary>
+    ///     Gets or sets a callback invoked when the pointer leaves a data point on this series.
+    /// </summary>
     [Parameter]
     public EventCallback<NTSeriesHoverLeaveEventArgs<TData>> OnHoverLeave { get; set; }
 
+    /// <summary>
+    ///     Gets or sets a callback invoked when the visibility of this series changes.
+    /// </summary>
     [Parameter]
     public EventCallback<NTSeriesVisibilityChangedEventArgs<TData>> OnVisibilityChanged { get; set; }
 
+    /// <summary>
+    ///     Gets or sets a callback invoked when a data point on this series is clicked.
+    /// </summary>
     [Parameter]
     public EventCallback<NTSeriesClickEventArgs<TData>> OnClick { get; set; }
 
+    /// <summary>
+    ///     Gets or sets a callback invoked when a pan gesture starts on this series.
+    /// </summary>
     [Parameter]
     public EventCallback<NTSeriesPanStartEventArgs<TData>> OnPanStart { get; set; }
 
+    /// <summary>
+    ///     Gets or sets a callback invoked during a pan gesture on this series.
+    /// </summary>
     [Parameter]
     public EventCallback<NTSeriesPanEventArgs<TData>> OnPan { get; set; }
 
+    /// <summary>
+    ///     Gets or sets a callback invoked when a pan gesture ends on this series.
+    /// </summary>
     [Parameter]
     public EventCallback<NTSeriesPanEndEventArgs<TData>> OnPanEnd { get; set; }
 
+    /// <summary>
+    ///     Gets or sets a callback invoked when a zoom gesture occurs on this series.
+    /// </summary>
     [Parameter]
     public EventCallback<NTSeriesZoomEventArgs<TData>> OnZoom { get; set; }
 
+    /// <summary>
+    ///     Gets or sets a callback invoked when the view is reset on this series.
+    /// </summary>
     [Parameter]
     public EventCallback<NTSeriesResetViewEventArgs<TData>> OnResetView { get; set; }
 
@@ -189,6 +224,9 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     /// </summary>
     protected DateTime AnimationStartTime { get; set; } = DateTime.Now;
 
+    /// <summary>
+    ///     Gets the parent <see cref="NTChart{TData}" /> that owns this series.
+    /// </summary>
     [CascadingParameter]
     protected NTChart<TData> Chart { get; set; } = default!;
 
@@ -213,11 +251,16 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     private DateTime? _visibilityAnimationStartTime;
     internal bool SuppressInteractionCallbacks { get; set; }
 
+    /// <inheritdoc />
     public void Dispose() {
         Dispose(true);
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    ///     Releases managed and, optionally, unmanaged resources held by this series.
+    /// </summary>
+    /// <param name="disposing"><see langword="true" /> to release managed resources.</param>
     protected virtual void Dispose(bool disposing) {
         if (disposing) {
             NestedSeriesParent?.UnregisterChildSeries(this);
@@ -330,17 +373,47 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
 
     internal virtual float GetLegendItemAlphaFactor(LegendItemInfo<TData> item) => HoverFactor;
 
+    /// <summary>
+    ///     Handles a mouse-button-down event on the chart canvas.
+    /// </summary>
+    /// <param name="e">The mouse event arguments.</param>
     public virtual void HandleMouseDown(MouseEventArgs e) { }
+
+    /// <summary>
+    ///     Handles a mouse-move event on the chart canvas.
+    /// </summary>
+    /// <param name="e">The mouse event arguments.</param>
     public virtual void HandleMouseMove(MouseEventArgs e) { }
+
+    /// <summary>
+    ///     Handles a mouse-button-up event on the chart canvas.
+    /// </summary>
+    /// <param name="e">The mouse event arguments.</param>
     public virtual void HandleMouseUp(MouseEventArgs e) { }
+
+    /// <summary>
+    ///     Handles a mouse-wheel event on the chart canvas.
+    /// </summary>
+    /// <param name="e">The wheel event arguments.</param>
     public virtual void HandleMouseWheel(WheelEventArgs e) { }
+
+    /// <summary>
+    ///     Resets the view of this series to its default state.
+    /// </summary>
     public virtual void ResetView() {
         NotifyResetView(new NTSeriesResetViewEventArgs<TData> {
             Series = this
         });
     }
 
+    /// <summary>
+    ///     Gets the current view X range applied by panning or zooming, or <see langword="null" /> if the view has not been adjusted.
+    /// </summary>
     public virtual (double Min, double Max)? GetViewXRange() => null;
+
+    /// <summary>
+    ///     Gets the current view Y range applied by panning or zooming, or <see langword="null" /> if the view has not been adjusted.
+    /// </summary>
     public virtual (decimal Min, decimal Max)? GetViewYRange() => null;
 
     /// <summary>
@@ -359,6 +432,9 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         return 1 + (c3 * MathF.Pow(t - 1, 3)) + (c1 * MathF.Pow(t - 1, 2));
     }
 
+    /// <summary>
+    ///     Returns the normalised animation progress (0.0–1.0) based on elapsed time since <see cref="AnimationStartTime" />.
+    /// </summary>
     protected float GetAnimationProgress() {
         if (!AnimationEnabled) {
             return 1.0f;
@@ -377,6 +453,9 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         Chart?.InvalidateDataCaches();
     }
 
+    /// <summary>
+    ///     Notifies the parent nested series that a child series has changed, triggering a re-render.
+    /// </summary>
     protected void NotifyNestedParentSeriesChanged() => NestedSeriesParent?.NotifyChildSeriesChanged();
 
     internal void NotifyHoverEnter(NTSeriesHoverEnterEventArgs<TData> args) => NotifyCallback(OnHoverEnter, args);
@@ -455,6 +534,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         _ = InvokeAsync(() => callback.InvokeAsync(args));
     }
 
+    /// <inheritdoc />
     protected override void OnInitialized() {
         base.OnInitialized();
         if (NestedSeriesParent is not null) {
@@ -469,6 +549,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
         Chart.RegisterRenderable(this);
     }
 
+    /// <inheritdoc />
     protected override void OnParametersSet() {
         base.OnParametersSet();
 

@@ -4,16 +4,30 @@ using NTComponents.Charts.Core.Series;
 
 namespace NTComponents.Charts.Core;
 
+/// <summary>
+///     Contains the data used to populate a chart tooltip.
+/// </summary>
 public class TooltipInfo
 {
+    /// <summary>Gets or sets the optional header text shown at the top of the tooltip.</summary>
     public string? Header { get; set; }
+
+    /// <summary>Gets or sets the collection of label/value lines displayed in the tooltip body.</summary>
     public List<TooltipLine> Lines { get; set; } = [];
 }
 
+/// <summary>
+///     Represents a single label/value row inside a chart tooltip.
+/// </summary>
 public struct TooltipLine
 {
+    /// <summary>Gets or sets the descriptive label for this line.</summary>
     public string Label { get; set; }
+
+    /// <summary>Gets or sets the formatted value string for this line.</summary>
     public string Value { get; set; }
+
+    /// <summary>Gets or sets the color swatch associated with this line.</summary>
     public SKColor Color { get; set; }
 }
 

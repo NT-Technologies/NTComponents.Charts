@@ -20,6 +20,7 @@ public enum RadialAxisShape {
 /// </summary>
 public class NTRadialAxisOptions<TData> : NTAxisOptions<TData> where TData : class {
 
+   /// <summary>Gets the default radial axis configuration.</summary>
    public static readonly NTRadialAxisOptions<TData> Default = new();
 
    /// <summary>

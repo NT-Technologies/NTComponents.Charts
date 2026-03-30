@@ -12,10 +12,14 @@ namespace NTComponents.Charts.Core.Axes;
 /// </summary>
 public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<TData> where TData : class {
 
+    /// <summary>Gets the default X axis configuration for the chart.</summary>
     public static INTXAxis<TData> Default { get; } = new NTXAxisOptions<TData, TAxisType>() {
         ValueSelector = data => default!
     };
 
+    /// <summary>
+    ///     Gets or sets the selector that extracts the X axis value from a data item.
+    /// </summary>
     [Parameter, EditorRequired]
     public Func<TData, TAxisType> ValueSelector { get; set; }
 
@@ -41,9 +45,16 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         }
     }
 
+    /// <summary>
+    ///     Gets or sets whether date/time values are automatically grouped when many data points are present.
+    /// </summary>
     [Parameter]
     public bool EnableAutoDateGrouping { get; set; } = true;
 
+    /// <summary>
+    ///     Gets or sets the minimum number of data points required before automatic date grouping activates.
+    ///     When zero, the threshold is derived from the available plot width.
+    /// </summary>
     [Parameter]
     public int DateGroupingThreshold { get; set; }
 
@@ -61,6 +72,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     private readonly Dictionary<DateTickCacheKey, List<AxisTick>> _groupedDateTickCache = [];
     private const float RotatedLabelDegrees = -45f;
 
+    /// <inheritdoc />
     public override void Dispose() {
         _textPaint?.Dispose();
         _titlePaint?.Dispose();
@@ -71,6 +83,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         base.Dispose();
     }
 
+    /// <inheritdoc />
     public override void Invalidate() {
         _cacheKey = null;
         _cachedTicks.Clear();
@@ -148,6 +161,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         return new SKRect(renderArea.Left, renderArea.Top, renderArea.Right, axisY);
     }
 
+    /// <inheritdoc />
     protected override void OnInitialized() {
         base.OnInitialized();
         Chart.RegisterAxis(this);
@@ -643,8 +657,10 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         ? 0f
         : _titleHeight.GetValueOrDefault() + (4f * density);
 
+    /// <inheritdoc />
     public string FormatValue(object? value, bool forTooltip = false) => FormatLabel(value, forTooltip);
 
+    /// <inheritdoc />
     public NTDateGroupingLevel ResolveDateGroupingLevel(double min, double max, float plotWidth, float density) {
         if (!Chart.IsXAxisDateTime || !EnableAutoDateGrouping) {
             return NTDateGroupingLevel.None;

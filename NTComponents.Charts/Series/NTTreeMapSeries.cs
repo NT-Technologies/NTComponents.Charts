@@ -11,11 +11,17 @@ namespace NTComponents.Charts;
 ///     Context used by <see cref="NTTreeMapSeries{TData}.ColorSelector"/> to choose a treemap node color.
 /// </summary>
 public sealed class TreeMapColorContext<TData> where TData : class {
+    /// <summary>Gets the nesting depth of the node (0 = root level).</summary>
     public required int Depth { get; init; }
+    /// <summary>Gets whether the node is a group (has children) rather than a leaf.</summary>
     public required bool IsGroup { get; init; }
+    /// <summary>Gets the key identifying this node within its parent group.</summary>
     public required string Key { get; init; }
+    /// <summary>Gets the full path of keys from the root to this node.</summary>
     public required IReadOnlyList<string> Path { get; init; }
+    /// <summary>Gets the aggregated value represented by this node.</summary>
     public required decimal Value { get; init; }
+    /// <summary>Gets the raw data item associated with this node, or <see langword="null"/> for group nodes.</summary>
     public TData? Data { get; init; }
 }
 
@@ -29,6 +35,9 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         Down,
         Up
     }
+    /// <summary>
+    ///     Gets or sets the selector that returns the numeric value for each data item.
+    /// </summary>
     [Parameter]
     public Func<TData, decimal> ValueSelector { get; set; } = _ => 0;
 
@@ -56,33 +65,63 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     [Parameter]
     public Func<TreeMapColorContext<TData>, TnTColor>? ColorSelector { get; set; }
 
+    /// <summary>
+    ///     Gets or sets the padding (in pixels) between treemap cells.
+    /// </summary>
     [Parameter]
     public float ItemPadding { get; set; } = 2f;
 
+    /// <summary>
+    ///     Gets or sets the format string used when rendering data value labels inside cells.
+    /// </summary>
     [Parameter]
     public string DataLabelFormat { get; set; } = "{0:N0}";
 
+    /// <summary>
+    ///     Gets or sets whether labels are rendered inside treemap cells.
+    /// </summary>
     [Parameter]
     public bool ShowLabels { get; set; } = true;
 
+    /// <summary>
+    ///     Gets or sets whether numeric values are appended to cell labels.
+    /// </summary>
     [Parameter]
     public bool ShowValuesInLabels { get; set; } = true;
 
+    /// <summary>
+    ///     Gets or sets the minimum font size (in points) used for cell labels.
+    /// </summary>
     [Parameter]
     public float MinLabelFontSize { get; set; } = 9f;
 
+    /// <summary>
+    ///     Gets or sets the maximum font size (in points) used for cell labels.
+    /// </summary>
     [Parameter]
     public float MaxLabelFontSize { get; set; } = 28f;
 
+    /// <summary>
+    ///     Gets or sets the minimum cell width (in pixels) at which a label is shown.
+    /// </summary>
     [Parameter]
     public float MinLabelWidth { get; set; } = 36f;
 
+    /// <summary>
+    ///     Gets or sets the minimum cell height (in pixels) at which a label is shown.
+    /// </summary>
     [Parameter]
     public float MinLabelHeight { get; set; } = 20f;
 
+    /// <summary>
+    ///     Gets or sets whether clicking a group cell drills down into that group.
+    /// </summary>
     [Parameter]
     public bool EnableDrilldown { get; set; } = true;
 
+    /// <summary>
+    ///     Gets or sets whether the breadcrumb navigation bar is rendered above the treemap.
+    /// </summary>
     [Parameter]
     public bool ShowNavigation { get; set; } = true;
 
@@ -99,9 +138,15 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     [Parameter]
     public bool ShowDrillIndicator { get; set; } = true;
 
+    /// <summary>
+    ///     Gets or sets the label shown on the back navigation button when drilling down.
+    /// </summary>
     [Parameter]
     public string BackText { get; set; } = "Back";
 
+    /// <summary>
+    ///     Gets or sets the height (in pixels) of the navigation bar rendered above the treemap.
+    /// </summary>
     [Parameter]
     public float NavigationHeight { get; set; } = 30f;
 
@@ -150,6 +195,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         };
     }
 
+    /// <inheritdoc />
     public override ChartCoordinateSystem CoordinateSystem => ChartCoordinateSystem.TreeMap;
 
     bool ITreeMapDrillableSeries.IsInDrilldown => EnableDrilldown && _drillPath.Count > 0;
@@ -232,6 +278,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     private int? _hoverAnimToIndex;
     private DateTime _hoverAnimStartUtc = DateTime.MinValue;
 
+    /// <inheritdoc />
     protected override void OnDataChanged() {
         base.OnDataChanged();
         _root = null;
@@ -242,6 +289,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         NotifyNestedParentSeriesChanged();
     }
 
+    /// <inheritdoc />
     protected override void OnParametersSet() {
         base.OnParametersSet();
 
@@ -257,6 +305,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         }
     }
 
+    /// <inheritdoc />
     protected override void BuildRenderTree(RenderTreeBuilder builder) {
         if (ChildContent is null) {
             return;
@@ -269,6 +318,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         builder.CloseComponent();
     }
 
+    /// <inheritdoc />
     public override SKRect Render(NTRenderContext context, SKRect renderArea) {
         if (renderArea.Width <= 0 || renderArea.Height <= 0 || Data is null) {
             return renderArea;
@@ -410,6 +460,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         return renderArea;
     }
 
+    /// <inheritdoc />
     public override void HandleMouseDown(MouseEventArgs e) {
         if (_isDrillTransitionActive) {
             return;
@@ -458,6 +509,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         }
     }
 
+    /// <inheritdoc />
     protected override void Dispose(bool disposing) {
         if (disposing) {
             _itemPaint?.Dispose();
@@ -490,6 +542,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         base.Dispose(disposing);
     }
 
+    /// <inheritdoc />
     public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
         if (_visibleNodes.Count == 0) {
             return null;

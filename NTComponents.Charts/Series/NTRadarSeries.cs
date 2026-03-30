@@ -14,9 +14,15 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
    /// <inheritdoc />
    public override ChartCoordinateSystem CoordinateSystem => ChartCoordinateSystem.Polar;
 
+   /// <summary>
+   ///    Gets or sets the stroke width of the radar outline.
+   /// </summary>
    [Parameter]
    public float StrokeWidth { get; set; } = 2f;
 
+   /// <summary>
+   ///    Gets or sets the opacity of the filled radar area (0.0 to 1.0).
+   /// </summary>
    [Parameter]
    public float AreaOpacity { get; set; } = 0.2f;
 
@@ -27,10 +33,12 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
    public decimal? MaxValue { get; set; }
 
 
+   /// <inheritdoc />
    protected override void OnInitialized() {
       base.OnInitialized();
    }
 
+   /// <inheritdoc />
    protected override void OnParametersSet() {
       base.OnParametersSet();
    }
@@ -41,6 +49,7 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
    private SKPaint? _labelPaint;
    private SKFont? _labelFont;
 
+   /// <inheritdoc />
    protected override void Dispose(bool disposing) {
       if (disposing) {
          _fillPaint?.Dispose();
@@ -154,6 +163,7 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
       canvas.DrawCircle(x, y, 4 * context.Density, _pointPaint);
    }
 
+   /// <inheritdoc />
    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
       // Radar hit testing is usually proximity based
       var dataList = Data.ToList();
