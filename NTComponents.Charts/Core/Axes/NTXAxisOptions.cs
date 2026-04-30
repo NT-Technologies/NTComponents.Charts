@@ -13,15 +13,22 @@ namespace NTComponents.Charts.Core.Axes;
 public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<TData> where TData : class {
 
     /// <summary>Gets the default X axis configuration for the chart.</summary>
-    public static INTXAxis<TData> Default { get; } = new NTXAxisOptions<TData, TAxisType>() {
-        ValueSelector = data => default!
-    };
+    public static INTXAxis<TData> Default { get; } = new NTXAxisOptions<TData, TAxisType>(_ => default!);
+
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="NTXAxisOptions{TData, TAxisType}"/> class.
+    /// </summary>
+    public NTXAxisOptions() { }
+
+    internal NTXAxisOptions(Func<TData, TAxisType> valueSelector) {
+        ValueSelector = valueSelector;
+    }
 
     /// <summary>
     ///     Gets or sets the selector that extracts the X axis value from a data item.
     /// </summary>
     [Parameter, EditorRequired]
-    public Func<TData, TAxisType> ValueSelector { get; set; }
+    public Func<TData, TAxisType> ValueSelector { get; set; } = default!;
 
     /// <inheritdoc />
     public bool IsCategorical {

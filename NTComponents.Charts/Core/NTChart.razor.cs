@@ -93,12 +93,8 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     ///     Initializes a new instance of <see cref="NTChart{TData}" /> with default X and Y axes.
     /// </summary>
     public NTChart() {
-        _defaultYAxis = new NTYAxisOptions<TData, decimal> {
-            ValueSelector = _ => 0m
-        };
-        _defaultXAxis = new NTXAxisOptions<TData, object> {
-            ValueSelector = _ => default!
-        };
+        _defaultYAxis = new NTYAxisOptions<TData, decimal>(_ => 0m);
+        _defaultXAxis = new NTXAxisOptions<TData, object>(_ => default!);
 
         XAxis = _defaultXAxis;
         YAxis = _defaultYAxis;
