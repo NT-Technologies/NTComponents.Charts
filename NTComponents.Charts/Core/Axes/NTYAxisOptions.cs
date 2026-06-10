@@ -37,15 +37,22 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
     private float _titleWidth;
 
     /// <summary>Gets the default Y axis configuration for the chart.</summary>
-    public static INTYAxis<TData> Default { get; } = new NTYAxisOptions<TData, TAxisValue>() {
-        ValueSelector = _ => TAxisValue.Zero
-    };
+    public static INTYAxis<TData> Default { get; } = new NTYAxisOptions<TData, TAxisValue>(_ => TAxisValue.Zero);
+
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="NTYAxisOptions{TData, TAxisValue}"/> class.
+    /// </summary>
+    public NTYAxisOptions() { }
+
+    internal NTYAxisOptions(Func<TData, TAxisValue> valueSelector) {
+        ValueSelector = valueSelector;
+    }
 
     /// <summary>
     ///     Gets or sets the selector that extracts the Y axis value from a data item.
     /// </summary>
     [Parameter, EditorRequired]
-    public Func<TData, TAxisValue> ValueSelector { get; set; }
+    public Func<TData, TAxisValue> ValueSelector { get; set; } = default!;
 
     /// <summary>
     ///     Gets or sets the absolute minimum value allowed for the axis range and rendered points.
