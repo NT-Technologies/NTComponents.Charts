@@ -35,10 +35,10 @@
     </ItemGroup>
 	
     <ItemGroup>
-		<PackageReference Include="AspNetCore.SassCompiler" Version="1.99.0" />
-		<PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.2" />
-		<PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" Version="3.119.2" />
-		<PackageReference Include="SkiaSharp.Views.Blazor" Version="3.119.2" />
+		<PackageReference Include="AspNetCore.SassCompiler" Version="1.100.0" />
+		<PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
+		<PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" Version="3.119.4" />
+		<PackageReference Include="SkiaSharp.Views.Blazor" Version="3.119.4" />
     </ItemGroup>
 
 	<ItemGroup Condition="Exists('..\..\..\NTComponents\NTComponents.csproj')">
@@ -51,13 +51,13 @@
 	
 	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
 		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly">
-			<Version>9.0.15</Version>
+			<Version>9.0.17</Version>
 		</PackageReference>
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
 		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly">
-			<Version>10.0.6</Version>
+			<Version>10.0.9</Version>
 		</PackageReference>
 	</ItemGroup>
 
