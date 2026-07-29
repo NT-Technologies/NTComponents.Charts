@@ -1,64 +1,60 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
 
-    <PropertyGroup>
-        <TargetFrameworks>net9.0;net10.0;net11.0</TargetFrameworks>
-        <Nullable>enable</Nullable>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <LangVersion>latest</LangVersion>
-        <PackageId>NTComponents.Charts</PackageId>
-        <Title>NTComponents.Charts</Title>
-        <Description>Charts package for NTComponents with interactive Blazor visualizations powered by SkiaSharp.</Description>
-        <Authors>NT Technologies</Authors>
-        <Company>NT Technologies</Company>
-        <PackageProjectUrl>https://github.com/NT-Technologies/NTComponents.Charts</PackageProjectUrl>
-        <RepositoryUrl>https://github.com/NT-Technologies/NTComponents.Charts</RepositoryUrl>
-        <RepositoryType>git</RepositoryType>
-        <PackageTags>blazor;charts;visualization;skia;ntcomponents</PackageTags>
-        <PackageReadmeFile>README.md</PackageReadmeFile>
-        <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
-        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-        <PackageIcon>Logo.png</PackageIcon>
-        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+	<PropertyGroup>
+		<TargetFrameworks>net9.0;net10.0;net11.0</TargetFrameworks>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<LangVersion>latest</LangVersion>
+		<PackageId>NTComponents.Charts</PackageId>
+		<Title>NTComponents.Charts</Title>
+		<Description>Charts package for NTComponents with interactive Blazor visualizations powered by SkiaSharp.</Description>
+		<Authors>NT Technologies</Authors>
+		<Company>NT Technologies</Company>
+		<PackageProjectUrl>https://github.com/NT-Technologies/NTComponents.Charts</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/NT-Technologies/NTComponents.Charts</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageTags>blazor;charts;visualization;skia;ntcomponents</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+		<PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+		<PackageIcon>Logo.png</PackageIcon>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<UseLocalNTComponentsProject Condition="'$(UseLocalNTComponentsProject)' == '' and Exists('..\..\..\NTComponents\NTComponents.csproj')">true</UseLocalNTComponentsProject>
 		<UseLocalNTComponentsProject Condition="'$(UseLocalNTComponentsProject)' == ''">false</UseLocalNTComponentsProject>
 		<EnforceCodeStyleInBuild>True</EnforceCodeStyleInBuild>
 		<WarningLevel>8</WarningLevel>
 		<TreatWarningsAsErrors>True</TreatWarningsAsErrors>
-    </PropertyGroup>
-	
+	</PropertyGroup>
+
 	<ItemGroup>
 		<SupportedPlatform Include="browser" />
 	</ItemGroup>
 
-    <ItemGroup>
-        <None Include="..\README.md" Pack="true" PackagePath="\" />
-        <None Include="..\LICENSE.txt" Pack="true" PackagePath="\" />
-        <None Include="..\Logo.png" Pack="true" PackagePath="\" />
-    </ItemGroup>
-	
-    <ItemGroup>
+	<ItemGroup>
+		<None Include="..\README.md" Pack="true" PackagePath="\" />
+		<None Include="..\LICENSE.txt" Pack="true" PackagePath="\" />
+		<None Include="..\Logo.png" Pack="true" PackagePath="\" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="AspNetCore.SassCompiler" Version="1.102.0" PrivateAssets="all" />
-      <PackageReference Include="SkiaSharp.Views.Blazor" Version="4.150.1" />
-    </ItemGroup>
+		<PackageReference Include="SkiaSharp.Views.Blazor" Version="4.150.1" />
+	</ItemGroup>
 
 	<ItemGroup Condition="'$(UseLocalNTComponentsProject)' == 'true'">
 		<ProjectReference Include="..\..\..\NTComponents\NTComponents.csproj" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(UseLocalNTComponentsProject)' != 'true'">
-		<PackageReference Include="NTComponents" Version="2.0.0-preview.48" />
+		<PackageReference Include="NTComponents" Version="2.0.0-preview.51" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly">
-			<Version>9.0.18</Version>
-		</PackageReference>
+		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.0" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly">
-			<Version>10.0.10</Version>
-		</PackageReference>
+		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.0" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net11.0'">
