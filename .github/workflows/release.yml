@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  validate:
+    uses: ./.github/workflows/build-template.yml
+    with:
+      configuration: Release
+
+  publish-release:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+            11.0.100-preview.6.26359.118
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Restore and build
+        run: |
+          dotnet restore NTComponents.Charts.slnx -p:UseLocalNTComponentsProject=false
+          dotnet build NTComponents.Charts.slnx --no-restore --configuration Release -m:1 -p:UseLocalNTComponentsProject=false
+
+      - name: Check for existing stable tag
+        id: check-tags
+        run: |
+          git fetch --tags
+          if git tag --points-at HEAD | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "is_tagged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install semantic-release
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/github conventional-changelog-conventionalcommits
+
+      - name: Validate NuGet API key
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: test -n "$NUGET_API_KEY" || (echo "NUGET_API_KEY secret is missing." && exit 1)
+
+      - name: Publish stable release
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
+      - name: Resolve stable package version
+        id: release-version
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        run: |
+          git fetch --tags
+          release_tag=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)
+          test -n "$release_tag" || (echo "No stable release was created." && exit 1)
+          echo "version=${release_tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Pack and validate NuGet package
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        run: |
+          dotnet pack NTComponents.Charts/NTComponents.Charts.csproj --no-build --configuration Release --output artifacts/nuget -p:PackageVersion=${{ steps.release-version.outputs.version }} -p:UseLocalNTComponentsProject=false
+          pwsh ./test-package.ps1 -PackagePath "artifacts/nuget/NTComponents.Charts.${{ steps.release-version.outputs.version }}.nupkg"
+
+      - name: Publish NuGet package
+        id: publish-package
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: dotnet nuget push artifacts/nuget/*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Unlist older prerelease packages
+        if: steps.publish-package.outcome == 'success'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          RELEASE_VERSION: ${{ steps.release-version.outputs.version }}
+        run: |
+          python3 - "$RELEASE_VERSION" <<'PY' > prerelease-versions-to-unlist.txt
+          import json, sys, urllib.request
+          release = tuple(int(part) for part in sys.argv[1].split('.'))
+          with urllib.request.urlopen('https://api.nuget.org/v3-flatcontainer/ntcomponents.charts/index.json') as response:
+              versions = json.load(response)['versions']
+          for version in versions:
+              without_build = version.split('+', 1)[0]
+              if '-' not in without_build:
+                  continue
+              try:
+                  core = tuple(int(part) for part in without_build.split('-', 1)[0].split('.'))
+              except ValueError:
+                  continue
+              if core <= release:
+                  print(version)
+          PY
+          while read -r version; do
+            [ -z "$version" ] || dotnet nuget delete NTComponents.Charts "$version" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --non-interactive
+          done < prerelease-versions-to-unlist.txt
+
+      - name: Delete stable tag when package publication did not complete
+        if: failure() && steps.check-tags.outputs.is_tagged == 'false' && steps.publish-package.outcome != 'success'
+        run: |
+          tags=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+          for tag in $tags; do
+            git tag -d "$tag" || true
+            git push origin ":refs/tags/$tag"
+          done

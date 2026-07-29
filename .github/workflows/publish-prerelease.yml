@@ -1,0 +1,111 @@
+name: Publish Prerelease
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    uses: ./.github/workflows/build-template.yml
+    with:
+      configuration: Release
+
+  publish-prerelease:
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Check for existing preview tag
+        id: check-tags
+        run: |
+          git fetch --tags
+          if git tag --points-at HEAD | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+$'; then
+            echo "is_tagged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup .NET SDKs
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+            11.0.100-preview.6.26359.118
+
+      - name: Setup Node.js
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Restore and build
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        run: |
+          dotnet restore NTComponents.Charts.slnx -p:UseLocalNTComponentsProject=false
+          dotnet build NTComponents.Charts.slnx --no-restore --configuration Release -m:1 -p:UseLocalNTComponentsProject=false
+
+      - name: Install semantic-release
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/github conventional-changelog-conventionalcommits
+
+      - name: Publish preview release
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B preview HEAD
+          git push --force origin HEAD:preview
+          GITHUB_REF=refs/heads/preview GITHUB_REF_NAME=preview npx semantic-release
+
+      - name: Resolve preview package version
+        id: release-version
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        run: |
+          git fetch --tags
+          release_tag=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+$' | sort -V | tail -n 1 || true)
+          echo "version=${release_tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate NuGet API key
+        if: steps.release-version.outputs.version != ''
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: test -n "$NUGET_API_KEY" || (echo "NUGET_API_KEY secret is missing." && exit 1)
+
+      - name: Pack and validate NuGet package
+        if: steps.release-version.outputs.version != ''
+        run: |
+          dotnet pack NTComponents.Charts/NTComponents.Charts.csproj --no-build --configuration Release --output artifacts/nuget -p:PackageVersion=${{ steps.release-version.outputs.version }} -p:UseLocalNTComponentsProject=false
+          pwsh ./test-package.ps1 -PackagePath "artifacts/nuget/NTComponents.Charts.${{ steps.release-version.outputs.version }}.nupkg"
+
+      - name: Publish NuGet package
+        id: publish-package
+        if: steps.release-version.outputs.version != ''
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: dotnet nuget push artifacts/nuget/*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Delete preview tag when publication did not complete
+        if: failure() && steps.check-tags.outputs.is_tagged == 'false' && steps.publish-package.outcome != 'success'
+        run: |
+          tags=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+$' || true)
+          for tag in $tags; do
+            git tag -d "$tag" || true
+            git push origin ":refs/tags/$tag"
+          done

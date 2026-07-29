@@ -39,7 +39,7 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
    private DateTime _lastRenderTime = DateTime.Now;
 
    private SKPaint? _slicePaint;
-   private SKPath? _slicePath;
+   private SKPathBuilder? _slicePathBuilder;
    private SKPaint? _labelPaint;
    private SKFont? _labelFont;
 
@@ -67,7 +67,7 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
          Style = SKPaintStyle.Fill
       };
 
-      _slicePath ??= new SKPath();
+      _slicePathBuilder ??= new SKPathBuilder();
 
       foreach (var slice in SliceInfos) {
          // Update explosion factor for this slice (hover)
@@ -150,20 +150,21 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
             }
          }
 
-         _slicePath.Reset();
+         _slicePathBuilder.Reset();
          var outerRect = new SKRect(centerX - currentRadius, centerY - currentRadius, centerX + currentRadius, centerY + currentRadius);
          var innerRect = new SKRect(centerX - currentInnerRadius, centerY - currentInnerRadius, centerX + currentInnerRadius, centerY + currentInnerRadius);
 
-         _slicePath.ArcTo(outerRect, slice.StartAngle, sweep, true);
+         _slicePathBuilder.ArcTo(outerRect, slice.StartAngle, sweep, true);
          if (currentInnerRadius > 0) {
-            _slicePath.ArcTo(innerRect, slice.StartAngle + sweep, -sweep, false);
+            _slicePathBuilder.ArcTo(innerRect, slice.StartAngle + sweep, -sweep, false);
          }
          else {
-            _slicePath.LineTo(centerX, centerY);
+            _slicePathBuilder.LineTo(centerX, centerY);
          }
-         _slicePath.Close();
+         _slicePathBuilder.Close();
 
-         context.Canvas.DrawPath(_slicePath, _slicePaint);
+         using var slicePath = _slicePathBuilder.Detach();
+         context.Canvas.DrawPath(slicePath, _slicePaint);
 
          if (ShowDataLabels && progress >= 1.0f) {
             RenderSliceLabel(context, slice, centerX, centerY, currentRadius, currentInnerRadius, color, args);
@@ -231,11 +232,11 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
    protected override void Dispose(bool disposing) {
       if (disposing) {
          _slicePaint?.Dispose();
-         _slicePath?.Dispose();
+         _slicePathBuilder?.Dispose();
          _labelPaint?.Dispose();
          _labelFont?.Dispose();
          _slicePaint = null;
-         _slicePath = null;
+         _slicePathBuilder = null;
          _labelPaint = null;
          _labelFont = null;
       }

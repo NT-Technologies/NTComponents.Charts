@@ -91,7 +91,6 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     private SKPaint? _hitTestPaint;
     private SKPath? _hitTestPath;
     private RenderCacheKey? _hitTestPathKey;
-    private SKPath? _hitTestStrokePath;
 
     private List<RenderPointInfo>? _cachedRenderPoints;
     private RenderCacheKey? _cachedRenderKey;
@@ -105,7 +104,6 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             _linePath?.Dispose();
             _hitTestPaint?.Dispose();
             _hitTestPath?.Dispose();
-            _hitTestStrokePath?.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -1234,22 +1232,22 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     /// <param name="points">The ordered list of screen-space points to connect.</param>
     /// <returns>An <see cref="SKPath"/> that traces through the points.</returns>
     protected SKPath BuildPath(List<SKPoint> points) {
-        var path = new SKPath();
+        using var pathBuilder = new SKPathBuilder();
         if (points.Count < 2) {
-            return path;
+            return pathBuilder.Detach();
         }
 
-        path.MoveTo(points[0]);
+        pathBuilder.MoveTo(points[0]);
 
         if (Interpolation == LineInterpolation.Straight) {
             for (var i = 1; i < points.Count; i++) {
-                path.LineTo(points[i]);
+                pathBuilder.LineTo(points[i]);
             }
         }
         else if (Interpolation == LineInterpolation.Step) {
             for (var i = 1; i < points.Count; i++) {
-                path.LineTo(points[i - 1].X, points[i].Y);
-                path.LineTo(points[i]);
+                pathBuilder.LineTo(points[i - 1].X, points[i].Y);
+                pathBuilder.LineTo(points[i]);
             }
         }
         else if (Interpolation == LineInterpolation.Curved) {
@@ -1262,7 +1260,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
                 var cp1 = new SKPoint(p1.X + ((p2.X - p0.X) / 6), p1.Y + ((p2.Y - p0.Y) / 6));
                 var cp2 = new SKPoint(p2.X - ((p3.X - p1.X) / 6), p2.Y - ((p3.Y - p1.Y) / 6));
 
-                path.CubicTo(cp1, cp2, p2);
+                pathBuilder.CubicTo(cp1, cp2, p2);
             }
         }
         else if (Interpolation == LineInterpolation.Smoothed) {
@@ -1294,15 +1292,15 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
                     var xSpan = (points[i + 1].X - points[i].X) / 3f;
                     var cp1 = new SKPoint(points[i].X + xSpan, points[i].Y + (tangents[i] * xSpan));
                     var cp2 = new SKPoint(points[i + 1].X - xSpan, points[i + 1].Y - (tangents[i + 1] * xSpan));
-                    path.CubicTo(cp1, cp2, points[i + 1]);
+                    pathBuilder.CubicTo(cp1, cp2, points[i + 1]);
                 }
             }
             else {
-                path.LineTo(points[1]);
+                pathBuilder.LineTo(points[1]);
             }
         }
 
-        return path;
+        return pathBuilder.Detach();
     }
 
     /// <inheritdoc />
@@ -1340,12 +1338,11 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             };
             _hitTestPaint.StrokeWidth = (StrokeWidth * Chart.Density) + (10 * Chart.Density);
 
-            _hitTestStrokePath ??= new SKPath();
-            _hitTestStrokePath.Reset();
+            using var hitTestStrokePathBuilder = new SKPathBuilder();
+            _hitTestPaint.GetFillPath(_hitTestPath, hitTestStrokePathBuilder);
+            using var hitTestStrokePath = hitTestStrokePathBuilder.Detach();
 
-            _hitTestPaint.GetFillPath(_hitTestPath, _hitTestStrokePath);
-
-            if (_hitTestStrokePath.Contains(point.X, point.Y)) {
+            if (hitTestStrokePath.Contains(point.X, point.Y)) {
                 var nearestIdx = -1;
                 var nearestDistSq = double.MaxValue;
                 for (var i = 0; i < points.Count; i++) {

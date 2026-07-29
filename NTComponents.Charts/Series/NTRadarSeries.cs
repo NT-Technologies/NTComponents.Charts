@@ -98,8 +98,9 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
          );
       }
 
-      using var path = new SKPath();
-      path.AddPoly(points, true);
+      using var pathBuilder = new SKPathBuilder();
+      pathBuilder.AddPoly(points, true);
+      using var path = pathBuilder.Detach();
 
       // Fill
       _fillPaint ??= new SKPaint {

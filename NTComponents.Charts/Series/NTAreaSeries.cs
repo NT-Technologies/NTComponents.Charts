@@ -110,10 +110,12 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
       // Close the path to the baseline
       float baselineCoord = Chart.ScaleY(BaselineValue, renderArea);
 
-      path.LineTo(points.Last().X, baselineCoord);
-      path.LineTo(points.First().X, baselineCoord);
-      path.Close();
+      using var pathBuilder = new SKPathBuilder(path);
+      path.Dispose();
+      pathBuilder.LineTo(points.Last().X, baselineCoord);
+      pathBuilder.LineTo(points.First().X, baselineCoord);
+      pathBuilder.Close();
 
-      return path;
+      return pathBuilder.Detach();
    }
 }

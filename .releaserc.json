@@ -1,26 +1,25 @@
 {
+  "repositoryUrl": "https://github.com/NT-Technologies/NTComponents.Charts.git",
   "branches": [
-    "main"
+    "main",
+    {
+      "name": "preview",
+      "prerelease": "preview",
+      "channel": "preview"
+    }
   ],
   "tagFormat": "v${version}",
   "plugins": [
     [
-      "@semantic-release/commit-analyzer"
-    ],
-    "@semantic-release/release-notes-generator",
-    [
-      "@semantic-release/changelog",
+      "@semantic-release/commit-analyzer",
       {
-        "changelogFile": "changelog.md"
+        "preset": "conventionalcommits"
       }
     ],
     [
-      "@semantic-release/git",
+      "@semantic-release/release-notes-generator",
       {
-        "assets": [
-          "changelog.md"
-        ],
-        "message": "chore(release): ${nextRelease.version}"
+        "preset": "conventionalcommits"
       }
     ],
     [

@@ -156,16 +156,17 @@ public class NTRadialAxisOptions<TData> : NTAxisOptions<TData> where TData : cla
 
    private void DrawPolygon(NTRenderContext context, float cx, float cy, float r, int sides, SKPaint paint) {
       var canvas = context.Canvas;
-      using var path = new SKPath();
+      using var pathBuilder = new SKPathBuilder();
       for (int i = 0; i < sides; i++) {
          float angle = (i * 360f / sides) - 90f;
          float rad = angle * (float)Math.PI / 180f;
          float x = cx + (float)Math.Cos(rad) * r;
          float y = cy + (float)Math.Sin(rad) * r;
-         if (i == 0) path.MoveTo(x, y);
-         else path.LineTo(x, y);
+         if (i == 0) pathBuilder.MoveTo(x, y);
+         else pathBuilder.LineTo(x, y);
       }
-      path.Close();
+      pathBuilder.Close();
+      using var path = pathBuilder.Detach();
       canvas.DrawPath(path, paint);
    }
 }

@@ -1,0 +1,88 @@
+name: Validate WebAssembly compatibility
+
+on:
+  push:
+    branches: ['main*']
+    paths-ignore:
+      - '**/*.md'
+  pull_request:
+    branches: ['main*']
+    paths-ignore:
+      - '**/*.md'
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE: 'true'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  aot-test:
+    name: ${{ matrix.tfm == 'net10.0' && 'AOT' || 'Trimmed WASM' }} smoke (${{ matrix.tfm }}, ${{ matrix.runner.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        tfm: [net10.0, net11.0]
+        runner:
+          - name: Windows x64
+            os: windows-latest
+          - name: Windows arm64
+            os: windows-11-arm
+          - name: Linux x64
+            os: ubuntu-latest
+          - name: Linux arm64
+            os: ubuntu-24.04-arm
+          - name: macOS x64
+            os: macos-15-intel
+          - name: macOS arm64
+            os: macos-15
+    runs-on: ${{ matrix.runner.os }}
+    timeout-minutes: 30
+    env:
+      DOTNET_VERSION: ${{ matrix.tfm == 'net11.0' && '11.0.100-preview.6.26359.118' || '10.0.x' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+            11.0.100-preview.6.26359.118
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.tfm }}-nuget-${{ hashFiles('global.json', 'NTComponents.Charts/NTComponents.Charts.csproj', 'Tests/AotCompatibility.TestApp/AotCompatibility.TestApp.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ matrix.tfm }}-nuget-
+            ${{ runner.os }}-${{ runner.arch }}-nuget-
+
+      - name: Display runner architecture
+        shell: pwsh
+        run: |
+          dotnet --info
+          [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture
+          [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+
+      - name: Setup Node for Chromium install
+        if: runner.os == 'Linux'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+
+      - name: Install Chromium for browser smoke
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: npx --yes playwright@1.60.0 install --with-deps --no-shell chromium
+
+      - name: Restore WebAssembly workloads
+        shell: pwsh
+        run: dotnet workload restore Tests/AotCompatibility.TestApp/AotCompatibility.TestApp.csproj --skip-manifest-update
+
+      - name: Publish and browser-smoke WebAssembly app
+        shell: pwsh
+        run: ./test-aot-compatibility.ps1 -Frameworks ${{ matrix.tfm }}

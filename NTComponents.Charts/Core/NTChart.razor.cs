@@ -1127,7 +1127,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
             Density = await JSRuntime.InvokeAsync<float>("eval", "window.devicePixelRatio || 1");
-            _chartModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./_content/NTComponents.Charts/NTComponents.Charts.lib.module.js");
+            _chartModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./_content/NTComponents.Charts/ntcomponents-charts.js");
             _objRef = DotNetObjectReference.Create(this);
             _themeListener = await JSRuntime.InvokeAsync<IJSObjectReference>("NTComponents.onThemeChanged", _objRef);
             _wheelListener = await _chartModule.InvokeAsync<IJSObjectReference>(
@@ -1959,7 +1959,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
         _debugFont.Size = 12 * context.Density;
 
-        context.Canvas.DrawText($"Render: {_lastRenderTimeMs:F2} ms", 10 * context.Density, 16 * context.Density, _debugFont, _debugTextPaint);
+        context.Canvas.DrawText($"Render: {_lastRenderTimeMs:F2} ms", 10 * context.Density, 16 * context.Density, SKTextAlign.Left, _debugFont, _debugTextPaint);
     }
 
     /// <summary>

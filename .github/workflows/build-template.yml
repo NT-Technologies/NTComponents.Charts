@@ -1,0 +1,80 @@
+name: Build and Test Template
+
+on:
+  workflow_call:
+    inputs:
+      configuration:
+        required: false
+        type: string
+        default: Release
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+            11.0.100-preview.6.26359.118
+
+      - name: Restore dependencies
+        run: dotnet restore NTComponents.Charts.slnx -p:UseLocalNTComponentsProject=false
+
+      - name: Build all target frameworks
+        run: dotnet build NTComponents.Charts.slnx --no-restore --configuration ${{ inputs.configuration }} -m:1 -p:UseLocalNTComponentsProject=false
+
+      - name: Pack CI package
+        run: dotnet pack NTComponents.Charts/NTComponents.Charts.csproj --no-build --configuration ${{ inputs.configuration }} --output artifacts/nuget -p:PackageVersion=0.0.0-ci.${{ github.run_id }} -p:UseLocalNTComponentsProject=false
+
+      - name: Upload CI package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts/nuget/*.nupkg
+
+  package-consumer:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        framework: [net9.0, net10.0, net11.0]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+            11.0.100-preview.6.26359.118
+
+      - name: Download CI package
+        uses: actions/download-artifact@v8
+        with:
+          name: nuget-package
+          path: artifacts/nuget
+
+      - name: Validate package consumer
+        shell: pwsh
+        run: ./test-package.ps1 -PackagePath (Get-ChildItem artifacts/nuget/*.nupkg).FullName -Frameworks ${{ matrix.framework }}
+
+  build-test-pack:
+    needs: [build, package-consumer]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build and package validation succeeded
+        run: echo "Build and package-consumer validation completed successfully."

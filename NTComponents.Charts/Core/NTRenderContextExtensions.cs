@@ -78,21 +78,23 @@ public static class NTRenderContextExtensions {
             canvas.DrawRect(x - halfSize, y - halfSize, scaledSize, scaledSize, paint);
             break;
          case PointShape.Triangle:
-            using (var path = new SKPath()) {
-               path.MoveTo(x, y - halfSize);
-               path.LineTo(x + halfSize, y + halfSize);
-               path.LineTo(x - halfSize, y + halfSize);
-               path.Close();
+            using (var pathBuilder = new SKPathBuilder()) {
+               pathBuilder.MoveTo(x, y - halfSize);
+               pathBuilder.LineTo(x + halfSize, y + halfSize);
+               pathBuilder.LineTo(x - halfSize, y + halfSize);
+               pathBuilder.Close();
+               using var path = pathBuilder.Detach();
                canvas.DrawPath(path, paint);
             }
             break;
          case PointShape.Diamond:
-            using (var path = new SKPath()) {
-               path.MoveTo(x, y - halfSize);
-               path.LineTo(x + halfSize, y);
-               path.LineTo(x, y + halfSize);
-               path.LineTo(x - halfSize, y);
-               path.Close();
+            using (var pathBuilder = new SKPathBuilder()) {
+               pathBuilder.MoveTo(x, y - halfSize);
+               pathBuilder.LineTo(x + halfSize, y);
+               pathBuilder.LineTo(x, y + halfSize);
+               pathBuilder.LineTo(x - halfSize, y);
+               pathBuilder.Close();
+               using var path = pathBuilder.Detach();
                canvas.DrawPath(path, paint);
             }
             break;

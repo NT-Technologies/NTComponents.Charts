@@ -1,0 +1,20 @@
+name: PR Build
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - '**/*.md'
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
+
+jobs:
+  build-test-pack:
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/build-template.yml
+    with:
+      configuration: Release

@@ -77,4 +77,3 @@ export function registerWheelHandler(element, dotNetHelper, preventDefault) {
         }
     };
 }
-

@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 This repository contains a single .NET Razor class library solution: `NTComponents.Charts.slnx`.
 
-- `NTComponents.Charts/`: main library project (`NTComponents.Charts.csproj`), multi-targeting `net9.0` and `net10.0`.
+- `NTComponents.Charts/`: main library project (`NTComponents.Charts.csproj`), multi-targeting `net9.0`, `net10.0`, and `net11.0`.
 - `NTComponents.Charts/Core/`: chart engine, rendering context, axes wiring, and shared chart primitives.
 - `NTComponents.Charts/Core/Axes/`: axis interfaces and axis option types.
 - `NTComponents.Charts/Core/Series/`: base series abstractions and shared series models.
@@ -13,10 +13,13 @@ This repository contains a single .NET Razor class library solution: `NTComponen
 
 ## Build, Test, and Development Commands
 - `dotnet restore NTComponents.Charts.slnx`: restore NuGet packages.
-- `dotnet build NTComponents.Charts.slnx -c Release`: build both target frameworks and run SCSS compilation.
+- `dotnet build NTComponents.Charts.slnx -c Release`: build all target frameworks and run SCSS compilation.
 - `dotnet build NTComponents.Charts/NTComponents.Charts.csproj -c Debug`: fast local iteration on the library.
+- `dotnet pack NTComponents.Charts/NTComponents.Charts.csproj -c Release -o artifacts/nuget -p:UseLocalNTComponentsProject=false`: create the standalone NuGet package.
+- `./test-package.ps1 -PackagePath artifacts/nuget/<package>.nupkg`: validate package structure and compile net9/net10/net11 consumers.
+- `./test-aot-compatibility.ps1`: publish and browser-smoke the net10 native-AOT and net11 trimmed WebAssembly consumers.
 
-Current state: there is no test project in this repo yet. `dotnet test` expects a test project/solution and is not a validation path for the library alone.
+Current state: there is no unit-test project in this repo yet. CI uses package-consumer and WebAssembly compatibility smoke projects; `dotnet test` is not a validation path for the library alone.
 
 ## Coding Style & Naming Conventions
 - Use 4-space indentation and braces on the same line as declarations.
@@ -33,6 +36,8 @@ When adding tests, create a dedicated test project (for example, `NTComponents.C
 - axis scaling and range calculations,
 - hit testing and interaction behavior,
 - rendering/data caching invalidation.
+
+The reusable PR/release gate is `.github/workflows/build-template.yml`. Keep its terminal `build-test-pack` job stable because branch protection and Dependabot auto-merge use it as the required-check sentinel. Stable releases are manual; preview releases are created from successful pushes to `main`.
 
 ## Commit & Pull Request Guidelines
 Use Conventional Commits consistent with existing history:
