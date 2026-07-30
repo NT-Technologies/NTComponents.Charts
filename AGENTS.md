@@ -10,16 +10,18 @@ This repository contains a single .NET Razor class library solution: `NTComponen
 - `NTComponents.Charts/Series/`: concrete chart series implementations (line, bar, pie, treemap, etc.).
 - `NTComponents.Charts/wwwroot/`: static JS module assets.
 - `NTComponents.Charts/Core/*.razor.scss`: component styles compiled during build via `sasscompiler.json`.
+- `Tests/NTComponents.Charts.Tests/`: xUnit v3 and bUnit tests for chart behavior.
 
 ## Build, Test, and Development Commands
 - `dotnet restore NTComponents.Charts.slnx`: restore NuGet packages.
 - `dotnet build NTComponents.Charts.slnx -c Release`: build all target frameworks and run SCSS compilation.
 - `dotnet build NTComponents.Charts/NTComponents.Charts.csproj -c Debug`: fast local iteration on the library.
+- `dotnet test --project Tests/NTComponents.Charts.Tests/NTComponents.Charts.Tests.csproj -c Release`: run chart tests for net9/net10/net11.
 - `dotnet pack NTComponents.Charts/NTComponents.Charts.csproj -c Release -o artifacts/nuget -p:UseLocalNTComponentsProject=false`: create the standalone NuGet package.
 - `./test-package.ps1 -PackagePath artifacts/nuget/<package>.nupkg`: validate package structure and compile net9/net10/net11 consumers.
 - `./test-aot-compatibility.ps1`: publish and browser-smoke the net10 native-AOT and net11 trimmed WebAssembly consumers.
 
-Current state: there is no unit-test project in this repo yet. CI uses package-consumer and WebAssembly compatibility smoke projects; `dotnet test` is not a validation path for the library alone.
+CI runs the dedicated test project on net9, net10, and net11 in addition to package-consumer and WebAssembly compatibility smoke projects.
 
 ## Coding Style & Naming Conventions
 - Use 4-space indentation and braces on the same line as declarations.
@@ -32,7 +34,7 @@ Current state: there is no unit-test project in this repo yet. CI uses package-c
 - Keep file names aligned to primary type names (for example, `NTLineSeries.cs` for `NTLineSeries<TData>`).
 
 ## Testing Guidelines
-When adding tests, create a dedicated test project (for example, `NTComponents.Charts.Tests`) and include it in `NTComponents.Charts.slnx`. Prefer scenario-based tests for:
+Add chart tests to `Tests/NTComponents.Charts.Tests` and keep them organized by chart feature. Prefer scenario-based tests for:
 - axis scaling and range calculations,
 - hit testing and interaction behavior,
 - rendering/data caching invalidation.
