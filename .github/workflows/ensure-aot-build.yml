@@ -42,7 +42,7 @@ jobs:
       DOTNET_VERSION: ${{ matrix.tfm == 'net11.0' && '11.0.100-preview.6.26359.118' || '10.0.x' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET SDKs
         uses: actions/setup-dotnet@v4
