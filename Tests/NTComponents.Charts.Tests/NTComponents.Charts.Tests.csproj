@@ -13,19 +13,19 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="AngleSharp" Version="1.5.2" />
-		<PackageReference Include="AwesomeAssertions" Version="9.4.0" />
+		<PackageReference Include="AngleSharp" Version="1.7.1" />
+		<PackageReference Include="AwesomeAssertions" Version="9.5.0" />
 		<PackageReference Include="AwesomeAssertions.Analyzers" Version="9.0.8">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="bunit" Version="2.8.6" />
+		<PackageReference Include="bunit" Version="2.9.0" />
 		<PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="17.14.2">
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
-		<PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.150.1" />
-		<PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="4.150.1" />
+		<PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.151.1" />
+		<PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="4.151.1" />
 		<PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
