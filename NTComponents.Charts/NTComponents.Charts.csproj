@@ -37,8 +37,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="AspNetCore.SassCompiler" Version="1.102.0" PrivateAssets="all" />
-		<PackageReference Include="SkiaSharp.Views.Blazor" Version="4.150.1" />
+		<PackageReference Include="AspNetCore.SassCompiler" Version="1.103.0" PrivateAssets="all" />
+		<PackageReference Include="SkiaSharp.Views.Blazor" Version="4.151.1" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(UseLocalNTComponentsProject)' == 'true'">
@@ -46,11 +46,11 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(UseLocalNTComponentsProject)' != 'true'">
-		<PackageReference Include="NTComponents" Version="2.0.0-preview.51" />
+		<PackageReference Include="NTComponents" Version="2.0.0-preview.61" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.0" />
+		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.0" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
