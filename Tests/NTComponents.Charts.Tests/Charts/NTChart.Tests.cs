@@ -38,10 +38,59 @@ public class NTChart_Tests : BunitContext {
     [Fact]
     public void Chart_defaults_annotations_to_empty_collection() {
         // Arrange
-        var chart = new NTChart<LinePoint>();
+        using var chart = new NTChart<LinePoint>();
 
         // Assert
         chart.Annotations.Should().NotBeNull().And.BeEmpty();
+    }
+
+    [Fact]
+    public void Chart_uses_embedded_roboto_typefaces() {
+        // Arrange
+        var resources = typeof(NTChart<>).Assembly.GetManifestResourceNames();
+        using var chart = new NTChart<LinePoint>();
+
+        // Act
+        var defaultTypeface = chart.DefaultFont.Typeface;
+        var regularTypeface = chart.RegularFont.Typeface;
+
+        // Assert
+        resources.Should().Contain([
+            "NTComponents.Charts.Fonts.OFL.txt",
+            "NTComponents.Charts.Fonts.Roboto-Bold.ttf",
+            "NTComponents.Charts.Fonts.Roboto-Medium.ttf",
+            "NTComponents.Charts.Fonts.Roboto-Regular.ttf"
+        ]);
+        defaultTypeface.FamilyName.Should().Be("Roboto");
+        defaultTypeface.FontWeight.Should().Be((int)SKFontStyleWeight.Bold);
+        regularTypeface.FamilyName.Should().Be("Roboto");
+        regularTypeface.FontWeight.Should().Be((int)SKFontStyleWeight.Medium);
+    }
+
+    [Fact]
+    public void Debug_view_uses_embedded_roboto_regular_typeface() {
+        // Arrange
+        using var chart = new NTChart<LinePoint>();
+        var info = new SKImageInfo(320, 240);
+        using var surface = SKSurface.Create(info)!;
+        var renderContext = new NTRenderContext {
+            Canvas = surface.Canvas,
+            DefaultFont = chart.DefaultFont,
+            RegularFont = chart.RegularFont,
+            Density = 1f,
+            Info = info,
+            PlotArea = new SKRect(10, 10, 310, 230),
+            TextColor = SKColors.Black,
+            TotalArea = new SKRect(0, 0, info.Width, info.Height)
+        };
+
+        // Act
+        InvokeNonPublic(chart, "RenderDebugInfo", [renderContext]);
+        var debugFont = (SKFont)GetPrivateField(chart, "_debugFont")!;
+
+        // Assert
+        debugFont.Typeface.FamilyName.Should().Be("Roboto");
+        debugFont.Typeface.FontWeight.Should().Be((int)SKFontStyleWeight.Normal);
     }
 
     [Fact]
@@ -80,7 +129,7 @@ public class NTChart_Tests : BunitContext {
     [Fact]
     public void RenderAnnotations_invokes_custom_renderer_for_custom_and_decorated_annotations() {
         // Arrange
-        var chart = new NTChart<LinePoint>();
+        using var chart = new NTChart<LinePoint>();
         SetPrivateField(chart, "_chartCoordSystem", ChartCoordinateSystem.Cartesian);
 
         var callbackCount = 0;
@@ -106,15 +155,13 @@ public class NTChart_Tests : BunitContext {
             }
         ];
 
-        using var defaultFont = new SKFont(SKTypeface.Default, 12f);
-        using var regularFont = new SKFont(SKTypeface.Default, 11f);
         var info = new SKImageInfo(320, 240);
         using var surface = SKSurface.Create(info)!;
         var plotArea = new SKRect(10, 10, 310, 230);
         var renderContext = new NTRenderContext {
             Canvas = surface.Canvas,
-            DefaultFont = defaultFont,
-            RegularFont = regularFont,
+            DefaultFont = chart.DefaultFont,
+            RegularFont = chart.RegularFont,
             Density = 1f,
             Info = info,
             PlotArea = plotArea,
@@ -204,6 +251,12 @@ public class NTChart_Tests : BunitContext {
         var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
         method.Should().NotBeNull($"private method '{methodName}' should exist on '{target.GetType().Name}'");
         return method!.Invoke(target, args);
+    }
+
+    private static object? GetPrivateField(object target, string fieldName) {
+        var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        field.Should().NotBeNull($"private field '{fieldName}' should exist on '{target.GetType().Name}'");
+        return field!.GetValue(target);
     }
 
     private static void SetPrivateField(object target, string fieldName, object value) {

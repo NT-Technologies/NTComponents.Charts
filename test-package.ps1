@@ -47,6 +47,9 @@ try {
         if ($entries -contains 'staticwebassets/NTComponents.Charts.lib.module.js') {
             throw 'The package contains the obsolete fingerprinted initializer module name.'
         }
+        if (-not ($entries -contains 'licenses/Roboto/OFL.txt')) {
+            throw 'The package is missing the Roboto SIL Open Font License.'
+        }
 
         $forbiddenDependencies = @('AspNetCore.SassCompiler', 'SkiaSharp.NativeAssets.Linux', 'SkiaSharp.NativeAssets.WebAssembly')
         $dependencies = @($metadata.dependencies.group.dependency | ForEach-Object id)

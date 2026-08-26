@@ -289,10 +289,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     /// <summary>
     ///     Gets the bold default font used for chart titles and labels.
     /// </summary>
-    public SKFont DefaultFont => _defaultFont ??= CreateFont(
-        "Roboto",
-        SKFontStyleWeight.Bold,
-        fallbackWeight: SKFontStyleWeight.Normal);
+    public SKFont DefaultFont => _defaultFont ??= new SKFont(NTRobotoFonts.Bold, 12);
     /// <summary>
     ///     Gets the data point currently under the mouse cursor, or <see langword="null" /> if none.
     /// </summary>
@@ -336,10 +333,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     /// <summary>
     ///     Gets the medium-weight regular font used for axis labels and other secondary text.
     /// </summary>
-    public SKFont RegularFont => _regularFont ??= CreateFont(
-        "Roboto",
-        SKFontStyleWeight.Medium,
-        fallbackWeight: SKFontStyleWeight.Normal);
+    public SKFont RegularFont => _regularFont ??= new SKFont(NTRobotoFonts.Medium, 12);
     /// <summary>
     ///     Gets the list of all series added to this chart.
     /// </summary>
@@ -446,31 +440,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private SKPaint? _annotationTextPaint;
     private SKPaint? _annotationLabelBgPaint;
     private SKFont? _annotationFont;
-
-    private static SKFont CreateFont(string familyName, SKFontStyleWeight preferredWeight, SKFontStyleWeight fallbackWeight) {
-        var typeface =
-            TryCreateTypeface(familyName, preferredWeight) ??
-            TryCreateTypeface(familyName, fallbackWeight) ??
-            SKTypeface.Default;
-
-        return new SKFont(typeface, 12);
-    }
-
-    private static SKTypeface? TryCreateTypeface(string familyName, SKFontStyleWeight weight) {
-        try {
-            return SKTypeface.FromFamilyName(
-                familyName,
-                weight,
-                SKFontStyleWidth.Normal,
-                SKFontStyleSlant.Upright);
-        }
-        catch (DllNotFoundException) {
-            return null;
-        }
-        catch (TypeInitializationException) {
-            return null;
-        }
-    }
 
     /// <summary>
     ///     Exports the current chart as a PNG image.
@@ -1953,10 +1922,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             IsAntialias = true
         };
 
-        if (_debugFont == null) {
-            var typeface = TryCreateTypeface("monospace", SKFontStyleWeight.Normal) ?? SKTypeface.Default;
-            _debugFont = new SKFont(typeface, 12 * context.Density);
-        }
+        _debugFont ??= new SKFont(NTRobotoFonts.Regular, 12 * context.Density);
         _debugFont.Size = 12 * context.Density;
 
         context.Canvas.DrawText($"Render: {_lastRenderTimeMs:F2} ms", 10 * context.Density, 16 * context.Density, SKTextAlign.Left, _debugFont, _debugTextPaint);
