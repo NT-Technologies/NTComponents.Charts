@@ -2,46 +2,64 @@
 version: 2
 
 updates:
-  - package-ecosystem: nuget
-    directories:
-      - /NTComponents.Charts
-      - /Tests/AotCompatibility.TestApp
-      - /Tests/NTComponents.Charts.Tests
+  - package-ecosystem: "nuget"
+    directory: "/"
     schedule:
-      interval: weekly
-      day: monday
-      time: '06:00'
-      timezone: America/Denver
-    groups:
-      nuget-minor-and-patch:
-        patterns: ['*']
-        update-types: [minor, patch]
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Denver"
+    ignore:
+      - dependency-name: "Microsoft.AspNetCore.Components.WebAssembly"
+    exclude-paths:
+      # The library has its own package policy below.
+      - "NTComponents.Charts/NTComponents.Charts.csproj"
     commit-message:
-      prefix: chore
-      include: scope
+      prefix: "chore"
+      include: "scope"
 
-  - package-ecosystem: github-actions
-    directory: /
+  - package-ecosystem: "nuget"
+    directory: "/NTComponents.Charts"
     schedule:
-      interval: weekly
-      day: wednesday
-      time: '06:00'
-      timezone: America/Denver
-    groups:
-      actions-minor-and-patch:
-        patterns: ['*']
-        update-types: [minor, patch]
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Denver"
+    ignore:
+      - dependency-name: "Microsoft.AspNetCore.Components.WebAssembly"
     commit-message:
-      prefix: chore
-      include: scope
+      prefix: "chore"
+      include: "scope"
 
-  - package-ecosystem: dotnet-sdk
-    directory: /
+  - package-ecosystem: "npm"
+    directory: "/"
     schedule:
-      interval: weekly
-      day: thursday
-      time: '06:00'
-      timezone: America/Denver
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:00"
+      timezone: "America/Denver"
     commit-message:
-      prefix: chore
-      include: scope
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "06:00"
+      timezone: "America/Denver"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "dotnet-sdk"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "06:00"
+      timezone: "America/Denver"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
