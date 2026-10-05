@@ -1,21 +1,38 @@
 <main data-aot-smoke-ready="true">
     <h1>NTComponents.Charts AOT smoke</h1>
+    <NTThemeToggle AllowContrastSelection="false" />
+    <button @onclick="ToggleHardware">Toggle hardware acceleration</button>
+    <button @onclick="UpdateData">Update existing data</button>
+    <button @onclick="() => _visible = !_visible">Toggle chart visibility</button>
+    <button @onclick="() => _width = _width == 640 ? 480 : 640">Resize chart</button>
 
-    <div style="height: 320px; width: 640px;">
-        <NTChart TData="SmokePoint" EnableHardwareAcceleration="false">
+    <div style="height: 320px; width: @(_width)px; display: @(_visible ? "block" : "none");">
+        <NTChart @ref="_chart" TData="SmokePoint" EnableHardwareAcceleration="_hardware" HoverAnimationDuration="NTMotionDuration.Ms250" HoverAnimationEasing="NTMotionEasing.Standard">
             <NTXAxisOptions ValueSelector="@(point => point.X)" Title="X" />
             <NTYAxisOptions ValueSelector="@(point => point.Y)" Title="Y" />
-            <NTLineSeries TData="SmokePoint" Data="_points" XValue="@(point => point.X)" YValueSelector="@(point => point.Y)" />
+            <NTLineSeries TData="SmokePoint" Data="_points" XValue="@(point => point.X)" YValueSelector="@(point => point.Y)" Interactions="@(ChartInteractions.XPan | ChartInteractions.XZoom)" AnimationDuration="NTMotionDuration.Ms500" AnimationEasing="NTMotionEasing.Emphasized" />
+            <NTTooltip TData="SmokePoint" />
         </NTChart>
     </div>
 </main>
 
 @code {
-    private readonly IReadOnlyList<SmokePoint> _points = [
+    private NTChart<SmokePoint>? _chart;
+    private bool _hardware;
+    private bool _visible = true;
+    private int _width = 640;
+    private readonly SmokePoint[] _points = [
         new(0, 1),
         new(1, 3),
         new(2, 2)
     ];
+
+    private void ToggleHardware() => _hardware = !_hardware;
+
+    private void UpdateData() {
+        _points[1] = new(1, _points[1].Y == 3 ? 6 : 3);
+        _chart?.Invalidate();
+    }
 
     private sealed record SmokePoint(double X, decimal Y);
 }

@@ -8,7 +8,7 @@
     </PropertyGroup>
 
     <PropertyGroup>
-        <!-- SkiaSharp 4.150.1 WebAssembly assets use Emscripten 3.1.56 and cannot native-link with .NET 11's Emscripten 5 toolchain. -->
+        <!-- SkiaSharp 4.153.1 assets use Emscripten 3.1.56; .NET 11 RC uses Emscripten 6 and cannot link them. The net11 target validates trimming only. -->
         <WasmBuildNative Condition="'$(WasmBuildNative)' == '' and '$(TargetFramework)' == 'net10.0'">true</WasmBuildNative>
         <WasmBuildNative Condition="'$(WasmBuildNative)' == ''">false</WasmBuildNative>
     </PropertyGroup>
@@ -18,11 +18,11 @@
     </ItemGroup>
 
     <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-        <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.10" />
+        <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.12" />
     </ItemGroup>
 
     <ItemGroup Condition="'$(TargetFramework)' == 'net11.0'">
-        <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="11.0.0-preview.6.26359.118" />
+        <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="11.0.0-rc.1.26425.128" />
     </ItemGroup>
 
 </Project>

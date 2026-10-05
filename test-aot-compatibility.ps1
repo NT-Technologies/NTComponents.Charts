@@ -64,7 +64,15 @@ foreach ($framework in $Frameworks) {
         throw "The $framework publish output is missing its WebAssembly application assets."
     }
 
-    if (-not $SkipBrowserSmoke) {
+    $chartAssets = Join-Path $wwwroot '_content/NTComponents.Charts'
+    if (-not (Test-Path (Join-Path $chartAssets 'ntcomponents-charts.js'))) {
+        throw "The $framework publish output is missing the generated chart JavaScript module."
+    }
+    if (Get-ChildItem $chartAssets -Recurse -File -Filter '*.ts') {
+        throw "The $framework publish output contains TypeScript source or declarations."
+    }
+
+    if (-not $SkipBrowserSmoke -and $nativeAot) {
         $browser = Get-BrowserPath
         if (-not $browser) { throw 'Chrome, Chromium, or Edge is required for the browser smoke test.' }
         $python = Get-Command python3, python -ErrorAction SilentlyContinue | Sort-Object { $_.Source -match '[\\/]WindowsApps[\\/]' } | Select-Object -First 1
@@ -85,7 +93,7 @@ foreach ($framework in $Frameworks) {
             if ($dom -notmatch 'data-aot-smoke-ready="true"') {
                 throw "The $framework browser smoke app did not reach its ready marker."
             }
-            if ($dom -match 'Unhandled exception rendering component|crit: Microsoft\.AspNetCore\.Components\.WebAssembly') {
+            if ($dom -match 'Unhandled exception rendering component|crit: Microsoft\.AspNetCore\.Components\.WebAssembly|TypeInitialization_Type|DllNotFound|EntryPointNotFound') {
                 throw "The $framework browser smoke app reported an unhandled Blazor rendering exception."
             }
         }
@@ -95,6 +103,9 @@ foreach ($framework in $Frameworks) {
         }
     }
 
-    $mode = if ($nativeAot) { 'native AOT' } else { 'trimmed WebAssembly' }
+    if (-not $nativeAot) {
+        Write-Host "$framework browser rendering is unsupported by the current SkiaSharp native assets; only compilation and trimming were validated."
+    }
+    $mode = if ($nativeAot) { 'native WebAssembly' } else { 'trimmed WebAssembly build' }
     Write-Host "$framework passed $mode compatibility validation."
 }

@@ -44,6 +44,9 @@ try {
         if (-not ($entries -contains 'staticwebassets/ntcomponents-charts.js')) {
             throw 'The package is missing its directly importable chart JavaScript module.'
         }
+        if ($entries | Where-Object { $_ -like '*.ts' }) {
+            throw 'The package contains TypeScript source or declarations instead of only generated JavaScript.'
+        }
         if ($entries -contains 'staticwebassets/NTComponents.Charts.lib.module.js') {
             throw 'The package contains the obsolete fingerprinted initializer module name.'
         }
