@@ -1,14 +1,15 @@
 using SkiaSharp;
 using System.ComponentModel;
-using System.Diagnostics;
 
 namespace NTComponents.Charts.Core;
 
 internal class NTTitle<TData> : IRenderable where TData : class {
     private readonly IChart<TData> _chart;
-    private SKPoint _point = SKPoint.Empty;
     private SKFont? _titleFont;
     private SKPaint? _titlePaint;
+    private float _fontSize;
+    private SKTypeface? _typeface;
+    private SKColor _textColor;
 
     public NTTitle(IChart<TData> chart) {
         ArgumentNullException.ThrowIfNull(chart, nameof(chart));
@@ -30,27 +31,23 @@ internal class NTTitle<TData> : IRenderable where TData : class {
     }
 
     public void Invalidate() {
-        _titlePaint?.Dispose();
-        _titleFont?.Dispose();
-        _titlePaint = null;
-        _titleFont = null;
+        var options = _chart.TitleOptions!;
+        var typeface = _chart.DefaultFont.Typeface;
+        var fontSize = options.FontSize * _chart.Density;
+        var textColor = _chart.GetThemeColor(options.TextColor ?? _chart.TextColor);
 
-        _titlePaint = new SKPaint {
-            IsAntialias = true,
-            Style = SKPaintStyle.Fill,
-            Color = _chart.GetThemeColor(_chart.TitleOptions!.TextColor ?? _chart.TextColor)
-        };
-
-        _titleFont = new SKFont {
-            Embolden = true,
-            Typeface = _chart.DefaultFont.Typeface,
-            Size = _chart.TitleOptions!.FontSize * _chart.Density
-        };
-        _point = SKPoint.Empty;
+        _titlePaint ??= new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
+        _titleFont ??= new SKFont();
+        _titlePaint.Color = textColor;
+        _titleFont.Typeface = typeface;
+        _titleFont.Size = fontSize;
+        _typeface = typeface;
+        _fontSize = fontSize;
+        _textColor = textColor;
     }
 
     public SKRect Render(NTRenderContext context, SKRect renderArea) {
-        if (_titleFont is null || _titlePaint is null) {
+        if (_titleFont is null || _titlePaint is null || !ReferenceEquals(_typeface, _chart.DefaultFont.Typeface) || _fontSize != _chart.TitleOptions!.FontSize * context.Density || _textColor != _chart.GetThemeColor(_chart.TitleOptions.TextColor ?? _chart.TextColor)) {
             Invalidate();
         }
 

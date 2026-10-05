@@ -12,12 +12,6 @@
             justify-content: flex-end;
             gap: 4px;
             flex: 0 0 auto;
-
-            ::deep .tnt-button {
-                min-height: unset !important;
-                padding: 0 !important;
-                margin: 0 !important;
-            }
         }
 
         .nt-chart-canvas-host {

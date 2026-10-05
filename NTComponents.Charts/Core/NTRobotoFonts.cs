@@ -4,6 +4,8 @@ namespace NTComponents.Charts.Core;
 
 internal static class NTRobotoFonts {
 
+    // Use the embedded weight directly; SKFont.Embolden would synthesize additional thickness.
+
     private const string ResourcePrefix = "NTComponents.Charts.Fonts.";
 
     internal static SKTypeface Bold { get; } = Load("Roboto-Bold.ttf");

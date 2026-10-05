@@ -1,0 +1,13 @@
+{
+  "name": "ntcomponents-charts-build",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:ts": "tsc -p tsconfig.json",
+    "pretest": "npm run build:ts",
+    "test": "node --test Tests/NTComponents.Charts.Tests/wwwroot/*.test.js"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

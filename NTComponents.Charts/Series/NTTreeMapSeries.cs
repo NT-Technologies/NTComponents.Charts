@@ -276,7 +276,11 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
 
     private int? _hoverAnimFromIndex;
     private int? _hoverAnimToIndex;
-    private DateTime _hoverAnimStartUtc = DateTime.MinValue;
+    private long _hoverAnimStartTimestamp;
+
+    internal override bool RequiresAnimationFrame => base.RequiresAnimationFrame ||
+        (_isDrillTransitionActive && AnimationEnabled && GetAnimationProgress() < 1f) ||
+        (AnimationEnabled && _hoverAnimFromIndex != _hoverAnimToIndex && GetHoverAnimationProgress() < 1f);
 
     /// <inheritdoc />
     protected override void OnDataChanged() {
@@ -359,11 +363,11 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         var childPhaseProgress = progress <= parentPhasePortion
             ? 0f
             : Math.Clamp((progress - parentPhasePortion) / (1f - parentPhasePortion), 0f, 1f);
-        var parentEasedProgress = BackEase(parentPhaseProgress);
-        var childEasedProgress = BackEase(childPhaseProgress);
+        var parentEasedProgress = EaseAnimation(parentPhaseProgress);
+        var childEasedProgress = EaseAnimation(childPhaseProgress);
         var visibilityFactor = VisibilityFactor;
         var drillTransitionProgress = _isDrillTransitionActive ? GetAnimationProgress() : 1f;
-        var drillTransitionEased = BackEase(drillTransitionProgress);
+        var drillTransitionEased = EaseAnimation(drillTransitionProgress);
         var applyDrillTransition = _isDrillTransitionActive && drillTransitionProgress < 1f;
 
         UpdateHoverAnimationState();
@@ -483,6 +487,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             ResetAnimation();
             _drillPath.RemoveAt(_drillPath.Count - 1);
             InvalidateLayout();
+            Chart.RequestDraw(true);
             return;
         }
 
@@ -504,6 +509,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
                 ResetAnimation();
                 _drillPath.Add(new DrillStep(rendered.Node.Key, rendered.Node.DisplayLabel));
                 InvalidateLayout();
+                Chart.RequestDraw(true);
             }
             return;
         }
@@ -739,6 +745,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         hash.Add(Visible);
         hash.Add(AnimationEnabled);
         hash.Add(AnimationDuration);
+        hash.Add(AnimationEasing);
         return hash.ToHashCode();
     }
 
@@ -932,18 +939,16 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
 
         _hoverAnimFromIndex = _hoverAnimToIndex;
         _hoverAnimToIndex = nextHoveredIndex;
-        _hoverAnimStartUtc = DateTime.UtcNow;
+        _hoverAnimStartTimestamp = NTChartMotion.Timestamp;
     }
 
     private float GetHoverAnimationProgress() {
-        if (_hoverAnimFromIndex == _hoverAnimToIndex) {
+        if (!AnimationEnabled || _hoverAnimFromIndex == _hoverAnimToIndex) {
             return 1f;
         }
 
-        var durationMs = Math.Max(1.0, Chart.HoverAnimationDuration.TotalMilliseconds);
-        var elapsedMs = (DateTime.UtcNow - _hoverAnimStartUtc).TotalMilliseconds;
-        var t = (float)Math.Clamp(elapsedMs / durationMs, 0.0, 1.0);
-        return t * t * (3f - (2f * t));
+        var progress = NTChartMotion.Progress(NTChartMotion.ElapsedSince(_hoverAnimStartTimestamp), Chart.HoverAnimationDuration);
+        return NTChartMotion.Ease(progress, Chart.HoverAnimationEasing);
     }
 
     private float GetNodeHoverIntensity(int nodeIndex, float progress) {
@@ -1047,18 +1052,15 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         };
 
         _labelFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.DefaultFont.Typeface
         };
 
         _navFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.RegularFont.Typeface,
             Size = 12f * context.Density
         };
 
         _drillIndicatorFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.RegularFont.Typeface,
             Size = 10f * context.Density
         };

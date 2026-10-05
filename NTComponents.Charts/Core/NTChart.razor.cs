@@ -16,7 +16,7 @@ namespace NTComponents.Charts.Core;
 ///     The base class for all charts in the NTComponents.Charts library.
 /// </summary>
 [CascadingTypeParameter(nameof(TData))]
-public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> where TData : class {
+public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> where TData : class {
 
     internal void RegisterLegend(NTLegend<TData> legend) {
         if (Legend is not null) {
@@ -47,6 +47,8 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
                 _lastTitleOptionsRef = TitleOptions;
             }
         }
+        InvalidateAppearance();
+        RequestDraw(geometryChanged: true);
     }
 
     /// <summary>
@@ -139,7 +141,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
 
     private NTTitle<TData>? _title;
     private NTTitleOptions? _lastTitleOptionsRef;
-    private bool _invalidate;
     private readonly Dictionary<RenderOrdered, List<IRenderable>> _renderablesByOrder = Enum.GetValues<RenderOrdered>().ToDictionary(r => r, _ => new List<IRenderable>());
     private bool _defaultAxesAttached;
 
@@ -168,7 +169,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         _renderablesByOrder[renderable.RenderOrder];
         if (!list.Contains(renderable)) {
             list.Add(renderable);
-            _invalidate = true;
+            RequestDraw(geometryChanged: true);
         }
     }
     /// <summary>
@@ -177,7 +178,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     /// <param name="renderable">The renderable to unregister.</param>
     public void UnregisterRenderable(IRenderable renderable) {
         _renderablesByOrder[renderable.RenderOrder].Remove(renderable);
-        _invalidate = true;
+        RequestDraw(geometryChanged: true);
     }
 
     /// <summary>
@@ -187,7 +188,8 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         foreach (var renderable in _renderablesByOrder.SelectMany(kvp => kvp.Value)) {
             renderable.Invalidate();
         }
-        _invalidate = false;
+        InvalidateDataCaches();
+        RequestDraw(geometryChanged: true);
     }
 
     /// <summary>
@@ -237,10 +239,16 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     public bool EnableHardwareAcceleration { get; set; } = true;
 
     /// <summary>
-    ///     Gets or sets the duration of the hover animation.
+    ///     Gets or sets the NTComponents motion duration for hover animations.
     /// </summary>
     [Parameter]
-    public TimeSpan HoverAnimationDuration { get; set; } = TimeSpan.FromMilliseconds(250);
+    public NTMotionDuration HoverAnimationDuration { get; set; } = NTMotionDuration.Ms250;
+
+    /// <summary>
+    ///     Gets or sets the NTComponents easing curve for hover animations.
+    /// </summary>
+    [Parameter]
+    public NTMotionEasing HoverAnimationEasing { get; set; } = NTMotionEasing.Standard;
 
     /// <summary>
     ///     Gets or sets the margin around the chart.
@@ -413,12 +421,28 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     private SKPoint _legendDragStartMousePos;
     private SKPoint _legendDragStartOffset;
     private ElementReference _interactionHost;
-    private IJSObjectReference? _chartModule;
+    private NTChartInterop? _chartInterop;
     private DotNetObjectReference<NTChart<TData>>? _objRef;
-    private IJSObjectReference? _themeListener;
-    private IJSObjectReference? _wheelListener;
     private long _lastUiRefreshTimestamp;
     private long _lastInteractionTimestamp;
+    private IComponent? _skiaView;
+    private bool _viewReady;
+    private bool _drawQueued;
+    private bool _drawRequested;
+    private bool _renderLoopEnabled;
+    private bool _isVisible = true;
+    private bool _hitTestDirty = true;
+    private SKPoint? _lastHitTestPoint;
+    private SKRect _lastHitTestArea;
+    private SKPicture? _axesPicture;
+    private SKPicture? _titlePicture;
+    private bool _axesPictureDirty = true;
+    private bool _titlePictureDirty = true;
+    private (bool XPan, bool YPan, bool XZoom, bool YZoom)? _lastUiInteractions;
+    private SKRect _cachedPlotArea;
+    private SKRect _titlePictureArea;
+    private SKRect _titleRemainingArea;
+    private (SKRect Area, (double Min, double Max) X, (decimal Min, decimal Max) Y, (decimal Min, decimal Max)? SecondaryY)? _axesPictureKey;
 
     // Per-frame scale range caches to avoid O(points * range-calculation) cost.
     private bool _useFrameScaleCache;
@@ -753,11 +777,17 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     ///     Invoked by the browser when the active theme changes; resolves updated theme colors and triggers a redraw.
     /// </summary>
     [JSInvokable]
-    public async Task OnThemeChanged() {
+    public Task OnThemeChanged() => InvokeAsync(async () => {
+        if (DisposalStarted) {
+            return;
+        }
         await ResolveColorsAsync();
-        Invalidate();
-        StateHasChanged();
-    }
+        if (DisposalStarted) {
+            return;
+        }
+        InvalidateAppearance();
+        RequestDraw(geometryChanged: true);
+    });
 
     /// <summary>
     ///     Resets the view to the default range.
@@ -766,6 +796,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         foreach (var s in Series) {
             s.ResetView();
         }
+        RequestDraw(geometryChanged: true);
         StateHasChanged();
     }
 
@@ -783,6 +814,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             }
         }
 
+        RequestDraw(geometryChanged: true);
         StateHasChanged();
     }
 
@@ -1055,56 +1087,65 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         _cachedAllX = null;
         _cachedAllY = null;
         _cachedXIndexMap = null;
+        RequestDraw(geometryChanged: true);
     }
 
     /// <inheritdoc />
     protected override void Dispose(bool disposing) {
-        if (disposing) {
-            _defaultFont?.Dispose();
-            _regularFont?.Dispose();
-            _debugBgPaint?.Dispose();
-            _debugTextPaint?.Dispose();
-            _debugFont?.Dispose();
-            _treeMapGroupPaint?.Dispose();
-            _treeMapGroupFont?.Dispose();
-            _annotationLinePaint?.Dispose();
-            _annotationFillPaint?.Dispose();
-            _annotationTextPaint?.Dispose();
-            _annotationLabelBgPaint?.Dispose();
-            _annotationFont?.Dispose();
-        }
+        _axesPicture?.Dispose();
+        _titlePicture?.Dispose();
+        _title?.Dispose();
+        _defaultXAxis.Dispose();
+        _defaultYAxis.Dispose();
+        _defaultFont?.Dispose();
+        _regularFont?.Dispose();
+        _debugBgPaint?.Dispose();
+        _debugTextPaint?.Dispose();
+        _debugFont?.Dispose();
+        _treeMapGroupPaint?.Dispose();
+        _treeMapGroupFont?.Dispose();
+        _annotationLinePaint?.Dispose();
+        _annotationFillPaint?.Dispose();
+        _annotationTextPaint?.Dispose();
+        _annotationLabelBgPaint?.Dispose();
+        _annotationFont?.Dispose();
         base.Dispose(disposing);
     }
 
     /// <inheritdoc />
     protected override async ValueTask DisposeAsyncCore() {
-        _objRef?.Dispose();
-        if (_wheelListener != null) {
-            await _wheelListener.InvokeVoidAsync("dispose");
-            await _wheelListener.DisposeAsync();
+        try {
+            if (_chartInterop is not null) {
+                await _chartInterop.DisposeAsync();
+            }
         }
-        if (_chartModule != null) {
-            await _chartModule.DisposeAsync();
-        }
-        if (_themeListener != null) {
-            await _themeListener.InvokeVoidAsync("dispose");
-            await _themeListener.DisposeAsync();
+        finally {
+            _objRef?.Dispose();
         }
     }
 
     /// <inheritdoc />
     protected override async Task OnAfterRenderAsync(bool firstRender) {
+        _viewReady = true;
         if (firstRender) {
-            Density = await JSRuntime.InvokeAsync<float>("eval", "window.devicePixelRatio || 1");
-            _chartModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./_content/NTComponents.Charts/ntcomponents-charts.js");
             _objRef = DotNetObjectReference.Create(this);
-            _themeListener = await JSRuntime.InvokeAsync<IJSObjectReference>("NTComponents.onThemeChanged", _objRef);
-            _wheelListener = await _chartModule.InvokeAsync<IJSObjectReference>(
-                "registerWheelHandler",
-                _interactionHost,
-                _objRef,
-                IsXZoomEnabled || IsYZoomEnabled);
+            _chartInterop = new NTChartInterop(JSRuntime);
+            Density = await _chartInterop.InitializeAsync(_interactionHost, _objRef, IsXZoomEnabled || IsYZoomEnabled);
             await ResolveColorsAsync();
+            if (!DisposalStarted) {
+                InvalidateAppearance();
+                RequestDraw(geometryChanged: true);
+            }
+        }
+        else if (_chartInterop is not null) {
+            await _chartInterop.UpdateInteractionsAsync(IsXZoomEnabled || IsYZoomEnabled);
+        }
+        if (_drawRequested) {
+            RequestDraw();
+        }
+        var interactions = (IsXPanEnabled, IsYPanEnabled, IsXZoomEnabled, IsYZoomEnabled);
+        if (_lastUiInteractions != interactions && !DisposalStarted) {
+            _lastUiInteractions = interactions;
             StateHasChanged();
         }
     }
@@ -1241,8 +1282,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     /// <param name="e">The mouse event arguments.</param>
     protected virtual void OnMouseMove(MouseEventArgs e) {
         var nextMousePosition = new SKPoint((float)e.OffsetX * Density, (float)e.OffsetY * Density);
-        var hadLastMousePosition = LastMousePosition.HasValue;
+        if (LastMousePosition == nextMousePosition && !_isDraggingLegend && !Series.Any(s => s.IsPanning)) {
+            return;
+        }
         LastMousePosition = nextMousePosition;
+        _hitTestDirty = true;
 
         if (_isDraggingLegend && Legend != null && LastPlotArea != default) {
             var currentPoint = nextMousePosition;
@@ -1281,9 +1325,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
 
         _lastInteractionTimestamp = Stopwatch.GetTimestamp();
-        if (!hadLastMousePosition || Series.Any(s => s.IsPanning)) {
-            RequestUiRefresh();
-        }
+        RequestDraw(geometryChanged: Series.Any(s => s.IsPanning));
     }
 
     /// <summary>
@@ -1347,16 +1389,22 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     ///     Handles the paint surface event from the SkiaSharp view.
     /// </summary>
     protected void OnPaintSurface(SKCanvas canvas, SKImageInfo info) {
-        if (_invalidate) {
-            Invalidate();
+        if (DisposalStarted || info.Width <= 0 || info.Height <= 0) {
+            return;
         }
+        if (_lastWidth != info.Width || _lastHeight != info.Height) {
+            _axesPictureDirty = true;
+            _titlePictureDirty = true;
+            _hitTestDirty = true;
+        }
+        _drawRequested = false;
+        _hitTestDirty |= _renderLoopEnabled;
 
         var sw = DebugView ? Stopwatch.StartNew() : null;
 
         _lastWidth = info.Width;
         _lastHeight = info.Height;
 
-        _isHoveringLegend = false;
         _treeMapAreas.Clear();
 
         var totalArea = new SKRect(0, 0, info.Width, info.Height);
@@ -1386,33 +1434,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         try {
             foreach (var order in Enum.GetValues<RenderOrdered>()) {
                 if (order is RenderOrdered.Axis && _chartCoordSystem is ChartCoordinateSystem.Cartesian) {
-                    var plotArea = renderArea;
-
-                    if (YAxis is NTAxisOptions<TData> primaryYAxis) {
-                        plotArea = primaryYAxis.Measure(context, plotArea);
-                    }
-                    if (SecondaryYAxis is NTAxisOptions<TData> secondaryYAxisMeasure) {
-                        plotArea = secondaryYAxisMeasure.Measure(context, plotArea);
-                    }
-                    if (XAxis is NTAxisOptions<TData> xAxisMeasure) {
-                        plotArea = xAxisMeasure.Measure(context, plotArea);
-                    }
-                    var xAxisArea = new SKRect(plotArea.Left, plotArea.Top, plotArea.Right, renderArea.Bottom);
-
-                    context.PlotArea = plotArea;
-                    LastPlotArea = plotArea;
-
-                    XAxis.Render(context, xAxisArea);
-
-                    var yAxisArea = new SKRect(renderArea.Left, plotArea.Top, plotArea.Right, plotArea.Bottom);
-                    YAxis.Render(context, yAxisArea);
-
-                    if (SecondaryYAxis is not null) {
-                        var secondaryYAxisArea = new SKRect(plotArea.Left, plotArea.Top, renderArea.Right, plotArea.Bottom);
-                        SecondaryYAxis.Render(context, secondaryYAxisArea);
-                    }
-
-                    renderArea = plotArea;
+                    renderArea = RenderAxes(context, renderArea);
                     continue;
                 }
 
@@ -1473,7 +1495,9 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
                 }
 
                 foreach (var renderable in _renderablesByOrder[order]) {
-                    renderArea = renderable.Render(context, renderArea);
+                    renderArea = ReferenceEquals(renderable, _title)
+                        ? RenderTitle(context, renderArea)
+                        : renderable.Render(context, renderArea);
                 }
             }
         }
@@ -1486,6 +1510,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             _lastRenderTimeMs = sw.Elapsed.TotalMilliseconds;
             RenderDebugInfo(context);
         }
+        SetRenderLoop(_isVisible && Series.Any(series => series.RequiresAnimationFrame));
     }
     private ChartCoordinateSystem _chartCoordSystem;
 
@@ -1500,6 +1525,17 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         }
 
         var mousePoint = LastMousePosition.Value;
+        if (!_hitTestDirty && _lastHitTestPoint == mousePoint && _lastHitTestArea == plotArea) {
+            return;
+        }
+        _hitTestDirty = false;
+        _lastHitTestPoint = mousePoint;
+        _lastHitTestArea = plotArea;
+        var wasHoveringLegend = _isHoveringLegend;
+        _isHoveringLegend = Legend is { Visible: true } && Legend.Position != LegendPosition.None && Legend.LastDrawArea.Contains(mousePoint);
+        if (wasHoveringLegend != _isHoveringLegend) {
+            RequestUiRefresh(force: true);
+        }
 
         // Check legend items for hover (if legend is present)
         if (Legend != null && Legend.Visible && Legend.Position != LegendPosition.None) {
@@ -1532,6 +1568,8 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             var elapsedTicks = Stopwatch.GetTimestamp() - _lastHoverHitTimestamp;
             var graceTicks = Stopwatch.Frequency / 20L; // ~50 ms
             if (_hoverMissStreak < 2 && elapsedTicks <= graceTicks) {
+                _hitTestDirty = true;
+                RequestDraw();
                 return;
             }
         }
@@ -1540,6 +1578,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     }
 
     private void SetHoveredState(NTBaseSeries<TData> hoveredSeries, int? hoveredPointIndex, TData? hoveredDataPoint, SKPoint mousePoint, LegendItemInfo<TData>? hoveredLegendItem = null) {
+        var cursorChanged = HoveredSeries is null;
         HoveredSeries = hoveredSeries;
         HoveredPointIndex = hoveredPointIndex;
         HoveredDataPoint = hoveredDataPoint;
@@ -1567,9 +1606,13 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             _lastHoverNotifiedPointIndex = hoveredPointIndex;
             _lastHoverNotifiedLegendKey = hoveredLegendKey;
         }
+        if (cursorChanged) {
+            RequestUiRefresh(force: true);
+        }
     }
 
     private void ClearHoveredState(SKPoint mousePoint) {
+        var cursorChanged = HoveredSeries is not null;
         HoveredSeries = null;
         HoveredPointIndex = null;
         HoveredDataPoint = null;
@@ -1585,6 +1628,9 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
             _lastHoverNotifiedSeries = null;
             _lastHoverNotifiedPointIndex = null;
             _lastHoverNotifiedLegendKey = null;
+        }
+        if (cursorChanged) {
+            RequestUiRefresh(force: true);
         }
     }
 
@@ -2069,7 +2115,6 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
         };
 
         _treeMapGroupFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.DefaultFont.Typeface
         };
         _treeMapGroupFont.Size = 14 * context.Density;
@@ -2094,7 +2139,11 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     }
 
     private async Task ResolveColorsAsync() {
-        var colorsToResolve = Enum.GetValues<TnTColor>().ToList();
+        if (_chartInterop is null || DisposalStarted) {
+            return;
+        }
+        var colorsToResolve = Enum.GetValues<TnTColor>();
+        var colors = await _chartInterop.GetThemeColorsAsync(colorsToResolve.Select(color => color.ToString()).ToArray());
         foreach (var color in colorsToResolve) {
             if (color is TnTColor.None or TnTColor.Transparent) {
                 _resolvedColors[color] = SKColors.Transparent;
@@ -2109,7 +2158,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
                 continue;
             }
 
-            var hex = await JSRuntime.InvokeAsync<string>("NTComponents.getColorValueFromEnumName", color.ToString());
+            colors.TryGetValue(color.ToString(), out var hex);
             if (!string.IsNullOrEmpty(hex) && SKColor.TryParse(hex, out var skColor)) {
                 _resolvedColors[color] = skColor;
             }
@@ -2169,6 +2218,7 @@ public partial class NTChart<TData> : TnTDisposableComponentBase, IChart<TData> 
     }
 
     private void RequestUiRefresh(bool force = false) {
+        RequestDraw(geometryChanged: true);
         var now = Stopwatch.GetTimestamp();
         var sinceLast = now - _lastUiRefreshTimestamp;
         var minInterval = Stopwatch.Frequency / 30L; // cap UI rerenders to ~30 FPS during interaction.

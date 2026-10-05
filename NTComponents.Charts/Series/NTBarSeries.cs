@@ -11,6 +11,22 @@ namespace NTComponents.Charts;
 /// </summary>
 /// <typeparam name="TData">The type of the data.</typeparam>
 public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
+    private readonly record struct BarGeometryKey(
+        SKRect Area,
+        double XMin,
+        double XMax,
+        decimal YMin,
+        decimal YMax,
+        decimal YBase,
+        double XBase,
+        NTAxisScale Scale,
+        NTChartOrientation Orientation,
+        float AnimationFactor,
+        float Density,
+        int SeriesCount,
+        int SeriesIndex,
+        Func<TData, decimal> ValueSelector,
+        Func<TData, object> XValue);
     /// <summary>
     ///     Gets or sets the corner radius for the bars.
     /// </summary>
@@ -60,6 +76,15 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     private SKPaint? _labelBgPaint;
     private SKPaint? _labelBorderPaint;
     private SKFont? _labelFont;
+    private List<TData>? _dataSnapshot;
+    private List<SKRect>? _cachedBarRects;
+    private List<decimal>? _cachedBarValues;
+    private BarGeometryKey? _cachedBarGeometryKey;
+    private Dictionary<TData, decimal>? _cachedValuesByData;
+    private Func<TData, decimal>? _cachedValueSelector;
+    private Func<TData, object>? _cachedXSelector;
+    private NTChart<TData>? _themeColorChart;
+    private Func<TnTColor, SKColor>? _themeColorSelector;
     private readonly List<(SKRect Rect, int Index, int? SegmentIndex, TData Data, string? SegmentLabel, decimal SegmentValue, SKColor SegmentColor)> _lastBarRects = [];
     private readonly HashSet<string> _hiddenSegmentLabels = new(StringComparer.OrdinalIgnoreCase);
     private int? _lastHoveredSegmentPointIndex;
@@ -67,6 +92,34 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     private string? _lastHoveredSegmentLabel;
     private decimal? _lastHoveredSegmentValue;
     private SKColor? _lastHoveredSegmentColor;
+
+    /// <inheritdoc />
+    protected override void OnDataChanged() {
+        base.OnDataChanged();
+        _dataSnapshot = null;
+        _cachedBarRects = null;
+        _cachedBarValues = null;
+        _cachedBarGeometryKey = null;
+        _cachedValuesByData = null;
+    }
+
+    /// <inheritdoc />
+    protected override void OnParametersSet() {
+        var valueSelector = YValueSelector;
+        var xSelector = XValue;
+        base.OnParametersSet();
+        if ((_cachedValueSelector is not null && !ReferenceEquals(_cachedValueSelector, valueSelector)) ||
+            (_cachedXSelector is not null && !ReferenceEquals(_cachedXSelector, xSelector))) {
+            _cachedBarRects = null;
+            _cachedBarValues = null;
+            _cachedBarGeometryKey = null;
+            _cachedValuesByData = null;
+        }
+        _cachedValueSelector = valueSelector;
+        _cachedXSelector = xSelector;
+    }
+
+    private List<TData> GetDataSnapshot() => _dataSnapshot ??= Data?.ToList() ?? [];
 
     private (int Count, int Index) GetVisibleBarSeriesLayout() {
         var series = Chart.Series
@@ -102,7 +155,8 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     /// <inheritdoc />
     public override SKRect Render(NTRenderContext context, SKRect renderArea) {
         _lastBarRects.Clear();
-        if (Data == null || !Data.Any()) {
+        var dataList = GetDataSnapshot();
+        if (dataList.Count == 0) {
             return renderArea;
         }
 
@@ -114,7 +168,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var yScale = yAxis?.Scale ?? NTAxisScale.Linear;
         var progress = GetAnimationProgress();
         var visibility = VisibilityFactor;
-        var animationFactor = GetBarAnimationFactor(progress, visibility);
+        var animationFactor = EaseAnimation(progress) * Math.Clamp(visibility, 0f, 1f);
 
         decimal yBase;
         if (yMin > 0) {
@@ -140,7 +194,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         }
         var xBasePx = Chart.ScaleX(xBase, renderArea);
 
-        var barRects = GetBarRects(renderArea, xMin, xMax, yMin, yMax, yBase, xBase, yScale, animationFactor);
+        var barRects = GetBarRects(dataList, renderArea, xMin, xMax, yMin, yMax, yBase, xBase, yScale, animationFactor);
         if (barRects.Count == 0) {
             return renderArea;
         }
@@ -158,23 +212,26 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             Style = SKPaintStyle.Fill
         };
 
-        var dataList = Data.ToList();
         for (var i = 0; i < barRects.Count && i < dataList.Count; i++) {
             var item = dataList[i];
-            var args = new NTDataPointRenderArgs<TData> {
-                Data = item,
-                Index = i,
-                Color = color,
-                GetThemeColor = Chart.GetThemeColor
-            };
-            OnDataPointRender?.Invoke(args);
+            NTDataPointRenderArgs<TData>? args = null;
+            var pointColor = color;
+            if (OnDataPointRender is { } onDataPointRender) {
+                args = new NTDataPointRenderArgs<TData> {
+                    Data = item,
+                    Index = i,
+                    Color = color,
+                    GetThemeColor = GetThemeColorSelector()
+                };
+                onDataPointRender(args);
+                pointColor = args.Color ?? color;
+            }
 
             var rect = barRects[i];
             var isPointHovered = Chart.HoveredSeries == this && Chart.HoveredPointIndex == i;
             var pointAlphaFactor = GetPointAlphaFactor(i);
-            var pointColor = ApplyAlphaFactor(args.Color ?? color, pointAlphaFactor);
-            var value = GetBarTotalValue(item);
-            var segments = GetPointSegments(item, value);
+            pointColor = ApplyAlphaFactor(pointColor, pointAlphaFactor);
+            var value = _cachedBarValues is { Count: > 0 } && SegmentSelector is null ? _cachedBarValues[i] : GetBarTotalValue(item);
 
             if (SegmentSelector is null) {
                 _barPaint.Color = pointColor;
@@ -182,13 +239,16 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 DrawBar(canvas, rect, isPointHovered ? _highlightPaint : _barPaint, context.Density);
                 _lastBarRects.Add((rect, i, null, item, null, value, pointColor));
             }
-            else if (segments.Count > 0) {
-                DrawSegmentedBar(context, renderArea, rect, item, i, value, segments, pointColor, isPointHovered, pointAlphaFactor);
+            else {
+                var segments = GetPointSegments(item);
+                if (segments.Count > 0) {
+                    DrawSegmentedBar(context, renderArea, rect, item, i, value, segments, pointColor, isPointHovered, pointAlphaFactor);
+                }
             }
 
             if (ShowDataLabels && SegmentSelector is null) {
-                var labelColor = args.DataLabelColor;
-                var labelSize = args.DataLabelSize ?? DataLabelSize;
+                var labelColor = args?.DataLabelColor;
+                var labelSize = args?.DataLabelSize ?? DataLabelSize;
 
                 if (Orientation == NTChartOrientation.Vertical) {
                     DrawVerticalBarLabel(context, renderArea, rect, value, pointColor, labelColor, labelSize, pointAlphaFactor);
@@ -204,14 +264,15 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
     /// <inheritdoc />
     public override (double Min, double Max)? GetXRange() {
-        if (Data == null || !Data.Any()) return null;
+        var dataList = GetDataSnapshot();
+        if (dataList.Count == 0) return null;
 
         if (Orientation == NTChartOrientation.Vertical) {
             return base.GetXRange();
         }
 
         // Horizontal: X axis shows values (YValueSelector)
-        var values = Data.Select(item => (double)GetBarTotalValue(item)).ToList();
+        var values = dataList.Select(item => (double)GetBarTotalValue(item)).ToList();
         var min = values.Min();
         var max = values.Max();
         return (min, max);
@@ -219,14 +280,10 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
     /// <inheritdoc />
     public override (decimal Min, decimal Max)? GetYRange(double? xMin = null, double? xMax = null) {
-        if (Data == null || !Data.Any()) return null;
+        var dataList = GetDataSnapshot();
+        if (dataList.Count == 0) return null;
 
         if (Orientation == NTChartOrientation.Vertical) {
-            var dataList = Data.ToList();
-            if (dataList.Count == 0) {
-                return null;
-            }
-
             IEnumerable<TData> items = dataList;
             if (xMin.HasValue && xMax.HasValue) {
                 var minX = Math.Min(xMin.Value, xMax.Value);
@@ -297,7 +354,6 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var sizePx = labelSize * context.Density;
 
         _labelFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.DefaultFont.Typeface
         };
         _labelFont.Size = sizePx;
@@ -357,7 +413,6 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var sizePx = labelSize * context.Density;
 
         _labelFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.DefaultFont.Typeface
         };
         _labelFont.Size = sizePx;
@@ -429,13 +484,19 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         context.Canvas.DrawText(text, outsideX, baselineY, textAlign, _labelFont, _labelPaint);
     }
 
-    private List<SKRect> GetBarRects(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax, decimal yBase, double xBase, NTAxisScale yScale, float animationFactor) {
-        var dataList = Data?.ToList();
-        if (dataList == null || dataList.Count == 0) {
+    private List<SKRect> GetBarRects(IReadOnlyList<TData> dataList, SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax, decimal yBase, double xBase, NTAxisScale yScale, float animationFactor) {
+        if (dataList.Count == 0) {
             return [];
         }
 
+        var (layoutCount, layoutIndex) = GetVisibleBarSeriesLayout();
+        var key = new BarGeometryKey(renderArea, xMin, xMax, yMin, yMax, yBase, xBase, yScale, Orientation, animationFactor, Chart.Density, layoutCount, layoutIndex, YValueSelector, XValue);
+        if (SegmentSelector is null && _cachedBarRects is not null && _cachedBarGeometryKey == key) {
+            return _cachedBarRects;
+        }
+
         var rects = new List<SKRect>(dataList.Count);
+        var values = SegmentSelector is null ? new List<decimal>(dataList.Count) : null;
 
         if (Orientation == NTChartOrientation.Vertical) {
             var count = dataList.Count;
@@ -453,6 +514,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 var xValue = Chart.GetScaledXValue(XValue.Invoke(item));
                 var barX = Chart.ScaleX(xValue, renderArea);
                 var yValue = GetBarTotalValue(item);
+                values?.Add(yValue);
                 var animatedValue = yBase + ((yValue - yBase) * (decimal)animationFactor);
                 var y = ScaleYFast(animatedValue, yMin, yMax, yScale, renderArea);
                 var clusterLeft = barX - (clusterWidth / 2f);
@@ -464,6 +526,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 rects.Add(new SKRect(left, top, right, bottom));
             }
 
+            CacheBarGeometry(rects, values, key);
             return rects;
         }
 
@@ -484,6 +547,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
             var centerY = Chart.ScaleY(scaledY, renderArea);
             var xValue = (double)GetBarTotalValue(item);
+            values?.Add((decimal)xValue);
             var animatedXValue = xBase + ((xValue - xBase) * animationFactor);
             var valueX = Chart.ScaleX(animatedXValue, renderArea);
             var clusterTop = centerY - (clusterHeight / 2f);
@@ -495,7 +559,16 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             rects.Add(new SKRect(left, top, right, bottom));
         }
 
+        CacheBarGeometry(rects, values, key);
         return rects;
+    }
+
+    private void CacheBarGeometry(List<SKRect> rects, List<decimal>? values, BarGeometryKey key) {
+        if (SegmentSelector is null) {
+            _cachedBarRects = rects;
+            _cachedBarValues = values;
+            _cachedBarGeometryKey = key;
+        }
     }
 
     private static float ScaleYFast(decimal y, decimal min, decimal max, NTAxisScale scale, SKRect plotArea) {
@@ -518,18 +591,6 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var bottom = plotArea.Bottom - p;
         var height = plotArea.Height - (p * 2);
         return (float)(bottom - (t * height));
-    }
-
-    private static float GetBarAnimationFactor(float progress, float visibility) {
-        progress = Math.Clamp(progress, 0f, 1f);
-        visibility = Math.Clamp(visibility, 0f, 1f);
-
-        // Ease-out-back creates a small overshoot past 1.0 before settling.
-        const float c1 = 1.35f;
-        var c3 = c1 + 1f;
-        var p = progress - 1f;
-        var eased = 1f + (c3 * p * p * p) + (c1 * p * p);
-        return eased * visibility;
     }
 
     internal override TooltipInfo GetTooltipInfo(TData data) {
@@ -708,7 +769,12 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
     private decimal GetBarTotalValue(TData item) {
         if (SegmentSelector is null) {
-            return YValueSelector(item);
+            _cachedValuesByData ??= new Dictionary<TData, decimal>(ReferenceEqualityComparer.Instance);
+            if (!_cachedValuesByData.TryGetValue(item, out var value)) {
+                value = YValueSelector(item);
+                _cachedValuesByData.Add(item, value);
+            }
+            return value;
         }
 
         decimal total = 0m;
@@ -723,21 +789,18 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         return total;
     }
 
-    private List<NTBarSegment> GetPointSegments(TData item, decimal totalValue) {
-        if (SegmentSelector is null) {
-            return [new NTBarSegment { Value = totalValue }];
+    private List<NTBarSegment> GetPointSegments(TData item) => (SegmentSelector!(item) ?? [])
+        .Where(IsSegmentVisible)
+        .Where(s => Math.Abs(s.Value) > 0m)
+        .ToList();
+
+    private Func<TnTColor, SKColor> GetThemeColorSelector() {
+        if (!ReferenceEquals(_themeColorChart, Chart)) {
+            _themeColorChart = Chart;
+            _themeColorSelector = Chart.GetThemeColor;
         }
 
-        var segments = (SegmentSelector(item) ?? [])
-            .Where(IsSegmentVisible)
-            .Where(s => Math.Abs(s.Value) > 0m)
-            .ToList();
-
-        if (segments.Count == 0) {
-            return [];
-        }
-
-        return segments;
+        return _themeColorSelector!;
     }
 
     private void DrawSegmentedBar(NTRenderContext context, SKRect renderArea, SKRect rect, TData data, int dataIndex, decimal totalValue, IReadOnlyList<NTBarSegment> segments, SKColor fallbackColor, bool isPointHovered, float pointAlphaFactor) {
@@ -821,7 +884,6 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var labelSize = DataLabelSize * context.Density;
 
         _labelFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.DefaultFont.Typeface
         };
         _labelFont.Size = labelSize;
@@ -854,7 +916,6 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var labelSize = DataLabelSize * context.Density;
 
         _labelFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.DefaultFont.Typeface
         };
         _labelFont.Size = labelSize;

@@ -222,6 +222,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     private (double Min, double Max)? _cachedWindowYRangeKey;
     private (decimal Min, decimal Max)? _cachedWindowYRange;
     private List<VisiblePoint>? _cachedSortedVisiblePoints;
+    private Func<TData, decimal>? _previousYValueSelector;
 
     private SKPaint? _pointPaint;
     private SKPaint? _labelPaint;
@@ -405,6 +406,15 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         base.OnDataChanged();
     }
 
+    /// <inheritdoc />
+    protected override void OnParametersSet() {
+        base.OnParametersSet();
+        if (!ReferenceEquals(_previousYValueSelector, YValueSelector)) {
+            _previousYValueSelector = YValueSelector;
+            OnDataChanged();
+        }
+    }
+
     /// <summary>Returns the list of data points whose X values fall within the specified visible window, with optional overscan padding.</summary>
     /// <param name="minX">The minimum X boundary of the visible window.</param>
     /// <param name="maxX">The maximum X boundary of the visible window.</param>
@@ -504,7 +514,6 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         var size = (overrideFontSize ?? DataLabelSize) * context.Density;
 
         _labelFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.DefaultFont.Typeface
         };
         _labelFont.Size = size;

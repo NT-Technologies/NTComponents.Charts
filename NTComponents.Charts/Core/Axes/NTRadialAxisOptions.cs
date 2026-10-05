@@ -99,7 +99,6 @@ public class NTRadialAxisOptions<TData> : NTAxisOptions<TData> where TData : cla
 
       using var textFont = new SKFont {
          Size = 12 * context.Density,
-         Embolden = true,
          Typeface = context.DefaultFont.Typeface
       };
 

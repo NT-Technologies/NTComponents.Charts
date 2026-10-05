@@ -36,25 +36,28 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
    public float InnerRadius { get; set; } = 0f;
 
    private readonly Dictionary<int, float> _explosionFactors = new();
-   private DateTime _lastRenderTime = DateTime.Now;
+   private readonly Dictionary<int, (float Start, float Target, long StartTime)> _explosionAnimations = new();
 
    private SKPaint? _slicePaint;
    private SKPathBuilder? _slicePathBuilder;
    private SKPaint? _labelPaint;
    private SKFont? _labelFont;
 
+   internal override bool RequiresAnimationFrame => base.RequiresAnimationFrame ||
+      (AnimationEnabled && ExplosionOnEntry && GetAnimationProgress() < 1f) ||
+      (AnimationEnabled && _explosionAnimations.Values.Any(animation =>
+         animation.Start != animation.Target && NTChartMotion.Progress(NTChartMotion.ElapsedSince(animation.StartTime), Chart.HoverAnimationDuration) < 1f));
+
    /// <inheritdoc />
    public override SKRect Render(NTRenderContext context, SKRect renderArea) {
       CalculateSlices(renderArea);
       if (!SliceInfos.Any()) return renderArea;
 
-      var progress = GetAnimationProgress();
+      var progress = EaseAnimation(GetAnimationProgress());
       var myVisibilityFactor = VisibilityFactor;
       var totalSweep = progress * 360f;
 
-      var now = DateTime.Now;
-      var deltaTime = (float)(now - _lastRenderTime).TotalSeconds;
-      _lastRenderTime = now;
+      var now = NTChartMotion.Timestamp;
 
       float radius = Math.Min(renderArea.Width, renderArea.Height) / 2f;
       float innerRadius = GetInnerRadius(radius, context.Density);
@@ -75,16 +78,15 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
          float currentFactor = _explosionFactors.GetValueOrDefault(slice.Index, 0f);
          float targetFactor = isTargetExploded ? 1f : 0f;
 
-         if (Math.Abs(currentFactor - targetFactor) > 0.001f) {
-            const float durationSeconds = 0.30f;
-            float step = deltaTime / durationSeconds;
-            if (currentFactor < targetFactor)
-               currentFactor = Math.Min(targetFactor, currentFactor + step);
-            else
-               currentFactor = Math.Max(targetFactor, currentFactor - step);
-
-            _explosionFactors[slice.Index] = currentFactor;
+         if (!_explosionAnimations.TryGetValue(slice.Index, out var animation) || animation.Target != targetFactor) {
+            animation = (currentFactor, targetFactor, now);
+            _explosionAnimations[slice.Index] = animation;
          }
+         var hoverProgress = NTChartMotion.Progress(NTChartMotion.ElapsedSince(animation.StartTime), Chart.HoverAnimationDuration);
+         currentFactor = AnimationEnabled
+            ? animation.Start + ((animation.Target - animation.Start) * NTChartMotion.Ease(hoverProgress, Chart.HoverAnimationEasing))
+            : targetFactor;
+         _explosionFactors[slice.Index] = currentFactor;
 
          float totalExplosionFactor = Math.Max(currentFactor, entryFactor);
 
@@ -104,15 +106,18 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
 
          var baseColor = Chart.GetThemeColor(Chart.Palette[slice.Index % Chart.Palette.Count].Background);
 
-         var args = new NTDataPointRenderArgs<TData> {
-            Data = slice.Data,
-            Index = slice.Index,
-            Color = baseColor,
-            GetThemeColor = Chart.GetThemeColor
-         };
-         OnDataPointRender?.Invoke(args);
-
-         var color = args.Color ?? baseColor;
+         NTDataPointRenderArgs<TData>? args = null;
+         var color = baseColor;
+         if (OnDataPointRender is { } onDataPointRender) {
+            args = new NTDataPointRenderArgs<TData> {
+               Data = slice.Data,
+               Index = slice.Index,
+               Color = baseColor,
+               GetThemeColor = GetThemeColorSelector()
+            };
+            onDataPointRender(args);
+            color = args.Color ?? baseColor;
+         }
 
          // Use currentFactor for smooth color transition too
          float dimFactor = 1.0f;

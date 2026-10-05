@@ -142,7 +142,6 @@ public static class NTRenderContextExtensions {
 
       using var font = new SKFont {
          Size = size,
-         Embolden = true,
          Typeface = context.DefaultFont.Typeface
       };
 

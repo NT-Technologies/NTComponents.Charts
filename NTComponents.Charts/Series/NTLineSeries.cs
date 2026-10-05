@@ -91,6 +91,12 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     private SKPaint? _hitTestPaint;
     private SKPath? _hitTestPath;
     private RenderCacheKey? _hitTestPathKey;
+    private SKPath? _hitTestStrokePath;
+    private (RenderCacheKey RenderKey, float StrokeWidth)? _hitTestStrokePathKey;
+    private SKPathEffect? _dashEffect;
+    private float _dashEffectDensity;
+    private NTChart<TData>? _themeColorChart;
+    private Func<TnTColor, SKColor>? _themeColorSelector;
 
     private List<RenderPointInfo>? _cachedRenderPoints;
     private RenderCacheKey? _cachedRenderKey;
@@ -104,6 +110,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             _linePath?.Dispose();
             _hitTestPaint?.Dispose();
             _hitTestPath?.Dispose();
+            _hitTestStrokePath?.Dispose();
+            _dashEffect?.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -114,6 +122,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         _cachedRenderKey = null;
         _linePathKey = null;
         _hitTestPathKey = null;
+        _hitTestStrokePathKey = null;
         _cachedGroupedRange = null;
         base.OnDataChanged();
     }
@@ -543,9 +552,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         };
         _linePaint.Color = color;
         _linePaint.StrokeWidth = StrokeWidth * context.Density;
-        _linePaint.PathEffect = LineStyle == LineStyle.Dashed
-            ? SKPathEffect.CreateDash([10 * context.Density, 5 * context.Density], 0)
-            : null;
+        _linePaint.PathEffect = LineStyle == LineStyle.Dashed ? GetDashEffect(context.Density) : null;
 
         if (LineStyle != LineStyle.None && points.Count > 1) {
             if (OnDataPointRender == null) {
@@ -564,7 +571,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
                         Color = color,
                         LineStyle = LineStyle,
                         StrokeWidth = StrokeWidth,
-                        GetThemeColor = Chart.GetThemeColor
+                        GetThemeColor = GetThemeColorSelector()
                     };
                     OnDataPointRender.Invoke(args);
 
@@ -584,9 +591,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
                     };
                     _segmentPaint.Color = segmentColor;
                     _segmentPaint.StrokeWidth = segmentWidth;
-                    _segmentPaint.PathEffect = segmentStyle == LineStyle.Dashed
-                        ? SKPathEffect.CreateDash([10 * context.Density, 5 * context.Density], 0)
-                        : null;
+                    _segmentPaint.PathEffect = segmentStyle == LineStyle.Dashed ? GetDashEffect(context.Density) : null;
 
                     canvas.DrawLine(points[i - 1].Point, points[i].Point, _segmentPaint);
                 }
@@ -597,21 +602,28 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         if (renderPointMarkers || ShowDataLabels || Chart.HoveredSeries == this) {
             for (var i = 0; i < points.Count; i++) {
                 var rp = points[i];
-                var args = new NTDataPointRenderArgs<TData> {
-                    Data = rp.Data,
-                    Index = rp.Index,
-                    Color = color,
-                    PointSize = PointSize,
-                    PointShape = PointShape,
-                    GetThemeColor = Chart.GetThemeColor
-                };
-                OnDataPointRender?.Invoke(args);
+                NTDataPointRenderArgs<TData>? args = null;
+                var pointColor = color;
+                var pointStrokeColor = color;
+                var currentPointSize = PointSize * context.Density;
+                var currentPointShape = PointShape;
+                if (OnDataPointRender is { } onDataPointRender) {
+                    args = new NTDataPointRenderArgs<TData> {
+                        Data = rp.Data,
+                        Index = rp.Index,
+                        Color = color,
+                        PointSize = PointSize,
+                        PointShape = PointShape,
+                        GetThemeColor = GetThemeColorSelector()
+                    };
+                    onDataPointRender(args);
+                    pointColor = args.Color ?? color;
+                    pointStrokeColor = args.StrokeColor ?? pointColor;
+                    currentPointSize = (args.PointSize ?? PointSize) * context.Density;
+                    currentPointShape = args.PointShape ?? PointShape;
+                }
 
                 var isPointHovered = Chart.HoveredSeries == this && Chart.HoveredPointIndex == rp.Index;
-                var pointColor = args.Color ?? color;
-                var pointStrokeColor = args.StrokeColor ?? pointColor;
-                var currentPointSize = (args.PointSize ?? PointSize) * context.Density;
-                var currentPointShape = args.PointShape ?? PointShape;
 
                 if (isPointHovered) {
                     pointColor = pointColor.WithAlpha(255);
@@ -624,14 +636,33 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
                 }
 
                 if (!rp.IsSynthetic && (ShowDataLabels || isPointHovered)) {
-                    var labelColor = args.DataLabelColor;
-                    var labelSize = args.DataLabelSize ?? DataLabelSize;
+                    var labelColor = args?.DataLabelColor;
+                    var labelSize = args?.DataLabelSize ?? DataLabelSize;
                     RenderDataLabel(context, rp.Point.X, rp.Point.Y, rp.Value, renderArea, labelColor, labelSize);
                 }
             }
         }
 
         return renderArea;
+    }
+
+    private SKPathEffect GetDashEffect(float density) {
+        if (_dashEffect is null || _dashEffectDensity != density) {
+            _dashEffect?.Dispose();
+            _dashEffect = SKPathEffect.CreateDash([10 * density, 5 * density], 0);
+            _dashEffectDensity = density;
+        }
+
+        return _dashEffect;
+    }
+
+    private Func<TnTColor, SKColor> GetThemeColorSelector() {
+        if (!ReferenceEquals(_themeColorChart, Chart)) {
+            _themeColorChart = Chart;
+            _themeColorSelector = Chart.GetThemeColor;
+        }
+
+        return _themeColorSelector!;
     }
 
     /// <summary>
@@ -651,7 +682,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     private List<RenderPointInfo> GetRenderPoints(SKRect renderArea, double xMin, double xMax, NTAxisOptions<TData>? yAxis, float density, out RenderCacheKey key) {
         var (yMin, yMax) = Chart.GetYRange(yAxis, true);
         var yScale = yAxis?.Scale ?? NTAxisScale.Linear;
-        var progress = GetAnimationProgress();
+        var progress = EaseAnimation(GetAnimationProgress());
         var visibility = VisibilityFactor;
         var xAxis = Chart.XAxis;
         var axisDateGroupingLevel = xAxis.ResolveDateGroupingLevel(xMin, xMax, renderArea.Width, density);
@@ -696,7 +727,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             return _cachedRenderPoints;
         }
 
-        var easedProgress = (decimal)BackEase(progress);
+        var easedProgress = (decimal)progress;
         var vFactor = (decimal)visibility;
 
         if (useAxisDateGrouping) {
@@ -1338,11 +1369,19 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             };
             _hitTestPaint.StrokeWidth = (StrokeWidth * Chart.Density) + (10 * Chart.Density);
 
-            using var hitTestStrokePathBuilder = new SKPathBuilder();
-            _hitTestPaint.GetFillPath(_hitTestPath, hitTestStrokePathBuilder);
-            using var hitTestStrokePath = hitTestStrokePathBuilder.Detach();
+            var hitTestStrokeWidth = (StrokeWidth * Chart.Density) + (10 * Chart.Density);
+            if (_hitTestStrokePath is null || !_hitTestStrokePathKey.HasValue ||
+                !_hitTestStrokePathKey.Value.RenderKey.Equals(renderKey) ||
+                _hitTestStrokePathKey.Value.StrokeWidth != hitTestStrokeWidth) {
+                _hitTestStrokePath?.Dispose();
+                _hitTestPaint.StrokeWidth = hitTestStrokeWidth;
+                using var hitTestStrokePathBuilder = new SKPathBuilder();
+                _hitTestPaint.GetFillPath(_hitTestPath, hitTestStrokePathBuilder);
+                _hitTestStrokePath = hitTestStrokePathBuilder.Detach();
+                _hitTestStrokePathKey = (renderKey, hitTestStrokeWidth);
+            }
 
-            if (hitTestStrokePath.Contains(point.X, point.Y)) {
+            if (_hitTestStrokePath.Contains(point.X, point.Y)) {
                 var nearestIdx = -1;
                 var nearestDistSq = double.MaxValue;
                 for (var i = 0; i < points.Count; i++) {

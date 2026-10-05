@@ -9,6 +9,12 @@ namespace NTComponents.Charts.Core.Series;
 /// <typeparam name="TData">The type of the data.</typeparam>
 public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData : class
 {
+   private List<TData>? _cachedData;
+   private Func<TData, decimal>? _cachedValueSelector;
+   private NTChart<TData>? _themeColorChart;
+   private Func<TnTColor, SKColor>? _themeColorSelector;
+   private bool _preserveHiddenIndices;
+   private bool _sliceCacheValid;
    /// <inheritdoc />
    public override ChartCoordinateSystem CoordinateSystem => ChartCoordinateSystem.Circular;
 
@@ -82,8 +88,68 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
    protected override void OnDataChanged()
    {
       base.OnDataChanged();
+      InvalidateGeometryCache();
+      if (!_preserveHiddenIndices)
+      {
+         _hiddenIndices.Clear();
+      }
+   }
+
+   /// <inheritdoc />
+   public override void Invalidate()
+   {
+      _preserveHiddenIndices = true;
+      try
+      {
+         base.Invalidate();
+      }
+      finally
+      {
+         _preserveHiddenIndices = false;
+      }
+   }
+
+   /// <inheritdoc />
+   protected override void OnParametersSet()
+   {
+      base.OnParametersSet();
+      if (!ReferenceEquals(_cachedValueSelector, ValueSelector))
+      {
+         InvalidateGeometryCache();
+         _cachedValueSelector = ValueSelector;
+      }
+   }
+
+   private void InvalidateGeometryCache()
+   {
+      _cachedData = null;
       SliceInfos.Clear();
-      _hiddenIndices.Clear();
+      _sliceCacheValid = false;
+      OnCircularGeometryInvalidated();
+   }
+
+   /// <summary>Clears geometry derived by a concrete circular series.</summary>
+   protected virtual void OnCircularGeometryInvalidated()
+   {
+   }
+
+   /// <summary>Returns the current data snapshot used by circular-series geometry.</summary>
+   protected IReadOnlyList<TData> GetCachedData()
+   {
+      _cachedData ??= Data?.ToList() ?? [];
+      return _cachedData;
+   }
+
+   /// <summary>Returns the reusable theme-color delegate for point render callbacks.</summary>
+   protected Func<TnTColor, SKColor> GetThemeColorSelector()
+   {
+      if (!ReferenceEquals(_themeColorChart, Chart))
+      {
+         _themeColorChart = Chart;
+         _themeColorSelector = Chart.GetThemeColor;
+      }
+
+      return _themeColorSelector!;
    }
 
    internal override void ToggleLegendItem(int? index)
@@ -91,10 +157,11 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
       if (index.HasValue)
       {
          if (_hiddenIndices.Contains(index.Value))
-            _hiddenIndices.Remove(index.Value);
+         _hiddenIndices.Remove(index.Value);
          else
             _hiddenIndices.Add(index.Value);
          ResetAnimation();
+         InvalidateGeometryCache();
       }
       else
       {
@@ -107,7 +174,7 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
    {
       if (Data == null) yield break;
 
-      var dataList = Data.ToList();
+      var dataList = GetCachedData();
       for (int i = 0; i < dataList.Count; i++)
       {
          var item = dataList[i];
@@ -133,26 +200,29 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
    /// <param name="renderArea">The bounding rectangle available for rendering the chart.</param>
    protected void CalculateSlices(SKRect renderArea)
    {
+      if (_sliceCacheValid) return;
       SliceInfos.Clear();
-      if (Data == null || !Data.Any()) return;
 
-      var dataList = Data.ToList();
+      var dataList = GetCachedData();
+      if (dataList.Count == 0) {
+         _sliceCacheValid = true;
+         return;
+      }
       var visibleData = dataList.Select((d, i) => new { Data = d, Index = i })
                               .Where(x => !_hiddenIndices.Contains(x.Index))
                               .ToList();
 
       var total = visibleData.Sum(x => Math.Max(0m, ValueSelector(x.Data)));
-      if (total <= 0) return;
+      if (total <= 0) {
+         _sliceCacheValid = true;
+         return;
+      }
 
-      var progress = GetAnimationProgress();
-      var easedProgress = progress; // Linear or eased?
-
-      float startAngle = -90f; // 12 o'clock
-      float radius = Math.Min(renderArea.Width, renderArea.Height) / 2f;
+      float startAngle = -90f;
 
       foreach (var item in visibleData)
       {
-         var value = ValueSelector(item.Data);
+         var value = Math.Max(0m, ValueSelector(item.Data));
          var sweepAngle = (float)(value / total) * 360f;
 
          SliceInfos.Add(new PieSliceInfo
@@ -166,6 +236,8 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
 
          startAngle += sweepAngle;
       }
+
+      _sliceCacheValid = true;
    }
 
    /// <summary>

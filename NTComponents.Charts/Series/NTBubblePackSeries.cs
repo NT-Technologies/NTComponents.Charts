@@ -219,6 +219,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         public int ItemCount { get; set; }
         public TData? SampleData { get; set; }
         public List<TreeNode> Children { get; } = [];
+        public List<TreeNode>? OrderedChildren { get; set; }
         public Dictionary<string, TreeNode>? ChildLookup { get; set; }
         public bool IsGroup => Children.Count > 0;
     }
@@ -246,22 +247,36 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
 
     internal override decimal GetTotalValue() => _root?.Value ?? (Data?.Sum(d => Math.Max(0m, ValueSelector(d))) ?? 0m);
 
+    internal override bool RequiresAnimationFrame => base.RequiresAnimationFrame || Visible && _visibleBubbles.Count > 0 && (_physicsAwake || _draggedNodeId.HasValue);
+
     private TreeNode? _root;
     private readonly List<DrillStep> _drillPath = [];
     private readonly List<NTBubblePackSeries<TData>> _childSeries = [];
     private readonly List<RenderedBubble> _visibleBubbles = [];
+    private readonly List<SKPoint> _previousBubblePositions = [];
     private readonly Dictionary<int, BubbleState> _bubbleStates = [];
+    private readonly Dictionary<(int X, int Y), List<int>> _collisionBuckets = [];
+    private readonly List<(int X, int Y)> _bubbleCellPositions = [];
+    private readonly SortedSet<int> _collisionCandidates = [];
+    private float _collisionCellSize;
+    private TreeNode? _cachedRadiusNode;
+    private SKRect _cachedRadiusArea = SKRect.Empty;
+    private float _cachedRadiusDensity;
+    private Dictionary<int, float>? _cachedTargetRadii;
     private int _hierarchyVersion;
     private int _nodeId;
     private int _lastConfigurationHash;
 
     private SKRect _lastSeriesArea = SKRect.Empty;
     private SKRect _lastContentArea = SKRect.Empty;
+    private float _lastPhysicsDensity = float.NaN;
     private SKRect _backButtonRect = SKRect.Empty;
     private float _zoomScaleX = 1f;
     private float _zoomScaleY = 1f;
 
-    private DateTime _lastPhysicsStepUtc = DateTime.MinValue;
+    private long _lastPhysicsStepTimestamp;
+    private bool _physicsAwake = true;
+    private int _settledPhysicsFrames;
 
     private int? _pointerDownNodeId;
     private int? _draggedNodeId;
@@ -269,7 +284,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     private SKPoint _currentDragPoint = SKPoint.Empty;
     private SKPoint _lastDragPoint = SKPoint.Empty;
     private SKPoint _dragReleaseVelocity = SKPoint.Empty;
-    private DateTime _lastDragUpdateUtc = DateTime.MinValue;
+    private long _lastDragUpdateTimestamp;
 
     private SKPaint? _bubblePaint;
     private SKPaint? _strokePaint;
@@ -380,8 +395,13 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             ? new SKRect(renderArea.Left, renderArea.Top + navHeight, renderArea.Right, renderArea.Bottom)
             : renderArea;
 
+        if (_lastContentArea != contentArea || _lastPhysicsDensity != context.Density) {
+            WakePhysics();
+        }
+
         _lastSeriesArea = renderArea;
         _lastContentArea = contentArea;
+        _lastPhysicsDensity = context.Density;
 
         BuildVisibleBubbles(context, current, contentArea);
         InitializePaints(context);
@@ -396,7 +416,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
 
         var visibility = VisibilityFactor;
         var hoveredNodeId = Chart.HoveredSeries == this ? Chart.HoveredPointIndex : null;
-        var sorted = _visibleBubbles.OrderByDescending(b => b.State.Radius).ToList();
+        var sorted = _visibleBubbles;
         var viewOrigin = new SKPoint(contentArea.MidX, contentArea.MidY);
         var radiusZoomScale = GetRadiusZoomScale();
 
@@ -461,6 +481,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         if (_backButtonRect.Contains(pointView) && _drillPath.Count > 0) {
             _drillPath.RemoveAt(_drillPath.Count - 1);
             ResetSimulation();
+            Chart.RequestDraw(true);
             return;
         }
 
@@ -478,7 +499,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         _currentDragPoint = point;
         _lastDragPoint = point;
         _dragReleaseVelocity = SKPoint.Empty;
-        _lastDragUpdateUtc = DateTime.UtcNow;
+        _lastDragUpdateTimestamp = NTChartMotion.Timestamp;
     }
 
     /// <inheritdoc />
@@ -490,11 +511,12 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         var pointView = ToCanvasPoint(e);
         var viewOrigin = new SKPoint(_lastContentArea.MidX, _lastContentArea.MidY);
         var point = ViewToWorld(pointView, viewOrigin);
-        var nowUtc = DateTime.UtcNow;
+        var nowTimestamp = NTChartMotion.Timestamp;
         if (_draggedNodeId is null) {
             var distance = Distance(point, _pointerDownPoint);
             if (distance > (6f * Math.Max(1f, Chart.Density))) {
                 _draggedNodeId = _pointerDownNodeId;
+                WakePhysics();
             }
         }
 
@@ -506,7 +528,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             return;
         }
 
-        var dt = (float)(nowUtc - _lastDragUpdateUtc).TotalSeconds;
+        var dt = (float)NTChartMotion.ElapsedBetween(_lastDragUpdateTimestamp, nowTimestamp).TotalSeconds;
         if (dt > 0.0001f) {
             _dragReleaseVelocity = new SKPoint(
                 (point.X - _lastDragPoint.X) / dt,
@@ -519,7 +541,8 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         state.Position = _currentDragPoint;
         state.Velocity = _dragReleaseVelocity;
         _lastDragPoint = point;
-        _lastDragUpdateUtc = nowUtc;
+        _lastDragUpdateTimestamp = nowTimestamp;
+        Chart.RequestDraw(true);
     }
 
     /// <inheritdoc />
@@ -531,8 +554,10 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         if (_draggedNodeId is int draggedNodeId && _bubbleStates.TryGetValue(draggedNodeId, out var draggedState)) {
             var throwVelocity = new SKPoint(_dragReleaseVelocity.X * ThrowStrength, _dragReleaseVelocity.Y * ThrowStrength);
             draggedState.Velocity = ClampVelocity(throwVelocity, maxSpeed: 2500f);
+            WakePhysics();
             _draggedNodeId = null;
             _pointerDownNodeId = null;
+            Chart.RequestDraw(true);
             return;
         }
 
@@ -546,6 +571,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             hit.Node.IsGroup) {
             _drillPath.Add(new DrillStep(hit.Node.Key, hit.Node.DisplayLabel));
             ResetSimulation();
+            Chart.RequestDraw(true);
         }
 
         _pointerDownNodeId = null;
@@ -578,6 +604,8 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             PointerPosition = viewPoint,
             WheelEvent = e
         });
+        WakePhysics();
+        Chart.RequestDraw(true);
     }
 
     /// <inheritdoc />
@@ -585,6 +613,8 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         _zoomScaleX = 1f;
         _zoomScaleY = 1f;
         base.ResetView();
+        WakePhysics();
+        Chart?.RequestDraw(true);
     }
 
     /// <inheritdoc />
@@ -845,7 +875,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             return;
         }
 
-        var nodes = current.Children
+        var nodes = current.OrderedChildren ??= current.Children
             .Where(c => c.Value > 0m)
             .OrderByDescending(c => c.Value)
             .ToList();
@@ -855,8 +885,15 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         }
 
         var center = new SKPoint(contentArea.MidX, contentArea.MidY);
+        var radiusProgress = EaseAnimation(GetAnimationProgress());
         var activeNodeIds = new HashSet<int>(nodes.Count);
-        var targetRadii = ComputeRelativeTargetRadii(nodes, contentArea, context.Density);
+        if (_cachedTargetRadii is null || !ReferenceEquals(_cachedRadiusNode, current) || _cachedRadiusArea != contentArea || _cachedRadiusDensity != context.Density) {
+            _cachedTargetRadii = ComputeRelativeTargetRadii(nodes, contentArea, context.Density);
+            _cachedRadiusNode = current;
+            _cachedRadiusArea = contentArea;
+            _cachedRadiusDensity = context.Density;
+        }
+        var targetRadii = _cachedTargetRadii!;
 
         for (var i = 0; i < nodes.Count; i++) {
             var node = nodes[i];
@@ -875,12 +912,16 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
                     NodeId = node.StableIndex,
                     Position = initialPosition,
                     Velocity = SKPoint.Empty,
-                    Radius = Math.Max(4f * context.Density, targetRadius * 0.65f)
+                    Radius = targetRadius
                 };
                 _bubbleStates[node.StableIndex] = state;
             }
 
-            state.Radius = Lerp(state.Radius, targetRadius, 0.24f);
+            var radius = Lerp(Math.Max(4f * context.Density, targetRadius * 0.65f), targetRadius, radiusProgress);
+            if (Math.Abs(state.Radius - radius) > 0.01f) {
+                WakePhysics();
+            }
+            state.Radius = radius;
             if (ConstrainToCanvas) {
                 state.Position = ClampPointToArea(state.Position, state.Radius, contentArea);
             }
@@ -974,21 +1015,172 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             return;
         }
 
-        var now = DateTime.UtcNow;
-        if (_lastPhysicsStepUtc == DateTime.MinValue) {
-            _lastPhysicsStepUtc = now;
+        if (!_physicsAwake) {
             return;
         }
 
-        var deltaTime = (float)(now - _lastPhysicsStepUtc).TotalSeconds;
-        _lastPhysicsStepUtc = now;
+        var now = NTChartMotion.Timestamp;
+        if (_lastPhysicsStepTimestamp == 0) {
+            _lastPhysicsStepTimestamp = now;
+            return;
+        }
+
+        var deltaTime = (float)NTChartMotion.ElapsedBetween(_lastPhysicsStepTimestamp, now).TotalSeconds;
+        _lastPhysicsStepTimestamp = now;
         var dt = Math.Clamp(deltaTime, 0.001f, 0.05f);
         var substeps = Math.Clamp(PhysicsSubsteps, 1, 8);
         var substepDt = dt / substeps;
+        var maxDisplacement = 0f;
+        var maxMotionSpeed = 0f;
 
         for (var step = 0; step < substeps; step++) {
+            _previousBubblePositions.Clear();
+            foreach (var bubble in _visibleBubbles) {
+                _previousBubblePositions.Add(bubble.State.Position);
+            }
             SimulatePhysicsStep(contentArea, substepDt);
+            for (var i = 0; i < _previousBubblePositions.Count; i++) {
+                var displacement = Distance(_previousBubblePositions[i], _visibleBubbles[i].State.Position);
+                maxDisplacement = Math.Max(maxDisplacement, displacement);
+                maxMotionSpeed = Math.Max(maxMotionSpeed, displacement / substepDt);
+            }
         }
+
+        var density = Math.Max(1f, Chart.Density);
+        _settledPhysicsFrames = IsPhysicsSettled(maxMotionSpeed / density, maxDisplacement / density) ? _settledPhysicsFrames + 1 : 0;
+        if (_settledPhysicsFrames >= 8) {
+            foreach (var bubble in _visibleBubbles) {
+                bubble.State.Velocity = SKPoint.Empty;
+            }
+            _physicsAwake = false;
+            _lastPhysicsStepTimestamp = 0;
+        }
+    }
+
+    // Gravity and collision impulses can retain velocity/overlap at a stationary equilibrium.
+    // Sustained movement after integration and constraints determines whether packing is still changing.
+    internal static bool IsPhysicsSettled(float maxMotionSpeed, float maxDisplacement) =>
+        maxMotionSpeed <= 2f && maxDisplacement <= 0.08f;
+
+    private void WakePhysics() {
+        _physicsAwake = true;
+        _settledPhysicsFrames = 0;
+        _lastPhysicsStepTimestamp = 0;
+    }
+
+    private void BuildCollisionBuckets(float spacing) {
+        _collisionBuckets.Clear();
+        _bubbleCellPositions.Clear();
+        var maxRadius = 0f;
+        foreach (var bubble in _visibleBubbles) {
+            maxRadius = Math.Max(maxRadius, bubble.State.Radius);
+        }
+        _collisionCellSize = Math.Max(1f, (2f * maxRadius) + Math.Abs(spacing));
+        for (var i = 0; i < _visibleBubbles.Count; i++) {
+            AddCollisionBucket(i, _visibleBubbles[i].State.Position);
+        }
+    }
+
+    private void AddNearbyCollisionCandidates(int bubbleIndex, int firstCandidate, SortedSet<int> candidates) {
+        var cell = GetCollisionCell(_visibleBubbles[bubbleIndex].State.Position);
+        for (var x = cell.X - 1; x <= cell.X + 1; x++) {
+            for (var y = cell.Y - 1; y <= cell.Y + 1; y++) {
+                if (!_collisionBuckets.TryGetValue((x, y), out var bucket)) {
+                    continue;
+                }
+                foreach (var candidate in bucket) {
+                    if (candidate >= firstCandidate) {
+                        candidates.Add(candidate);
+                    }
+                }
+            }
+        }
+    }
+
+    private void AddCollisionBucket(int index, SKPoint position) {
+        var cell = GetCollisionCell(position);
+        _bubbleCellPositions.Add(cell);
+        if (!_collisionBuckets.TryGetValue(cell, out var bucket)) {
+            bucket = [];
+            _collisionBuckets[cell] = bucket;
+        }
+        bucket.Add(index);
+    }
+
+    private void UpdateCollisionBucket(int index, SKPoint position) {
+        var oldCell = _bubbleCellPositions[index];
+        var newCell = GetCollisionCell(position);
+        if (oldCell == newCell) {
+            return;
+        }
+
+        var oldBucket = _collisionBuckets[oldCell];
+        oldBucket.Remove(index);
+        if (oldBucket.Count == 0) {
+            _collisionBuckets.Remove(oldCell);
+        }
+
+        if (!_collisionBuckets.TryGetValue(newCell, out var newBucket)) {
+            newBucket = [];
+            _collisionBuckets[newCell] = newBucket;
+        }
+        newBucket.Add(index);
+        _bubbleCellPositions[index] = newCell;
+    }
+
+    private (int X, int Y) GetCollisionCell(SKPoint position) =>
+        ((int)MathF.Floor(position.X / _collisionCellSize), (int)MathF.Floor(position.Y / _collisionCellSize));
+
+    private bool ResolveCollision(BubbleState a, BubbleState b, float spacing, float collisionPush, int? draggedNodeId) {
+        var dx = b.Position.X - a.Position.X;
+        var dy = b.Position.Y - a.Position.Y;
+        var distSq = (dx * dx) + (dy * dy);
+        var minDist = a.Radius + b.Radius + spacing;
+        if (distSq >= (minDist * minDist)) {
+            return false;
+        }
+
+        var dist = MathF.Sqrt(Math.Max(0.0001f, distSq));
+        var nx = dx / dist;
+        var ny = dy / dist;
+        var overlap = (minDist - dist) * collisionPush;
+        var aDragged = draggedNodeId == a.NodeId;
+        var bDragged = draggedNodeId == b.NodeId;
+
+        if (!aDragged && !bDragged) {
+            var halfPush = overlap * 0.5f;
+            a.Position = new SKPoint(a.Position.X - (nx * halfPush), a.Position.Y - (ny * halfPush));
+            b.Position = new SKPoint(b.Position.X + (nx * halfPush), b.Position.Y + (ny * halfPush));
+        }
+        else if (aDragged && !bDragged) {
+            b.Position = new SKPoint(b.Position.X + (nx * overlap), b.Position.Y + (ny * overlap));
+        }
+        else if (!aDragged && bDragged) {
+            a.Position = new SKPoint(a.Position.X - (nx * overlap), a.Position.Y - (ny * overlap));
+        }
+
+        var separationVelocity = overlap * 8f;
+        if (!aDragged) {
+            a.Velocity = ClampVelocity(
+                new SKPoint(a.Velocity.X - (nx * separationVelocity), a.Velocity.Y - (ny * separationVelocity)),
+                maxSpeed: 1600f);
+        }
+
+        if (!bDragged) {
+            b.Velocity = ClampVelocity(
+                new SKPoint(b.Velocity.X + (nx * separationVelocity), b.Velocity.Y + (ny * separationVelocity)),
+                maxSpeed: 1600f);
+        }
+
+        return true;
+    }
+
+    internal static bool IsCollisionBucketCandidate(SKPoint first, SKPoint second, float cellSize) {
+        var firstCellX = MathF.Floor(first.X / cellSize);
+        var firstCellY = MathF.Floor(first.Y / cellSize);
+        var secondCellX = MathF.Floor(second.X / cellSize);
+        var secondCellY = MathF.Floor(second.Y / cellSize);
+        return Math.Abs(firstCellX - secondCellX) <= 1f && Math.Abs(firstCellY - secondCellY) <= 1f;
     }
 
     private void SimulatePhysicsStep(SKRect area, float dt) {
@@ -1021,51 +1213,36 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             state.Velocity = ClampVelocity(state.Velocity, maxSpeed: 1600f);
         }
 
+        var useCollisionBuckets = _visibleBubbles.Count >= 32;
+        if (useCollisionBuckets) {
+            BuildCollisionBuckets(spacing);
+        }
+
         for (var i = 0; i < _visibleBubbles.Count; i++) {
             var a = _visibleBubbles[i].State;
-            for (var j = i + 1; j < _visibleBubbles.Count; j++) {
+            if (!useCollisionBuckets) {
+                for (var j = i + 1; j < _visibleBubbles.Count; j++) {
+                    ResolveCollision(a, _visibleBubbles[j].State, spacing, collisionPush, draggedNodeId);
+                }
+                continue;
+            }
+
+            _collisionCandidates.Clear();
+            AddNearbyCollisionCandidates(i, i + 1, _collisionCandidates);
+            while (_collisionCandidates.Count > 0) {
+                var j = _collisionCandidates.Min;
+                _collisionCandidates.Remove(j);
                 var b = _visibleBubbles[j].State;
-                var dx = b.Position.X - a.Position.X;
-                var dy = b.Position.Y - a.Position.Y;
-                var distSq = (dx * dx) + (dy * dy);
-                var minDist = a.Radius + b.Radius + spacing;
-                var minDistSq = minDist * minDist;
-                if (distSq >= minDistSq) {
+                if (!IsCollisionBucketCandidate(a.Position, b.Position, _collisionCellSize)) {
+                    continue;
+                }
+                if (!ResolveCollision(a, b, spacing, collisionPush, draggedNodeId)) {
                     continue;
                 }
 
-                var dist = MathF.Sqrt(Math.Max(0.0001f, distSq));
-                var nx = dx / dist;
-                var ny = dy / dist;
-                var overlap = (minDist - dist) * collisionPush;
-
-                var aDragged = draggedNodeId == a.NodeId;
-                var bDragged = draggedNodeId == b.NodeId;
-
-                if (!aDragged && !bDragged) {
-                    var halfPush = overlap * 0.5f;
-                    a.Position = new SKPoint(a.Position.X - (nx * halfPush), a.Position.Y - (ny * halfPush));
-                    b.Position = new SKPoint(b.Position.X + (nx * halfPush), b.Position.Y + (ny * halfPush));
-                }
-                else if (aDragged && !bDragged) {
-                    b.Position = new SKPoint(b.Position.X + (nx * overlap), b.Position.Y + (ny * overlap));
-                }
-                else if (!aDragged && bDragged) {
-                    a.Position = new SKPoint(a.Position.X - (nx * overlap), a.Position.Y - (ny * overlap));
-                }
-
-                var separationVelocity = overlap * 8f;
-                if (!aDragged) {
-                    a.Velocity = ClampVelocity(
-                        new SKPoint(a.Velocity.X - (nx * separationVelocity), a.Velocity.Y - (ny * separationVelocity)),
-                        maxSpeed: 1600f);
-                }
-
-                if (!bDragged) {
-                    b.Velocity = ClampVelocity(
-                        new SKPoint(b.Velocity.X + (nx * separationVelocity), b.Velocity.Y + (ny * separationVelocity)),
-                        maxSpeed: 1600f);
-                }
+                UpdateCollisionBucket(i, a.Position);
+                UpdateCollisionBucket(j, b.Position);
+                AddNearbyCollisionCandidates(i, j + 1, _collisionCandidates);
             }
         }
 
@@ -1159,17 +1336,14 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         };
 
         _labelFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.DefaultFont.Typeface
         };
 
         _navFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.RegularFont.Typeface
         };
 
         _drillIndicatorFont ??= new SKFont {
-            Embolden = true,
             Typeface = context.RegularFont.Typeface
         };
 
@@ -1382,6 +1556,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         hash.Add(Visible);
         hash.Add(AnimationEnabled);
         hash.Add(AnimationDuration);
+        hash.Add(AnimationEasing);
         return hash.ToHashCode();
     }
 
@@ -1395,12 +1570,15 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     }
 
     private void ResetSimulation() {
+        ResetAnimation();
         _visibleBubbles.Clear();
         _bubbleStates.Clear();
+        _cachedRadiusNode = null;
+        _cachedTargetRadii = null;
         _draggedNodeId = null;
         _pointerDownNodeId = null;
         _dragReleaseVelocity = SKPoint.Empty;
-        _lastPhysicsStepUtc = DateTime.MinValue;
+        WakePhysics();
         _backButtonRect = SKRect.Empty;
     }
 

@@ -8,6 +8,10 @@ using SkiaSharp;
 namespace NTComponents.Charts.Tests.Charts;
 
 public class NTChart_Tests : BunitContext {
+    private readonly Dictionary<string, string?> _themeColors = new() {
+        [nameof(TnTColor.Primary)] = "#123456",
+        [nameof(TnTColor.Surface)] = "#fafafa"
+    };
     private static readonly IReadOnlyList<BubblePoint> _bubbleData =
     [
         new("A", 12m),
@@ -24,8 +28,76 @@ public class NTChart_Tests : BunitContext {
 
     public NTChart_Tests() {
         JSInterop.Mode = JSRuntimeMode.Loose;
-        JSInterop.Setup<float>("eval", "window.devicePixelRatio || 1").SetResult(1f);
+        var module = JSInterop.SetupModule("./_content/NTComponents.Charts/ntcomponents-charts.js");
+        module.Setup<float>("getDevicePixelRatio").SetResult(1f);
+        module.Setup<Dictionary<string, string?>>("getThemeColors", _ => true).SetResult(_themeColors);
         ComponentFactories.AddStub(type => type.FullName is "SkiaSharp.Views.Blazor.SKGLView" or "SkiaSharp.Views.Blazor.SKCanvasView");
+    }
+
+    [Fact]
+    public void Toolbar_exposes_named_export_and_reset_actions() {
+        var cut = Render<NTChart<LinePoint>>(parameters => parameters
+            .Add(p => p.ChildContent, (RenderFragment)(builder => {
+                builder.OpenComponent<NTLineSeries<LinePoint>>(0);
+                builder.AddAttribute(1, "Data", _lineData);
+                builder.AddAttribute(2, "XValue", (Func<LinePoint, object>)(point => point.X));
+                builder.AddAttribute(3, "YValueSelector", (Func<LinePoint, decimal>)(point => point.Y));
+                builder.AddAttribute(4, "Interactions", ChartInteractions.XZoom);
+                builder.CloseComponent();
+            })));
+
+        cut.Find("button[aria-label='Export chart as PNG']").ClassList.Should().Contain("nt-icon-button");
+        cut.Find("button[aria-label='Reset chart view']").ClassList.Should().Contain("nt-icon-button");
+    }
+
+    [Fact]
+    public void Additional_attributes_are_rendered_on_chart_root() {
+        var cut = Render<NTChart<LinePoint>>(parameters => parameters
+            .AddUnmatched("aria-label", "Revenue chart")
+            .AddUnmatched("data-report", "revenue"));
+
+        cut.Find(".nt-chart").GetAttribute("aria-label").Should().Be("Revenue chart");
+        cut.Find(".nt-chart").GetAttribute("data-report").Should().Be("revenue");
+    }
+
+    [Fact]
+    public void Theme_colors_resolve_css_and_preserve_special_colors() {
+        var cut = Render<NTChart<LinePoint>>();
+
+        cut.WaitForAssertion(() => {
+            cut.Instance.GetThemeColor(TnTColor.Primary).Should().Be(new SKColor(0x12, 0x34, 0x56));
+            cut.Instance.GetThemeColor(TnTColor.Surface).Should().Be(new SKColor(0xfa, 0xfa, 0xfa));
+            cut.Instance.GetThemeColor(TnTColor.None).Should().Be(SKColors.Transparent);
+            cut.Instance.GetThemeColor(TnTColor.Transparent).Should().Be(SKColors.Transparent);
+            cut.Instance.GetThemeColor(TnTColor.Black).Should().Be(SKColors.Black);
+            cut.Instance.GetThemeColor(TnTColor.White).Should().Be(SKColors.White);
+            cut.Instance.GetThemeColor(TnTColor.Secondary).Should().Be(SKColors.Gray);
+        });
+    }
+
+    [Fact]
+    public async Task Theme_change_refreshes_chart_colors() {
+        var cut = Render<NTChart<LinePoint>>();
+        cut.WaitForAssertion(() => cut.Instance.GetThemeColor(TnTColor.Primary).Should().Be(new SKColor(0x12, 0x34, 0x56)));
+        _themeColors[nameof(TnTColor.Primary)] = "#abcdef";
+
+        await cut.InvokeAsync(cut.Instance.OnThemeChanged);
+
+        cut.Instance.GetThemeColor(TnTColor.Primary).Should().Be(new SKColor(0xab, 0xcd, 0xef));
+    }
+
+    [Fact]
+    public async Task Async_disposal_releases_chart_fonts() {
+        var chart = new NTChart<LinePoint>();
+        var titleFont = chart.DefaultFont;
+        var labelFont = chart.RegularFont;
+        titleFont.Handle.Should().NotBe(IntPtr.Zero);
+        labelFont.Handle.Should().NotBe(IntPtr.Zero);
+
+        await chart.DisposeAsync();
+
+        titleFont.Handle.Should().Be(IntPtr.Zero);
+        labelFont.Handle.Should().Be(IntPtr.Zero);
     }
 
     [Fact]

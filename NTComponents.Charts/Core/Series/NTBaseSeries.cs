@@ -12,10 +12,16 @@ namespace NTComponents.Charts.Core.Series;
 public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData : class {
 
     /// <summary>
-    ///     Gets or sets the duration of the animation.
+    ///     Gets or sets the NTComponents motion duration for data and visibility animations.
     /// </summary>
     [Parameter]
-    public TimeSpan AnimationDuration { get; set; } = TimeSpan.FromMilliseconds(500);
+    public NTMotionDuration AnimationDuration { get; set; } = NTMotionDuration.Ms500;
+
+    /// <summary>
+    ///     Gets or sets the NTComponents easing curve for data and visibility animations.
+    /// </summary>
+    [Parameter]
+    public NTMotionEasing AnimationEasing { get; set; } = NTMotionEasing.Emphasized;
 
     /// <summary>
     ///     Gets or sets whether animation is enabled for this series.
@@ -62,19 +68,18 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
             if (Math.Abs(_targetHoverFactor - target) > 0.001f) {
                 _startHoverFactor = _currentHoverFactor;
                 _targetHoverFactor = target;
-                _hoverAnimationStartTime = DateTime.Now;
+                _hoverAnimationStartTime = NTChartMotion.Timestamp;
             }
 
             if (_hoverAnimationStartTime == null) {
                 return _currentHoverFactor = target;
             }
 
-            var elapsed = DateTime.Now - _hoverAnimationStartTime.Value;
-            var duration = Chart.HoverAnimationDuration;
-            var progress = (float)(elapsed.TotalMilliseconds / duration.TotalMilliseconds);
-            progress = Math.Clamp(progress, 0, 1);
+            var elapsed = NTChartMotion.ElapsedSince(_hoverAnimationStartTime.Value);
+            var progress = NTChartMotion.Progress(elapsed, Chart.HoverAnimationDuration);
+            var easedProgress = NTChartMotion.Ease(progress, Chart.HoverAnimationEasing);
 
-            _currentHoverFactor = _startHoverFactor + ((_targetHoverFactor - _startHoverFactor) * progress);
+            _currentHoverFactor = _startHoverFactor + ((_targetHoverFactor - _startHoverFactor) * easedProgress);
 
             if (progress >= 1) {
                 _hoverAnimationStartTime = null;
@@ -191,19 +196,17 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     public float VisibilityFactor {
         get {
             if (!AnimationEnabled) {
-                return Visible ? 1f : 0f;
+                return _currentVisibility = Visible ? 1f : 0f;
             }
 
             if (_visibilityAnimationStartTime == null) {
-                return Visible ? 1f : 0f;
+                return _currentVisibility = Visible ? 1f : 0f;
             }
 
-            var elapsed = DateTime.Now - _visibilityAnimationStartTime.Value;
-            var progress = (float)(elapsed.TotalMilliseconds / AnimationDuration.TotalMilliseconds);
-            progress = Math.Clamp(progress, 0, 1);
+            var elapsed = NTChartMotion.ElapsedSince(_visibilityAnimationStartTime.Value);
+            var progress = NTChartMotion.Progress(elapsed, AnimationDuration);
 
-            // Use simple linear for visibility factor transition
-            _currentVisibility = _startVisibility + (((Visible ? 1f : 0f) - _startVisibility) * progress);
+            _currentVisibility = _startVisibility + (((Visible ? 1f : 0f) - _startVisibility) * EaseAnimation(progress));
 
             if (progress >= 1) {
                 _visibilityAnimationStartTime = null;
@@ -222,7 +225,10 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     /// <summary>
     ///     Gets the start time of the animation.
     /// </summary>
-    protected DateTime AnimationStartTime { get; set; } = DateTime.Now;
+    protected DateTime AnimationStartTime {
+        get => DateTime.Now - NTChartMotion.ElapsedSince(_animationStartTimestamp);
+        set => _animationStartTimestamp = NTChartMotion.TimestampFor(value);
+    }
 
     /// <summary>
     ///     Gets the parent <see cref="NTChart{TData}" /> that owns this series.
@@ -240,15 +246,25 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
 
     private float _currentHoverFactor = 1f;
     private float _currentVisibility = 1f;
-    private DateTime? _hoverAnimationStartTime;
+    private long? _hoverAnimationStartTime;
     private bool _lastVisible = true;
     private float _startHoverFactor = 1f;
+    private long _animationStartTimestamp = NTChartMotion.Timestamp;
 
     private float _startVisibility = 1f;
 
     private float _targetHoverFactor = 1f;
 
-    private DateTime? _visibilityAnimationStartTime;
+    private long? _visibilityAnimationStartTime;
+    private Func<TData, object>? _previousXValue;
+    private bool _dataAnimationActive;
+    private bool _previousAnimationEnabled = true;
+    private bool HasData => Data switch {
+        null => false,
+        ICollection<TData> collection => collection.Count > 0,
+        IReadOnlyCollection<TData> collection => collection.Count > 0,
+        _ => true
+    };
     internal bool SuppressInteractionCallbacks { get; set; }
 
     /// <inheritdoc />
@@ -284,12 +300,36 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     public abstract SKRect Render(NTRenderContext context, SKRect renderArea);
 
     /// <inheritdoc />
-    public virtual void Invalidate() => ResetAnimation();
+    public virtual void Invalidate() => OnDataChanged();
+
+    internal virtual bool RequiresAnimationFrame {
+        get {
+            if (!AnimationEnabled) {
+                _dataAnimationActive = false;
+                _visibilityAnimationStartTime = null;
+                _hoverAnimationStartTime = null;
+                return false;
+            }
+
+            var dataAnimating = _dataAnimationActive && GetAnimationProgress() < 1f;
+            if (!dataAnimating) {
+                _dataAnimationActive = false;
+            }
+
+            return dataAnimating ||
+                _visibilityAnimationStartTime.HasValue && VisibilityFactor is > 0f and < 1f ||
+                _hoverAnimationStartTime.HasValue && HoverFactor is > 0f and < 1f;
+        }
+    }
 
     /// <summary>
     ///     Resets the animation to start from the beginning.
     /// </summary>
-    public void ResetAnimation() => AnimationStartTime = DateTime.Now;
+    public void ResetAnimation() {
+        _animationStartTimestamp = NTChartMotion.Timestamp;
+        _dataAnimationActive = AnimationEnabled && HasData;
+        Chart?.RequestDraw();
+    }
 
     /// <summary>
     ///     Returns the legend items for this series.
@@ -422,15 +462,11 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     public virtual bool IsPanning => false;
 
     /// <summary>
-    ///     Applies an overshoot effect to the progress.
+    ///     Applies the selected NTComponents easing curve to normalised progress.
     /// </summary>
-    /// <param name="t">The progress value between 0 and 1.</param>
+    /// <param name="progress">The progress value between 0 and 1.</param>
     /// <returns>The eased progress value.</returns>
-    protected float BackEase(float t) {
-        const float c1 = 1.70158f;
-        const float c3 = c1 + 1;
-        return 1 + (c3 * MathF.Pow(t - 1, 3)) + (c1 * MathF.Pow(t - 1, 2));
-    }
+    protected float EaseAnimation(float progress) => NTChartMotion.Ease(progress, AnimationEasing);
 
     /// <summary>
     ///     Returns the normalised animation progress (0.0–1.0) based on elapsed time since <see cref="AnimationStartTime" />.
@@ -440,9 +476,8 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
             return 1.0f;
         }
 
-        var elapsed = DateTime.Now - AnimationStartTime;
-        var progress = (float)(elapsed.TotalMilliseconds / AnimationDuration.TotalMilliseconds);
-        return Math.Clamp(progress, 0, 1);
+        var elapsed = NTChartMotion.ElapsedSince(_animationStartTimestamp);
+        return NTChartMotion.Progress(elapsed, AnimationDuration);
     }
 
     /// <summary>
@@ -553,6 +588,19 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     protected override void OnParametersSet() {
         base.OnParametersSet();
 
+        if (_previousAnimationEnabled != AnimationEnabled) {
+            _previousAnimationEnabled = AnimationEnabled;
+            if (AnimationEnabled) {
+                ResetAnimation();
+            }
+            else {
+                _dataAnimationActive = false;
+                _visibilityAnimationStartTime = null;
+                _hoverAnimationStartTime = null;
+                Chart?.RequestDraw();
+            }
+        }
+
         if (Visible != _lastVisible) {
             HandleVisibilityChanged();
             _lastVisible = Visible;
@@ -562,18 +610,19 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
             OnDataChanged();
             PreviousData = Data;
         }
+
+        if (!ReferenceEquals(_previousXValue, XValue)) {
+            OnDataChanged();
+            _previousXValue = XValue;
+        }
     }
 
     private void HandleVisibilityChanged() {
-        _startVisibility = VisibilityFactor;
-        _visibilityAnimationStartTime = DateTime.Now;
-
-        // We also want to reset the primary data animation if we are appearing
-        if (Visible) {
-            ResetAnimation();
-        }
+        _startVisibility = _currentVisibility;
+        _visibilityAnimationStartTime = NTChartMotion.Timestamp;
 
         Chart?.InvalidateDataCaches();
+        Chart?.RequestDraw();
         NotifyVisibilityChanged(new NTSeriesVisibilityChangedEventArgs<TData> {
             Series = this,
             Visible = Visible

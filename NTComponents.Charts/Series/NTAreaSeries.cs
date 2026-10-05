@@ -82,7 +82,7 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
       var dataList = Data.ToList();
       var points = new List<SKPoint>();
       var progress = GetAnimationProgress();
-      var easedProgress = (decimal)BackEase(progress);
+      var easedProgress = (decimal)EaseAnimation(progress);
 
       for (var i = 0; i < dataList.Count; i++) {
          var originalX = XValue.Invoke(dataList[i]);
