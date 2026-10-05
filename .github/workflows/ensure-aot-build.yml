@@ -18,7 +18,7 @@ env:
 
 jobs:
   aot-test:
-    name: ${{ matrix.tfm == 'net10.0' && 'AOT' || 'Trimmed WASM' }} smoke (${{ matrix.tfm }}, ${{ matrix.runner.name }})
+    name: ${{ matrix.tfm == 'net10.0' && 'Native WASM smoke' || 'Trimmed WASM build' }} (${{ matrix.tfm }}, ${{ matrix.runner.name }})
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +39,7 @@ jobs:
     runs-on: ${{ matrix.runner.os }}
     timeout-minutes: 30
     env:
-      DOTNET_VERSION: ${{ matrix.tfm == 'net11.0' && '11.0.100-preview.6.26359.118' || '10.0.x' }}
+      DOTNET_VERSION: ${{ matrix.tfm == 'net11.0' && '11.0.100-rc.1.26425.128' || '10.0.x' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +50,7 @@ jobs:
           dotnet-version: |
             9.0.x
             10.0.x
-            11.0.100-preview.6.26359.118
+            11.0.100-rc.1.26425.128
 
       - name: Cache NuGet packages
         uses: actions/cache@v4
@@ -68,11 +68,16 @@ jobs:
           [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture
           [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 
-      - name: Setup Node for Chromium install
-        if: runner.os == 'Linux'
+      - name: Setup Node for TypeScript and browser smoke
         uses: actions/setup-node@v7
         with:
           node-version: 24.x
+
+      - name: Compile chart TypeScript
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build:ts
 
       - name: Install Chromium for browser smoke
         if: runner.os == 'Linux'

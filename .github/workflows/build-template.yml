@@ -26,10 +26,21 @@ jobs:
           dotnet-version: |
             9.0.x
             10.0.x
-            11.0.100-preview.6.26359.118
+            11.0.100-rc.1.26425.128
 
       - name: Restore dependencies
         run: dotnet restore NTComponents.Charts.slnx -p:UseLocalNTComponentsProject=false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+
+      - name: Install TypeScript build dependencies
+        run: npm ci
+
+      - name: Compile and test chart TypeScript
+        run: npm test
 
       - name: Build all target frameworks
         run: dotnet build NTComponents.Charts.slnx --no-restore --configuration ${{ inputs.configuration }} -m:1 -p:UseLocalNTComponentsProject=false
@@ -60,7 +71,7 @@ jobs:
           dotnet-version: |
             9.0.x
             10.0.x
-            11.0.100-preview.6.26359.118
+            11.0.100-rc.1.26425.128
 
       - name: Download CI package
         uses: actions/download-artifact@v8
@@ -89,7 +100,17 @@ jobs:
           dotnet-version: |
             9.0.x
             10.0.x
-            11.0.100-preview.6.26359.118
+            11.0.100-rc.1.26425.128
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+
+      - name: Compile chart TypeScript
+        run: |
+          npm ci
+          npm run build:ts
 
       - name: Restore test dependencies
         run: dotnet restore Tests/NTComponents.Charts.Tests/NTComponents.Charts.Tests.csproj -p:UseLocalNTComponentsProject=false

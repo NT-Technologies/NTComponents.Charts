@@ -31,7 +31,7 @@ jobs:
           dotnet-version: |
             9.0.x
             10.0.x
-            11.0.100-preview.6.26359.118
+            11.0.100-rc.1.26425.128
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -40,6 +40,8 @@ jobs:
 
       - name: Restore and build
         run: |
+          npm ci
+          npm run build:ts
           dotnet restore NTComponents.Charts.slnx -p:UseLocalNTComponentsProject=false
           dotnet build NTComponents.Charts.slnx --no-restore --configuration Release -m:1 -p:UseLocalNTComponentsProject=false
 
