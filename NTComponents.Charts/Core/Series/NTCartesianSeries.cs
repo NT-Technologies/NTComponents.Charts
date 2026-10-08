@@ -194,7 +194,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     ///     Gets or sets the color of the data labels. If null, the chart's text color will be used.
     /// </summary>
     [Parameter]
-    public TnTColor? DataLabelColor { get; set; }
+    public NTColor? DataLabelColor { get; set; }
 
     /// <summary>
     ///     Gets or sets whether to show a background for data labels.
@@ -206,7 +206,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     ///     Gets or sets the background color for data labels. If null, the series' color will be used.
     /// </summary>
     [Parameter]
-    public TnTColor? DataLabelBackgroundColor { get; set; }
+    public NTColor? DataLabelBackgroundColor { get; set; }
 
     /// <summary>The minimum X value of the current view window, set by pan or zoom interactions.</summary>
     protected double? _viewXMin;
@@ -562,7 +562,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
                 StrokeWidth = 1,
                 IsAntialias = true
             };
-            _labelBorderPaint.Color = Chart.GetThemeColor(TnTColor.Outline).WithAlpha((byte)Math.Clamp((int)(255 * alphaFactor), 0, 255));
+            _labelBorderPaint.Color = Chart.GetThemeColor(NTColor.Outline).WithAlpha((byte)Math.Clamp((int)(255 * alphaFactor), 0, 255));
             context.Canvas.DrawRoundRect(bgRect, 6 * context.Density, 6 * context.Density, _labelBorderPaint);
         }
 

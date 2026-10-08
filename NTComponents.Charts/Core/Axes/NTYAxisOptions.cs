@@ -70,7 +70,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
     ///     Gets or sets the color used for Y-axis grid lines.
     /// </summary>
     [Parameter]
-    public TnTColor GridLineColor { get; set; } = TnTColor.OutlineVariant;
+    public NTColor GridLineColor { get; set; } = NTColor.OutlineVariant;
 
     /// <inheritdoc />
     public override void Dispose() {

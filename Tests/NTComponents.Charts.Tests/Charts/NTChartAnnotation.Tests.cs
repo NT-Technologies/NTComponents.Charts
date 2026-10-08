@@ -17,7 +17,7 @@ public class NTChartAnnotation_Tests {
         annotation.Y2.Should().BeNull();
         annotation.Label.Should().BeNull();
         annotation.UseSecondaryYAxis.Should().BeFalse();
-        annotation.StrokeColor.Should().Be(TnTColor.Primary);
+        annotation.StrokeColor.Should().Be(NTColor.Primary);
         annotation.FillColor.Should().BeNull();
         annotation.TextColor.Should().BeNull();
         annotation.StrokeWidth.Should().Be(1.5f);

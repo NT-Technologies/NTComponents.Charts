@@ -30,10 +30,10 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     public bool AnimationEnabled { get; set; } = true;
 
     /// <summary>
-    ///     Gets or sets the color of the series. If null or <see cref="TnTColor.None" />, a color will be chosen from the chart's palette.
+    ///     Gets or sets the color of the series. If null, a color will be chosen from the chart's palette.
     /// </summary>
     [Parameter]
-    public TnTColor? Color { get; set; }
+    public NTColor? Color { get; set; }
 
     /// <summary>
     ///     Gets the coordinate system of the series.
@@ -155,10 +155,10 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     public EventCallback<NTSeriesResetViewEventArgs<TData>> OnResetView { get; set; }
 
     /// <summary>
-    ///     Gets or sets the text color of the series. If null or <see cref="TnTColor.None" />, a color will be chosen from the chart's palette.
+    ///     Gets or sets the text color of the series. If null, a color will be chosen from the chart's palette.
     /// </summary>
     [Parameter]
-    public TnTColor? TextColor { get; set; }
+    public NTColor? TextColor { get; set; }
 
     /// <summary>
     ///     Gets or sets the title of the series.
@@ -170,13 +170,13 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     ///     Gets or sets the background color of the tooltip for this series.
     /// </summary>
     [Parameter]
-    public TnTColor? TooltipBackgroundColor { get; set; }
+    public NTColor? TooltipBackgroundColor { get; set; }
 
     /// <summary>
     ///     Gets or sets the text color of the tooltip for this series.
     /// </summary>
     [Parameter]
-    public TnTColor? TooltipTextColor { get; set; }
+    public NTColor? TooltipTextColor { get; set; }
 
     /// <summary>
     ///     Gets or sets an optional callback that can replace the default tooltip payload for this series.

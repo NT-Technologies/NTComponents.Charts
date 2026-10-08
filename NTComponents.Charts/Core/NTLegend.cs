@@ -47,10 +47,10 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
     /// <summary>
     ///     Gets or sets the background color for the legend.
     ///     Currently only applied when <see cref="Position"/> is <see cref="LegendPosition.Floating"/>.
-    ///     If None, uses the chart's background color with some transparency.
+    ///     If null, uses the chart's background color with some transparency.
     /// </summary>
     [Parameter]
-    public TnTColor BackgroundColor { get; set; } = TnTColor.None;
+    public NTColor? BackgroundColor { get; set; }
 
     /// <summary>
     ///    Gets or sets the current offset when Position is Floating.
@@ -134,7 +134,7 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
     private float _lastIconSize;
     private float _lastItemSpacing;
     private bool _lastVisible;
-    private TnTColor _lastBackgroundColor;
+    private NTColor? _lastBackgroundColor;
     private SKPoint? _lastFloatingOffset;
 
     /// <inheritdoc />
@@ -361,7 +361,7 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
             var y = legendArea.Top + (5 * context.Density) + (FontSize * context.Density);
 
             var items = GetItems();
-            var bgColor = BackgroundColor == TnTColor.None ? Chart.BackgroundColor : BackgroundColor;
+            var bgColor = BackgroundColor ?? Chart.BackgroundColor;
 
             var bgPaint = GetPaint(ref _backgroundPaint);
             bgPaint.Color = Chart.GetThemeColor(bgColor).WithAlpha(200);
@@ -369,7 +369,7 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
             context.Canvas.DrawRoundRect(legendArea, 4 * context.Density, 4 * context.Density, bgPaint);
 
             var borderPaint = GetPaint(ref _borderPaint);
-            borderPaint.Color = Chart.GetThemeColor(TnTColor.OutlineVariant);
+            borderPaint.Color = Chart.GetThemeColor(NTColor.OutlineVariant);
             borderPaint.Style = SKPaintStyle.Stroke;
             borderPaint.StrokeWidth = context.Density;
             context.Canvas.DrawRoundRect(legendArea, 4 * context.Density, 4 * context.Density, borderPaint);

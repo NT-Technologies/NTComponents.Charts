@@ -23,7 +23,7 @@ Install `NTComponents.Charts`, register NTComponents services with `builder.Serv
 }
 ```
 
-Chart colors continue to use `TnTColor`, the color-role enum in the current NTComponents API. Charts refresh their palette after the theme runtime's `nt-theme-changed` event, including light/dark and contrast changes. Export and reset use named `NTIconButton` actions; `AllowExport` and series interaction flags control their visibility. Unmatched attributes such as `aria-label` and `data-*` are forwarded to the chart root.
+Chart colors use `NTColor`, the Material 3 color-role enum in NTComponents. Leave a color `null` to use the chart default or palette; `TnTColor.None` has no `NTColor` equivalent. Charts refresh their palette after the theme runtime's `nt-theme-changed` event, including light/dark and contrast changes. Export and reset use named `NTIconButton` actions; `AllowExport` and series interaction flags control their visibility. Unmatched attributes such as `aria-label` and `data-*` are forwarded to the chart root.
 
 Canvas drawings and PNG exports use embedded Roboto Bold (700), Medium (500), and Regular (400) font files, without synthetic bolding. Titles, axes, legends, and data labels use Bold; tooltip labels, annotations, and hierarchy navigation use Medium; debug text uses Regular. These drawings do not depend on installed system fonts or browser font downloads. The redistributed Roboto fonts include their SIL Open Font License in the package.
 

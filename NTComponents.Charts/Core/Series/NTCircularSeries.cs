@@ -12,7 +12,7 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
    private List<TData>? _cachedData;
    private Func<TData, decimal>? _cachedValueSelector;
    private NTChart<TData>? _themeColorChart;
-   private Func<TnTColor, SKColor>? _themeColorSelector;
+   private Func<NTColor, SKColor>? _themeColorSelector;
    private bool _preserveHiddenIndices;
    private bool _sliceCacheValid;
    /// <inheritdoc />
@@ -56,7 +56,7 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
    ///     Gets or sets the color of the data labels.
    /// </summary>
    [Parameter]
-   public TnTColor? DataLabelColor { get; set; }
+   public NTColor? DataLabelColor { get; set; }
 
    /// <summary>
    ///    Gets or sets the thickness of the data labels.
@@ -141,7 +141,7 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
    }
 
    /// <summary>Returns the reusable theme-color delegate for point render callbacks.</summary>
-   protected Func<TnTColor, SKColor> GetThemeColorSelector()
+   protected Func<NTColor, SKColor> GetThemeColorSelector()
    {
       if (!ReferenceEquals(_themeColorChart, Chart))
       {

@@ -71,17 +71,17 @@ public sealed class NTChartAnnotation {
     /// <summary>
     ///     Main stroke color.
     /// </summary>
-    public TnTColor StrokeColor { get; set; } = TnTColor.Primary;
+    public NTColor StrokeColor { get; set; } = NTColor.Primary;
 
     /// <summary>
     ///     Optional fill color. Defaults to a translucent version of <see cref="StrokeColor"/>.
     /// </summary>
-    public TnTColor? FillColor { get; set; }
+    public NTColor? FillColor { get; set; }
 
     /// <summary>
     ///     Optional text color. Defaults to chart text color.
     /// </summary>
-    public TnTColor? TextColor { get; set; }
+    public NTColor? TextColor { get; set; }
 
     /// <summary>Gets or sets the stroke line width in pixels. Defaults to <c>1.5</c>.</summary>
     public float StrokeWidth { get; set; } = 1.5f;
@@ -136,6 +136,6 @@ public sealed class NTChartAnnotationRenderContext {
     /// <summary>Gets a function that converts a data value to its Y canvas coordinate. The <see langword="bool"/> parameter selects the secondary Y axis when <see langword="true"/>.</summary>
     public required Func<object?, bool, float?> ScaleY { get; init; }
 
-    /// <summary>Gets a function that resolves a <see cref="TnTColor"/> token to its concrete <see cref="SKColor"/> using the current chart theme.</summary>
-    public required Func<TnTColor, SKColor> ResolveThemeColor { get; init; }
+    /// <summary>Gets a function that resolves a <see cref="NTColor"/> token to its concrete <see cref="SKColor"/> using the current chart theme.</summary>
+    public required Func<NTColor, SKColor> ResolveThemeColor { get; init; }
 }

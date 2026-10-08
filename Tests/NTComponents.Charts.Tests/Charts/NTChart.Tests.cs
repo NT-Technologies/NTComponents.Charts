@@ -9,8 +9,8 @@ namespace NTComponents.Charts.Tests.Charts;
 
 public class NTChart_Tests : BunitContext {
     private readonly Dictionary<string, string?> _themeColors = new() {
-        [nameof(TnTColor.Primary)] = "#123456",
-        [nameof(TnTColor.Surface)] = "#fafafa"
+        [nameof(NTColor.Primary)] = "#123456",
+        [nameof(NTColor.Surface)] = "#fafafa"
     };
     private static readonly IReadOnlyList<BubblePoint> _bubbleData =
     [
@@ -61,29 +61,26 @@ public class NTChart_Tests : BunitContext {
     }
 
     [Fact]
-    public void Theme_colors_resolve_css_and_preserve_special_colors() {
+    public void Theme_colors_resolve_css_and_preserve_transparency() {
         var cut = Render<NTChart<LinePoint>>();
 
         cut.WaitForAssertion(() => {
-            cut.Instance.GetThemeColor(TnTColor.Primary).Should().Be(new SKColor(0x12, 0x34, 0x56));
-            cut.Instance.GetThemeColor(TnTColor.Surface).Should().Be(new SKColor(0xfa, 0xfa, 0xfa));
-            cut.Instance.GetThemeColor(TnTColor.None).Should().Be(SKColors.Transparent);
-            cut.Instance.GetThemeColor(TnTColor.Transparent).Should().Be(SKColors.Transparent);
-            cut.Instance.GetThemeColor(TnTColor.Black).Should().Be(SKColors.Black);
-            cut.Instance.GetThemeColor(TnTColor.White).Should().Be(SKColors.White);
-            cut.Instance.GetThemeColor(TnTColor.Secondary).Should().Be(SKColors.Gray);
+            cut.Instance.GetThemeColor(NTColor.Primary).Should().Be(new SKColor(0x12, 0x34, 0x56));
+            cut.Instance.GetThemeColor(NTColor.Surface).Should().Be(new SKColor(0xfa, 0xfa, 0xfa));
+            cut.Instance.GetThemeColor(NTColor.Transparent).Should().Be(SKColors.Transparent);
+            cut.Instance.GetThemeColor(NTColor.Secondary).Should().Be(SKColors.Gray);
         });
     }
 
     [Fact]
     public async Task Theme_change_refreshes_chart_colors() {
         var cut = Render<NTChart<LinePoint>>();
-        cut.WaitForAssertion(() => cut.Instance.GetThemeColor(TnTColor.Primary).Should().Be(new SKColor(0x12, 0x34, 0x56)));
-        _themeColors[nameof(TnTColor.Primary)] = "#abcdef";
+        cut.WaitForAssertion(() => cut.Instance.GetThemeColor(NTColor.Primary).Should().Be(new SKColor(0x12, 0x34, 0x56)));
+        _themeColors[nameof(NTColor.Primary)] = "#abcdef";
 
         await cut.InvokeAsync(cut.Instance.OnThemeChanged);
 
-        cut.Instance.GetThemeColor(TnTColor.Primary).Should().Be(new SKColor(0xab, 0xcd, 0xef));
+        cut.Instance.GetThemeColor(NTColor.Primary).Should().Be(new SKColor(0xab, 0xcd, 0xef));
     }
 
     [Fact]
@@ -174,11 +171,11 @@ public class NTChart_Tests : BunitContext {
         var zeroOpacity = (SKColor)InvokeNonPublic(
             chart,
             "ResolveAnnotationColor",
-            [TnTColor.Primary, -1f])!;
+            [NTColor.Primary, -1f])!;
         var fullOpacity = (SKColor)InvokeNonPublic(
             chart,
             "ResolveAnnotationColor",
-            [TnTColor.Primary, 2f])!;
+            [NTColor.Primary, 2f])!;
 
         // Assert
         zeroOpacity.Alpha.Should().Be((byte)0);

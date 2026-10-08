@@ -11,7 +11,7 @@ public sealed class NTBarSegment {
     /// <summary>Gets an optional label displayed within or alongside this segment.</summary>
     public string? Label { get; init; }
     /// <summary>Gets an optional theme color applied to this segment.</summary>
-    public TnTColor? Color { get; init; }
+    public NTColor? Color { get; init; }
     /// <summary>Gets an optional custom SkiaSharp color that overrides the theme color for this segment.</summary>
     public SKColor? CustomColor { get; init; }
 }

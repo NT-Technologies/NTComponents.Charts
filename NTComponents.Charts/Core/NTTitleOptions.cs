@@ -14,7 +14,7 @@ public class NTTitleOptions {
     public string Title { get; set; }
 
     /// <summary>Gets or sets an optional override for the title text color. When <see langword="null"/> the chart theme color is used.</summary>
-    public TnTColor? TextColor { get; set; }
+    public NTColor? TextColor { get; set; }
 
     /// <summary>Gets or sets the font size of the title in points. Defaults to <c>20</c>.</summary>
     public float FontSize { get; set; } = 20f;

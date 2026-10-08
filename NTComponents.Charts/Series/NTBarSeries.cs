@@ -56,7 +56,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     ///     Optional callback to choose a color for each bar segment.
     /// </summary>
     [Parameter]
-    public Func<NTBarSegmentColorContext<TData>, TnTColor>? SegmentColorSelector { get; set; }
+    public Func<NTBarSegmentColorContext<TData>, NTColor>? SegmentColorSelector { get; set; }
 
     /// <summary>
     ///     Gets or sets whether non-hovered bars in this series fade when a single bar is hovered.
@@ -84,7 +84,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     private Func<TData, decimal>? _cachedValueSelector;
     private Func<TData, object>? _cachedXSelector;
     private NTChart<TData>? _themeColorChart;
-    private Func<TnTColor, SKColor>? _themeColorSelector;
+    private Func<NTColor, SKColor>? _themeColorSelector;
     private readonly List<(SKRect Rect, int Index, int? SegmentIndex, TData Data, string? SegmentLabel, decimal SegmentValue, SKColor SegmentColor)> _lastBarRects = [];
     private readonly HashSet<string> _hiddenSegmentLabels = new(StringComparer.OrdinalIgnoreCase);
     private int? _lastHoveredSegmentPointIndex;
@@ -402,7 +402,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             Style = SKPaintStyle.Stroke,
             StrokeWidth = context.Density
         };
-        _labelBorderPaint.Color = ApplyAlphaFactor(Chart.GetThemeColor(TnTColor.OutlineVariant), alphaFactor);
+        _labelBorderPaint.Color = ApplyAlphaFactor(Chart.GetThemeColor(NTColor.OutlineVariant), alphaFactor);
         context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBorderPaint);
 
         context.Canvas.DrawText(text, centerX, baselineAbove, SKTextAlign.Center, _labelFont, _labelPaint);
@@ -478,7 +478,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             Style = SKPaintStyle.Stroke,
             StrokeWidth = context.Density
         };
-        _labelBorderPaint.Color = ApplyAlphaFactor(Chart.GetThemeColor(TnTColor.OutlineVariant), alphaFactor);
+        _labelBorderPaint.Color = ApplyAlphaFactor(Chart.GetThemeColor(NTColor.OutlineVariant), alphaFactor);
         context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBorderPaint);
 
         context.Canvas.DrawText(text, outsideX, baselineY, textAlign, _labelFont, _labelPaint);
@@ -794,7 +794,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         .Where(s => Math.Abs(s.Value) > 0m)
         .ToList();
 
-    private Func<TnTColor, SKColor> GetThemeColorSelector() {
+    private Func<NTColor, SKColor> GetThemeColorSelector() {
         if (!ReferenceEquals(_themeColorChart, Chart)) {
             _themeColorChart = Chart;
             _themeColorSelector = Chart.GetThemeColor;
@@ -1008,7 +1008,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             Style = SKPaintStyle.Stroke,
             StrokeWidth = context.Density
         };
-        _labelBorderPaint.Color = ApplyAlphaFactor(Chart.GetThemeColor(TnTColor.OutlineVariant), alphaFactor);
+        _labelBorderPaint.Color = ApplyAlphaFactor(Chart.GetThemeColor(NTColor.OutlineVariant), alphaFactor);
         context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBorderPaint);
     }
 
@@ -1035,7 +1035,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             return segment.CustomColor.Value;
         }
 
-        if (segment.Color.HasValue && segment.Color.Value != TnTColor.None) {
+        if (segment.Color.HasValue) {
             return Chart.GetThemeColor(segment.Color.Value);
         }
 

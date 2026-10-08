@@ -53,7 +53,7 @@ public class RenderScheduling_Tests : BunitContext {
         await Paint(chart);
 
         Field<long>(series, "_animationStartTimestamp", typeof(NTBaseSeries<Point>)).Should().Be(timestamp);
-        chart.Instance.GetThemeColor(TnTColor.PrimaryFixed).Should().Be(SKColors.Red);
+        chart.Instance.GetThemeColor(NTColor.PrimaryFixed).Should().Be(SKColors.Red);
     }
 
     [Fact]

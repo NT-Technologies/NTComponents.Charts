@@ -20,13 +20,13 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
    ///    Gets or sets the theme color applied to cells with the lowest weight value.
    /// </summary>
    [Parameter]
-   public TnTColor MinColor { get; set; } = TnTColor.SurfaceContainerLowest;
+   public NTColor MinColor { get; set; } = NTColor.SurfaceContainerLowest;
 
    /// <summary>
    ///    Gets or sets the theme color applied to cells with the highest weight value.
    /// </summary>
    [Parameter]
-   public TnTColor MaxColor { get; set; } = TnTColor.Primary;
+   public NTColor MaxColor { get; set; } = NTColor.Primary;
 
    /// <summary>
    ///    Gets or sets the padding between cells (0.0 to 1.0).

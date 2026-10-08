@@ -202,7 +202,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     ///     Gets or sets the background color of the chart canvas.
     /// </summary>
     [Parameter]
-    public TnTColor BackgroundColor { get; set; } = TnTColor.Surface;
+    public NTColor BackgroundColor { get; set; } = NTColor.Surface;
 
     /// <summary>
     ///     Optional chart annotations rendered over the plot area.
@@ -260,14 +260,14 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     ///     Gets or sets the default color palette for the chart.
     /// </summary>
     [Parameter]
-    public List<(TnTColor Background, TnTColor Text)> Palette { get; set; } =
+    public List<(NTColor Background, NTColor Text)> Palette { get; set; } =
     [
-        (TnTColor.PrimaryFixed, TnTColor.OnPrimaryFixed),
-        (TnTColor.SecondaryFixed, TnTColor.OnSecondaryFixed),
-        (TnTColor.TertiaryFixed, TnTColor.OnTertiaryFixed),
-        (TnTColor.Primary, TnTColor.OnPrimary),
-        (TnTColor.Secondary, TnTColor.OnSecondary),
-        (TnTColor.Tertiary, TnTColor.OnTertiary)
+        (NTColor.PrimaryFixed, NTColor.OnPrimaryFixed),
+        (NTColor.SecondaryFixed, NTColor.OnSecondaryFixed),
+        (NTColor.TertiaryFixed, NTColor.OnTertiaryFixed),
+        (NTColor.Primary, NTColor.OnPrimary),
+        (NTColor.Secondary, NTColor.OnSecondary),
+        (NTColor.Tertiary, NTColor.OnTertiary)
     ];
 
     /// <summary>
@@ -280,19 +280,19 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     ///     Gets or sets the default text color for the chart (titles, labels).
     /// </summary>
     [Parameter]
-    public TnTColor TextColor { get; set; } = TnTColor.OnSurface;
+    public NTColor TextColor { get; set; } = NTColor.OnSurface;
 
     /// <summary>
     ///     Gets or sets the background color of the tooltip.
     /// </summary>
     [Parameter]
-    public TnTColor TooltipBackgroundColor { get; set; } = TnTColor.SurfaceVariant;
+    public NTColor TooltipBackgroundColor { get; set; } = NTColor.SurfaceVariant;
 
     /// <summary>
     ///     Gets or sets the text color of the tooltip.
     /// </summary>
     [Parameter]
-    public TnTColor TooltipTextColor { get; set; } = TnTColor.OnSurfaceVariant;
+    public NTColor TooltipTextColor { get; set; } = NTColor.OnSurfaceVariant;
 
     /// <summary>
     ///     Gets the bold default font used for chart titles and labels.
@@ -381,7 +381,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     internal SKRect LastPlotArea { get; private set; }
     private SKFont? _defaultFont;
     private SKFont? _regularFont;
-    private readonly Dictionary<TnTColor, SKColor> _resolvedColors = [];
+    private readonly Dictionary<NTColor, SKColor> _resolvedColors = [];
     private readonly Dictionary<NTBaseSeries<TData>, SKRect> _treeMapAreas = [];
     private List<object>? _cachedAllX;
     private List<object>? _cachedAllY;
@@ -1037,21 +1037,21 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     }
 
     internal SKColor GetSeriesColor(NTBaseSeries<TData> series) {
-        var color = series.Color ?? TnTColor.None;
-        if (color == TnTColor.None) {
+        var color = series.Color;
+        if (!color.HasValue) {
             var index = GetSeriesIndex(series);
             if (index >= 0) {
                 color = Palette[index % Palette.Count].Background;
             }
         }
 
-        return _resolvedColors.TryGetValue(color, out var skColor) ? skColor : SKColors.Gray;
+        return color.HasValue && _resolvedColors.TryGetValue(color.Value, out var skColor) ? skColor : SKColors.Gray;
     }
 
     internal int GetSeriesIndex(NTBaseSeries<TData> series) => Series.IndexOf(series);
 
     internal SKColor GetSeriesTextColor(NTBaseSeries<TData> series) {
-        if (series.TextColor.HasValue && series.TextColor != TnTColor.None) {
+        if (series.TextColor.HasValue) {
             return GetThemeColor(series.TextColor.Value);
         }
 
@@ -1070,11 +1070,11 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     }
 
     /// <summary>
-    ///     Resolves a <see cref="TnTColor" /> enum value to its corresponding SkiaSharp <see cref="SKColor" />.
+    ///     Resolves a <see cref="NTColor" /> enum value to its corresponding SkiaSharp <see cref="SKColor" />.
     /// </summary>
     /// <param name="color">The theme color to resolve.</param>
     /// <returns>The resolved <see cref="SKColor" />, or <see cref="SKColors.Black" /> if not yet resolved.</returns>
-    public SKColor GetThemeColor(TnTColor color) => _resolvedColors.TryGetValue(color, out var skColor) ? skColor : SKColors.Black;
+    public SKColor GetThemeColor(NTColor color) => _resolvedColors.TryGetValue(color, out var skColor) ? skColor : SKColors.Black;
 
     internal void UnregisterSeries(NTBaseSeries<TData> series) {
         if (Series.Contains(series)) {
@@ -1696,7 +1696,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             var fillThemeColor = annotation.FillColor ?? annotation.StrokeColor;
             var fillOpacity = annotation.FillColor.HasValue ? opacity : opacity * 0.18f;
             var fillColor = ResolveAnnotationColor(fillThemeColor, fillOpacity);
-            var textBaseColor = annotation.TextColor is TnTColor annotationTextColor && annotationTextColor != TnTColor.None
+            var textBaseColor = annotation.TextColor is NTColor annotationTextColor
                 ? GetThemeColor(annotationTextColor)
                 : GetThemeColor(TextColor);
             var textColor = textBaseColor.WithAlpha((byte)Math.Clamp((int)(255f * opacity), 0, 255));
@@ -1949,7 +1949,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         return ScaleY(scaled, axis, plotArea);
     }
 
-    private SKColor ResolveAnnotationColor(TnTColor color, float opacity) {
+    private SKColor ResolveAnnotationColor(NTColor color, float opacity) {
         var resolved = GetThemeColor(color);
         var alpha = (byte)Math.Clamp((int)(resolved.Alpha * Math.Clamp(opacity, 0f, 1f)), 0, 255);
         return resolved.WithAlpha(alpha);
@@ -2142,19 +2142,11 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         if (_chartInterop is null || DisposalStarted) {
             return;
         }
-        var colorsToResolve = Enum.GetValues<TnTColor>();
+        var colorsToResolve = Enum.GetValues<NTColor>();
         var colors = await _chartInterop.GetThemeColorsAsync(colorsToResolve.Select(color => color.ToString()).ToArray());
         foreach (var color in colorsToResolve) {
-            if (color is TnTColor.None or TnTColor.Transparent) {
+            if (color is NTColor.Transparent) {
                 _resolvedColors[color] = SKColors.Transparent;
-                continue;
-            }
-            if (color == TnTColor.Black) {
-                _resolvedColors[color] = SKColors.Black;
-                continue;
-            }
-            if (color == TnTColor.White) {
-                _resolvedColors[color] = SKColors.White;
                 continue;
             }
 
@@ -2165,8 +2157,8 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             else {
                 // Fallback for primary/secondary etc if not found in CSS
                 _resolvedColors[color] = color switch {
-                    TnTColor.Primary => SKColors.RoyalBlue,
-                    TnTColor.Secondary => SKColors.Gray,
+                    NTColor.Primary => SKColors.RoyalBlue,
+                    NTColor.Secondary => SKColors.Gray,
                     _ => SKColors.Gray
                 };
             }

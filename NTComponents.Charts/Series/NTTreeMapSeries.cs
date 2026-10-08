@@ -60,10 +60,10 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     public IReadOnlyList<string>? GroupLevelLabels { get; set; }
 
     /// <summary>
-    ///     Optional callback for node color selection. Must return a <see cref="TnTColor"/>.
+    ///     Optional callback for node color selection. Must return a <see cref="NTColor"/>.
     /// </summary>
     [Parameter]
-    public Func<TreeMapColorContext<TData>, TnTColor>? ColorSelector { get; set; }
+    public Func<TreeMapColorContext<TData>, NTColor>? ColorSelector { get; set; }
 
     /// <summary>
     ///     Gets or sets the padding (in pixels) between treemap cells.
@@ -429,7 +429,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             context.Canvas.DrawRect(rect, _itemPaint);
 
             _borderPaint!.StrokeWidth = baseBorderWidth + (hoverIntensity * 1.4f * context.Density);
-            _borderPaint!.Color = Chart.GetThemeColor(TnTColor.OutlineVariant).WithAlpha((byte)((210f + (35f * hoverIntensity)) * visibilityFactor));
+            _borderPaint!.Color = Chart.GetThemeColor(NTColor.OutlineVariant).WithAlpha((byte)((210f + (35f * hoverIntensity)) * visibilityFactor));
             context.Canvas.DrawRect(rect, _borderPaint);
 
             if (styleSeries.ShowDrillIndicator && EnableDrilldown && rendered.IsInteractive && node.IsGroup) {
@@ -452,7 +452,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             context.Canvas.DrawRect(overlayRect, _itemPaint);
 
             _borderPaint!.StrokeWidth = baseBorderWidth;
-            _borderPaint!.Color = Chart.GetThemeColor(TnTColor.OutlineVariant).WithAlpha((byte)(200f * visibilityFactor * (1f - drillTransitionProgress)));
+            _borderPaint!.Color = Chart.GetThemeColor(NTColor.OutlineVariant).WithAlpha((byte)(200f * visibilityFactor * (1f - drillTransitionProgress)));
             context.Canvas.DrawRect(overlayRect, _borderPaint);
         }
         else if (_isDrillTransitionActive) {
@@ -481,7 +481,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
 
         if (_backButtonRect.Contains(point) && _drillPath.Count > 0) {
             _drillTransitionOverlayRect = _lastContentArea;
-            _drillTransitionColor = Chart.GetThemeColor(TnTColor.SurfaceContainerHigh);
+            _drillTransitionColor = Chart.GetThemeColor(NTColor.SurfaceContainerHigh);
             _drillTransitionDirection = DrillTransitionDirection.Up;
             _isDrillTransitionActive = true;
             ResetAnimation();
@@ -995,7 +995,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             return Chart.GetThemeColor(styleSeries.ColorSelector(colorContext));
         }
 
-        if (styleSeries.Color.HasValue && styleSeries.Color.Value != TnTColor.None) {
+        if (styleSeries.Color.HasValue) {
             return Chart.GetThemeColor(styleSeries.Color.Value);
         }
 
@@ -1079,10 +1079,10 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         }
 
         var navArea = new SKRect(renderArea.Left, renderArea.Top, renderArea.Right, renderArea.Top + navHeight);
-        _navPaint!.Color = Chart.GetThemeColor(TnTColor.SurfaceContainerLow).WithAlpha((byte)(230 * VisibilityFactor));
+        _navPaint!.Color = Chart.GetThemeColor(NTColor.SurfaceContainerLow).WithAlpha((byte)(230 * VisibilityFactor));
         context.Canvas.DrawRect(navArea, _navPaint);
 
-        _borderPaint!.Color = Chart.GetThemeColor(TnTColor.OutlineVariant).WithAlpha((byte)(180 * VisibilityFactor));
+        _borderPaint!.Color = Chart.GetThemeColor(NTColor.OutlineVariant).WithAlpha((byte)(180 * VisibilityFactor));
         context.Canvas.DrawLine(navArea.Left, navArea.Bottom, navArea.Right, navArea.Bottom, _borderPaint);
 
         float textX = navArea.Left + (8f * context.Density);
@@ -1095,7 +1095,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             var btnLeft = navArea.Left + (6f * context.Density);
             _backButtonRect = new SKRect(btnLeft, btnTop, btnLeft + btnWidth, btnTop + btnHeight);
 
-            _navButtonPaint!.Color = Chart.GetThemeColor(TnTColor.SurfaceVariant).WithAlpha((byte)(220 * VisibilityFactor));
+            _navButtonPaint!.Color = Chart.GetThemeColor(NTColor.SurfaceVariant).WithAlpha((byte)(220 * VisibilityFactor));
             context.Canvas.DrawRoundRect(_backButtonRect, 4f * context.Density, 4f * context.Density, _navButtonPaint);
 
             var backBaseline = _backButtonRect.MidY + (_navFont!.Size * 0.35f);
@@ -1225,10 +1225,10 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         var inset = 3f * context.Density;
         var indicatorRect = new SKRect(rect.Right - inset - size, rect.Top + inset, rect.Right - inset, rect.Top + inset + size);
 
-        _drillIndicatorPaint!.Color = Chart.GetThemeColor(TnTColor.SurfaceContainerHighest).WithAlpha((byte)(220 * VisibilityFactor));
+        _drillIndicatorPaint!.Color = Chart.GetThemeColor(NTColor.SurfaceContainerHighest).WithAlpha((byte)(220 * VisibilityFactor));
         context.Canvas.DrawRoundRect(indicatorRect, 3f * context.Density, 3f * context.Density, _drillIndicatorPaint);
 
-        _drillIndicatorTextPaint!.Color = Chart.GetThemeColor(styleSeries.TextColor ?? TnTColor.OnSurface).WithAlpha((byte)(255 * VisibilityFactor));
+        _drillIndicatorTextPaint!.Color = Chart.GetThemeColor(styleSeries.TextColor ?? NTColor.OnSurface).WithAlpha((byte)(255 * VisibilityFactor));
         _drillIndicatorFont!.Size = Math.Clamp(size * 0.7f, 8f * context.Density, 12f * context.Density);
         var baseline = indicatorRect.MidY + (_drillIndicatorFont.Size * 0.33f);
         context.Canvas.DrawText(">", indicatorRect.MidX, baseline, SKTextAlign.Center, _drillIndicatorFont, _drillIndicatorTextPaint);

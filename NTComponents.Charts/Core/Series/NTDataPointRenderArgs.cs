@@ -59,7 +59,7 @@ public class NTDataPointRenderArgs<TData>
     public SKColor? DataLabelColor { get; set; }
 
     /// <summary>
-    ///     Gets a function that converts a <see cref="TnTColor"/> to an <see cref="SKColor"/> based on the current chart theme.
+    ///     Gets a function that converts a <see cref="NTColor"/> to an <see cref="SKColor"/> based on the current chart theme.
     /// </summary>
-    public required Func<TnTColor, SKColor> GetThemeColor { get; init; }
+    public required Func<NTColor, SKColor> GetThemeColor { get; init; }
 }

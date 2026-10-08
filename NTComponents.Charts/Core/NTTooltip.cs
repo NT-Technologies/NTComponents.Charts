@@ -25,13 +25,13 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
     ///     Gets or sets the background color of the tooltip.
     /// </summary>
     [Parameter]
-    public TnTColor? BackgroundColor { get; set; }
+    public NTColor? BackgroundColor { get; set; }
 
     /// <summary>
     ///     Gets or sets the text color of the tooltip.
     /// </summary>
     [Parameter]
-    public TnTColor? TextColor { get; set; }
+    public NTColor? TextColor { get; set; }
 
     /// <summary>
     ///     Gets or sets whether tooltip line labels are rendered.
@@ -161,7 +161,7 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
         canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, _bgPaint);
 
         _borderPaint ??= new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = 1, IsAntialias = true };
-        _borderPaint.Color = Chart.GetThemeColor(TnTColor.OutlineVariant);
+        _borderPaint.Color = Chart.GetThemeColor(NTColor.OutlineVariant);
         canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, _borderPaint);
 
         var currentY = rect.Top + padding;
@@ -172,8 +172,8 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
             canvas.DrawText(tooltipInfo.Header, rect.Left + padding, currentY + _headerFont.Size - (2 * context.Density), SKTextAlign.Left, _headerFont, _headerPaint);
             currentY += headerHeight;
 
-            _separatorPaint ??= new SKPaint { StrokeWidth = 1, IsAntialias = true, Color = Chart.GetThemeColor(TnTColor.OutlineVariant) };
-            _separatorPaint.Color = Chart.GetThemeColor(TnTColor.OutlineVariant);
+            _separatorPaint ??= new SKPaint { StrokeWidth = 1, IsAntialias = true, Color = Chart.GetThemeColor(NTColor.OutlineVariant) };
+            _separatorPaint.Color = Chart.GetThemeColor(NTColor.OutlineVariant);
             canvas.DrawLine(rect.Left, currentY - (4 * context.Density), rect.Right, currentY - (4 * context.Density), _separatorPaint);
             currentY += separatorHeight - (4 * context.Density);
         }

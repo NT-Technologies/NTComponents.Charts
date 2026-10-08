@@ -14,7 +14,7 @@ public class RobotoDrawing_Tests : BunitContext {
         JSInterop.Mode = JSRuntimeMode.Loose;
         var module = JSInterop.SetupModule("./_content/NTComponents.Charts/ntcomponents-charts.js");
         module.Setup<float>("getDevicePixelRatio").SetResult(1f);
-        module.Setup<Dictionary<string, string?>>("getThemeColors", _ => true).SetResult([]);
+        module.Setup<Dictionary<string, string?>>("getThemeColors", _ => true).SetResult(new() { [nameof(NTColor.OnSurface)] = "#000000" });
         ComponentFactories.AddStub(type => type.FullName is "SkiaSharp.Views.Blazor.SKGLView" or "SkiaSharp.Views.Blazor.SKCanvasView");
     }
 
@@ -51,7 +51,7 @@ public class RobotoDrawing_Tests : BunitContext {
     [Fact]
     public void Title_draws_the_exact_embedded_Roboto_Bold_glyphs() {
         var cut = Render<NTChart<Point>>(parameters => parameters
-            .Add(p => p.TitleOptions, new NTTitleOptions("Roboto drawing 123") { TextColor = TnTColor.Black }));
+            .Add(p => p.TitleOptions, new NTTitleOptions("Roboto drawing 123") { TextColor = NTColor.OnSurface }));
         var info = new SKImageInfo(320, 80);
         using var actual = SKSurface.Create(info)!;
         using var expected = SKSurface.Create(info)!;

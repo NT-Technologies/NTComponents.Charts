@@ -15,11 +15,11 @@
 	@if (AllowExport || IsXPanEnabled || IsYPanEnabled || IsXZoomEnabled || IsYZoomEnabled) {
 		<div class="nt-chart-buttons">
 			@if (AllowExport) {
-				<NTIconButton ButtonSize="Size.Smallest" Variant="NTButtonVariant.Text" Icon="@MaterialIcon.Download" AriaLabel="Export chart as PNG" ElementTitle="Export chart as PNG" OnClickCallback="@(() => ExportAsPngAsync())" />
+				<NTIconButton ButtonSize="NTSize.Smallest" Variant="NTButtonVariant.Text" Icon="@MaterialIcon.Download" AriaLabel="Export chart as PNG" ElementTitle="Export chart as PNG" OnClickCallback="@(() => ExportAsPngAsync())" />
 			}
 
 			@if (IsXPanEnabled || IsYPanEnabled || IsXZoomEnabled || IsYZoomEnabled) {
-				<NTIconButton ButtonSize="Size.Smallest" Variant="NTButtonVariant.Text" Icon="@MaterialIcon.Refresh" AriaLabel="Reset chart view" ElementTitle="Reset chart view" OnClickCallback="@(() => ResetView())" />
+				<NTIconButton ButtonSize="NTSize.Smallest" Variant="NTButtonVariant.Text" Icon="@MaterialIcon.Refresh" AriaLabel="Reset chart view" ElementTitle="Reset chart view" OnClickCallback="@(() => ResetView())" />
 			}
 		</div>
 	}

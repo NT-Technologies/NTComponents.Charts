@@ -96,7 +96,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     private SKPathEffect? _dashEffect;
     private float _dashEffectDensity;
     private NTChart<TData>? _themeColorChart;
-    private Func<TnTColor, SKColor>? _themeColorSelector;
+    private Func<NTColor, SKColor>? _themeColorSelector;
 
     private List<RenderPointInfo>? _cachedRenderPoints;
     private RenderCacheKey? _cachedRenderKey;
@@ -656,7 +656,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return _dashEffect;
     }
 
-    private Func<TnTColor, SKColor> GetThemeColorSelector() {
+    private Func<NTColor, SKColor> GetThemeColorSelector() {
         if (!ReferenceEquals(_themeColorChart, Chart)) {
             _themeColorChart = Chart;
             _themeColorSelector = Chart.GetThemeColor;

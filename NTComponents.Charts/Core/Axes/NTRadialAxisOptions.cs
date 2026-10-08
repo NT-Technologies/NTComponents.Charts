@@ -86,7 +86,7 @@ public class NTRadialAxisOptions<TData> : NTAxisOptions<TData> where TData : cla
       if (max <= 0) max = 1;
 
       using var linePaint = new SKPaint {
-         Color = Chart.GetThemeColor(TnTColor.OutlineVariant),
+         Color = Chart.GetThemeColor(NTColor.OutlineVariant),
          StrokeWidth = context.Density,
          Style = SKPaintStyle.Stroke,
          IsAntialias = true

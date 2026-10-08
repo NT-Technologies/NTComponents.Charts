@@ -184,7 +184,7 @@ public static class NTRenderContextExtensions {
          context.Canvas.DrawRoundRect(bgRect, 6 * context.Density, 6 * context.Density, bgPaint);
 
          using var borderPaint = new SKPaint {
-            Color = chart.GetThemeColor(TnTColor.Outline),
+            Color = chart.GetThemeColor(NTColor.Outline),
             Style = SKPaintStyle.Stroke,
             StrokeWidth = 1,
             IsAntialias = true

@@ -61,7 +61,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     ///     Optional callback for bubble color selection.
     /// </summary>
     [Parameter]
-    public Func<BubbleColorContext<TData>, TnTColor>? ColorSelector { get; set; }
+    public Func<BubbleColorContext<TData>, NTColor>? ColorSelector { get; set; }
 
     /// <summary>
     ///     Gets or sets the composite format string used to format data values in bubble labels (e.g., <c>"{0:N0}"</c>).
@@ -456,7 +456,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             context.Canvas.DrawCircle(center, radius, _bubblePaint);
 
             _strokePaint!.StrokeWidth = Math.Max(1f, context.Density) + (isHovered ? 1.2f * context.Density : 0f);
-            _strokePaint.Color = Chart.GetThemeColor(TnTColor.OutlineVariant).WithAlpha((byte)(220f * visibility * alphaFactor));
+            _strokePaint.Color = Chart.GetThemeColor(NTColor.OutlineVariant).WithAlpha((byte)(220f * visibility * alphaFactor));
             context.Canvas.DrawCircle(center, radius, _strokePaint);
 
             if (ShowDrillIndicator && EnableDrilldown && bubble.IsInteractive && node.IsGroup) {
@@ -1361,11 +1361,11 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         }
 
         var navArea = new SKRect(renderArea.Left, renderArea.Top, renderArea.Right, renderArea.Top + navHeight);
-        _navPaint!.Color = Chart.GetThemeColor(TnTColor.SurfaceContainerLow).WithAlpha((byte)(235f * VisibilityFactor));
+        _navPaint!.Color = Chart.GetThemeColor(NTColor.SurfaceContainerLow).WithAlpha((byte)(235f * VisibilityFactor));
         context.Canvas.DrawRect(navArea, _navPaint);
 
         _strokePaint!.StrokeWidth = Math.Max(1f, context.Density);
-        _strokePaint.Color = Chart.GetThemeColor(TnTColor.OutlineVariant).WithAlpha((byte)(180f * VisibilityFactor));
+        _strokePaint.Color = Chart.GetThemeColor(NTColor.OutlineVariant).WithAlpha((byte)(180f * VisibilityFactor));
         context.Canvas.DrawLine(navArea.Left, navArea.Bottom, navArea.Right, navArea.Bottom, _strokePaint);
 
         float textX = navArea.Left + (8f * context.Density);
@@ -1378,7 +1378,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             var btnLeft = navArea.Left + (6f * context.Density);
             _backButtonRect = new SKRect(btnLeft, btnTop, btnLeft + btnWidth, btnTop + btnHeight);
 
-            _navButtonPaint!.Color = Chart.GetThemeColor(TnTColor.SurfaceVariant).WithAlpha((byte)(220f * VisibilityFactor));
+            _navButtonPaint!.Color = Chart.GetThemeColor(NTColor.SurfaceVariant).WithAlpha((byte)(220f * VisibilityFactor));
             context.Canvas.DrawRoundRect(_backButtonRect, 4f * context.Density, 4f * context.Density, _navButtonPaint);
 
             var backBaseline = _backButtonRect.MidY + (_navFont!.Size * 0.35f);
@@ -1422,10 +1422,10 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             indicatorCenter.X + (size / 2f),
             indicatorCenter.Y + (size / 2f));
 
-        _drillIndicatorPaint!.Color = Chart.GetThemeColor(TnTColor.SurfaceContainerHighest).WithAlpha((byte)(225f * VisibilityFactor));
+        _drillIndicatorPaint!.Color = Chart.GetThemeColor(NTColor.SurfaceContainerHighest).WithAlpha((byte)(225f * VisibilityFactor));
         context.Canvas.DrawRoundRect(indicatorRect, 3f * context.Density, 3f * context.Density, _drillIndicatorPaint);
 
-        _drillIndicatorTextPaint!.Color = Chart.GetThemeColor(styleSeries.TextColor ?? TnTColor.OnSurface).WithAlpha((byte)(255f * VisibilityFactor));
+        _drillIndicatorTextPaint!.Color = Chart.GetThemeColor(styleSeries.TextColor ?? NTColor.OnSurface).WithAlpha((byte)(255f * VisibilityFactor));
         _drillIndicatorFont!.Size = Math.Clamp(size * 0.7f, 8f * context.Density, 12f * context.Density);
         var baseline = indicatorRect.MidY + (_drillIndicatorFont.Size * 0.33f);
         context.Canvas.DrawText(">", indicatorRect.MidX, baseline, SKTextAlign.Center, _drillIndicatorFont, _drillIndicatorTextPaint);
@@ -1597,7 +1597,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             return Chart.GetThemeColor(styleSeries.ColorSelector(context));
         }
 
-        if (styleSeries.Color.HasValue && styleSeries.Color.Value != TnTColor.None) {
+        if (styleSeries.Color.HasValue) {
             return Chart.GetThemeColor(styleSeries.Color.Value);
         }
 

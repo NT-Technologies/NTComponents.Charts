@@ -18,12 +18,12 @@ public interface ISeries : IRenderable {
     ///     Gets the optional background color for tooltips associated with this series.
     ///     When <see langword="null"/>, the chart's default tooltip background color is used.
     /// </summary>
-    TnTColor? TooltipBackgroundColor { get; }
+    NTColor? TooltipBackgroundColor { get; }
     /// <summary>
     ///     Gets the optional text color for tooltips associated with this series.
     ///     When <see langword="null"/>, the chart's default tooltip text color is used.
     /// </summary>
-    TnTColor? TooltipTextColor { get; }
+    NTColor? TooltipTextColor { get; }
     /// <summary>
     ///     Gets the tooltip information to display for the specified data point.
     /// </summary>
@@ -70,12 +70,12 @@ public interface IChart<TData> where TData : class {
     /// <summary>
     ///     Resolves a theme color.
     /// </summary>
-    SKColor GetThemeColor(TnTColor color);
+    SKColor GetThemeColor(NTColor color);
 
     /// <summary>
     ///     Gets the default text color used throughout the chart.
     /// </summary>
-    TnTColor TextColor { get; }
+    NTColor TextColor { get; }
 
     /// <summary>
     ///     Gets the optional title configuration for the chart. When <see langword="null"/>, no title is rendered.
@@ -141,11 +141,11 @@ public interface IChart<TData> where TData : class {
     /// <summary>
     ///     Gets the default background color applied to tooltips when no series-specific color is provided.
     /// </summary>
-    TnTColor TooltipBackgroundColor { get; }
+    NTColor TooltipBackgroundColor { get; }
     /// <summary>
     ///     Gets the default text color applied to tooltips when no series-specific color is provided.
     /// </summary>
-    TnTColor TooltipTextColor { get; }
+    NTColor TooltipTextColor { get; }
 
     /// <summary>
     ///     Gets the minimum and maximum X values across all series data.
