@@ -61,11 +61,11 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(UseLocalNTComponentsProject)' != 'true'">
-		<PackageReference Include="NTComponents" Version="2.0.0-preview.71" />
+		<PackageReference Include="NTComponents" Version="2.0.0-preview.72" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.20" />
+		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.0" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
