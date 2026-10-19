@@ -14,13 +14,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="AngleSharp" Version="1.8.3" />
+		<PackageReference Include="AngleSharp" Version="1.8.5" />
 		<PackageReference Include="AwesomeAssertions" Version="9.6.0" />
 		<PackageReference Include="AwesomeAssertions.Analyzers" Version="9.0.8">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="bunit" Version="2.11.3" />
+		<PackageReference Include="bunit" Version="2.12.5" />
 		<PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.11.2">
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
