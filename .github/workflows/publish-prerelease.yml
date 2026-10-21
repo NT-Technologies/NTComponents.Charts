@@ -62,7 +62,7 @@ jobs:
 
       - name: Install semantic-release
         if: steps.check-tags.outputs.is_tagged == 'false'
-        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/github conventional-changelog-conventionalcommits
+        run: npm install --no-save semantic-release@25 @semantic-release/commit-analyzer@13 @semantic-release/release-notes-generator@14 @semantic-release/github@12 conventional-changelog-conventionalcommits@9
 
       - name: Publish preview release
         if: steps.check-tags.outputs.is_tagged == 'false'
