@@ -40,12 +40,7 @@ public static class NTRenderContextExtensions {
 
       var scaledSize = size * context.Density;
 
-      using var paint = new SKPaint {
-         Color = color,
-         IsAntialias = true,
-         Style = style == PointStyle.Filled ? SKPaintStyle.Fill : SKPaintStyle.Stroke,
-         StrokeWidth = 2 * context.Density
-      };
+      var paint = ResetPaint(chart.ExtensionPaint, color, style == PointStyle.Filled ? SKPaintStyle.Fill : SKPaintStyle.Stroke, 2 * context.Density);
 
       DrawPointInternal(context.Canvas, x, y, scaledSize, shape, paint);
 
@@ -78,32 +73,46 @@ public static class NTRenderContextExtensions {
             canvas.DrawRect(x - halfSize, y - halfSize, scaledSize, scaledSize, paint);
             break;
          case PointShape.Triangle:
-            using (var pathBuilder = new SKPathBuilder()) {
-               pathBuilder.MoveTo(x, y - halfSize);
-               pathBuilder.LineTo(x + halfSize, y + halfSize);
-               pathBuilder.LineTo(x - halfSize, y + halfSize);
-               pathBuilder.Close();
-               using var path = pathBuilder.Detach();
-               canvas.DrawPath(path, paint);
-            }
-            break;
          case PointShape.Diamond:
-            using (var pathBuilder = new SKPathBuilder()) {
-               pathBuilder.MoveTo(x, y - halfSize);
-               pathBuilder.LineTo(x + halfSize, y);
-               pathBuilder.LineTo(x, y + halfSize);
-               pathBuilder.LineTo(x - halfSize, y);
-               pathBuilder.Close();
-               using var path = pathBuilder.Detach();
-               canvas.DrawPath(path, paint);
+            // Markers are drawn hundreds of times per frame at a handful of sizes, so the origin-centered path is
+            // cached per thread and only rebuilt when the shape or size changes; a translate keeps the geometry exact.
+            if (_markerPath is null || _markerShape != shape || _markerHalfSize != halfSize) {
+               _markerPath?.Dispose();
+               _markerPath = BuildMarkerPath(shape, halfSize);
+               _markerShape = shape;
+               _markerHalfSize = halfSize;
             }
+            canvas.Save();
+            canvas.Translate(x, y);
+            canvas.DrawPath(_markerPath, paint);
+            canvas.Restore();
             break;
       }
    }
 
+   [ThreadStatic] private static SKPath? _markerPath;
+   [ThreadStatic] private static PointShape _markerShape;
+   [ThreadStatic] private static float _markerHalfSize;
+
+   private static SKPath BuildMarkerPath(PointShape shape, float halfSize) {
+      using var builder = new SKPathBuilder();
+      builder.MoveTo(0, -halfSize);
+      if (shape == PointShape.Triangle) {
+         builder.LineTo(halfSize, halfSize);
+         builder.LineTo(-halfSize, halfSize);
+      }
+      else {
+         builder.LineTo(halfSize, 0);
+         builder.LineTo(0, halfSize);
+         builder.LineTo(-halfSize, 0);
+      }
+      builder.Close();
+      return builder.Detach();
+   }
+
    /// <summary>
    /// Draws a formatted data label near the specified canvas coordinates, optionally rendering
-   /// a rounded-rectangle background with a drop shadow and theme-colored border behind the text.
+   /// a rounded-rectangle background behind the text. The label uses the Material 3 label-medium type role.
    /// </summary>
    /// <typeparam name="TData">The type of data items bound to the chart.</typeparam>
    /// <param name="context">The render context that provides canvas, density, and font information.</param>
@@ -114,7 +123,10 @@ public static class NTRenderContextExtensions {
    /// <param name="value">The numeric value to format and display as the label text.</param>
    /// <param name="renderArea">The bounding rectangle of the chart's render area, used to clamp label position.</param>
    /// <param name="format">A composite format string (e.g. <c>"{0:N2}"</c>) applied to <paramref name="value"/>.</param>
-   /// <param name="textColor">An optional override for the label text color; defaults to the series text color.</param>
+   /// <param name="textColor">
+   /// An optional override for the label text color. By default the label uses the series text color on a series-colored background,
+   /// a contrasting color on a custom background, and the chart text color when no background is drawn.
+   /// </param>
    /// <param name="fontSize">An optional override for the logical font size; defaults to 12.</param>
    /// <param name="textAlign">Horizontal alignment of the label text relative to <paramref name="x"/>.</param>
    /// <param name="showBackground">
@@ -137,61 +149,75 @@ public static class NTRenderContextExtensions {
        SKTextAlign textAlign = SKTextAlign.Center,
        bool showBackground = true,
        SKColor? backgroundColor = null) where TData : class {
-      var color = textColor ?? chart.GetSeriesTextColor(series);
-      var size = (fontSize ?? 12f) * context.Density;
-
-      using var font = new SKFont {
-         Size = size,
-         Typeface = context.DefaultFont.Typeface
-      };
-
-      using var paint = new SKPaint {
-         Color = color,
-         IsAntialias = true
-      };
-
-      var text = string.Format(format, value);
-      var textWidth = font.MeasureText(text);
-      var textHeight = font.Size;
-
-      var paddingX = 6f * context.Density;
-      var paddingY = 2f * context.Density;
-
-      var drawY = y;
+      var sizePx = (fontSize ?? NTChartTokens.Size(NTTypography.LabelMedium)) * context.Density;
+      var centerY = y;
       if (textAlign == SKTextAlign.Center) {
-         drawY = y - ((size / 2) + (5 * context.Density));
-         if (drawY - textHeight < renderArea.Top) {
-            drawY = y + ((size / 2) + textHeight + (5 * context.Density));
+         var halfBox = LabelBoxHeight(sizePx, context.Density) / 2f;
+         centerY = y - (LabelPointGap * context.Density) - halfBox;
+         if (centerY - halfBox < renderArea.Top) {
+            centerY = y + (LabelPointGap * context.Density) + halfBox;
          }
       }
 
-      if (showBackground) {
-         var bgColor = backgroundColor ?? chart.GetSeriesColor(series);
+      var background = showBackground ? backgroundColor ?? chart.GetSeriesColor(series) : (SKColor?)null;
+      var color = textColor ?? (background is null ? chart.GetThemeColor(chart.TextColor) : backgroundColor is null ? chart.GetSeriesTextColor(series) : NTChartTokens.ContrastingTextColor(background.Value));
+      DrawLabel(context.Canvas, chart.ExtensionFont, chart.ExtensionPaint, string.Format(format, value), x, centerY, textAlign, context.Density, sizePx, color, background);
+   }
 
-         using var bgPaint = new SKPaint {
-            Color = bgColor,
-            Style = SKPaintStyle.Fill,
-            IsAntialias = true,
-            ImageFilter = SKImageFilter.CreateDropShadow(2 * context.Density, 2 * context.Density, 4 * context.Density, 4 * context.Density, SKColors.Black.WithAlpha(80))
-         };
+   /// <summary>Gap between a data point and the label drawn above or below it, in dp.</summary>
+   internal const float LabelPointGap = 8f;
 
-         var bgRect = textAlign switch {
-            SKTextAlign.Left => new SKRect(x - paddingX, drawY - (textHeight / 2) - paddingY, x + textWidth + paddingX, drawY + (textHeight / 2) + paddingY),
-            SKTextAlign.Right => new SKRect(x - textWidth - paddingX, drawY - (textHeight / 2) - paddingY, x + paddingX, drawY + (textHeight / 2) + paddingY),
-            _ => new SKRect(x - (textWidth / 2) - paddingX, drawY - textHeight - paddingY, x + (textWidth / 2) + paddingX + (2 * context.Density), drawY + paddingY)
-         };
+   /// <summary>Height in pixels of a data label box (line height plus block padding) for a label font of <paramref name="sizePx"/>.</summary>
+   internal static float LabelBoxHeight(float sizePx, float density) => LabelLineHeight(sizePx) + (2f * NTChartTokens.DataLabelPaddingBlock * density);
 
-         context.Canvas.DrawRoundRect(bgRect, 6 * context.Density, 6 * context.Density, bgPaint);
+   /// <summary>Line height in pixels of label-medium text scaled to a font of <paramref name="sizePx"/>.</summary>
+   internal static float LabelLineHeight(float sizePx) => sizePx * NTChartTokens.LineHeight(NTTypography.LabelMedium) / NTChartTokens.Size(NTTypography.LabelMedium);
 
-         using var borderPaint = new SKPaint {
-            Color = chart.GetThemeColor(NTColor.Outline),
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = 1,
-            IsAntialias = true
-         };
-         context.Canvas.DrawRoundRect(bgRect, 6 * context.Density, 6 * context.Density, borderPaint);
+   /// <summary>
+   /// The one data-label renderer shared by every series. Draws label-medium text vertically centered on <paramref name="centerY"/> with an optional
+   /// extra-small rounded background (no shadow, no border). The text is anchored at <paramref name="anchorX"/> according to <paramref name="align"/>;
+   /// when <paramref name="bounds"/> is set the label is shifted horizontally to stay inside it. <paramref name="paint"/> is reused for fill and text.
+   /// </summary>
+   internal static void DrawLabel(SKCanvas canvas, SKFont font, SKPaint paint, string text, float anchorX, float centerY, SKTextAlign align, float density, float sizePx, SKColor textColor, SKColor? backgroundColor, SKRect? bounds = null) {
+      font.Typeface = NTChartTokens.Typeface(NTTypography.LabelMedium);
+      font.Size = sizePx;
+      var textWidth = font.MeasureText(text);
+      var lineHeight = LabelLineHeight(sizePx);
+      var padX = NTChartTokens.DataLabelPaddingInline * density;
+      var padY = NTChartTokens.DataLabelPaddingBlock * density;
+      var left = align switch {
+         SKTextAlign.Left => anchorX - padX,
+         SKTextAlign.Right => anchorX - textWidth - padX,
+         _ => anchorX - (textWidth / 2f) - padX
+      };
+      var width = textWidth + (2f * padX);
+      if (bounds is { } area) {
+         left = Math.Max(area.Left, Math.Min(left, area.Right - width));
       }
 
-      context.Canvas.DrawText(text, x, drawY, textAlign, font, paint);
+      var top = centerY - (((2f * padY) + lineHeight) / 2f);
+      var textX = left + padX + align switch { SKTextAlign.Left => 0f, SKTextAlign.Right => textWidth, _ => textWidth / 2f };
+      paint.IsAntialias = true;
+      paint.Style = SKPaintStyle.Fill;
+      paint.StrokeWidth = 0;
+      paint.ImageFilter = null;
+      if (backgroundColor is { } background) {
+         var radius = Math.Min(NTChartTokens.Radius(NTChartTokens.DataLabelCorner) * density, (lineHeight + (2f * padY)) / 2f);
+         paint.Color = background;
+         canvas.DrawRoundRect(new SKRect(left, top, left + width, top + lineHeight + (2f * padY)), radius, radius, paint);
+      }
+
+      paint.Color = textColor;
+      canvas.DrawText(text, textX, NTChartTokens.TextBaseline(top + padY, lineHeight, sizePx), align, font, paint);
+   }
+
+   // The chart's shared paint is reused for every draw, so each use sets every property these helpers ever change.
+   private static SKPaint ResetPaint(SKPaint paint, SKColor color, SKPaintStyle style, float strokeWidth = 0, SKImageFilter? imageFilter = null) {
+      paint.Color = color;
+      paint.IsAntialias = true;
+      paint.Style = style;
+      paint.StrokeWidth = strokeWidth;
+      paint.ImageFilter = imageFilter;
+      return paint;
    }
 }

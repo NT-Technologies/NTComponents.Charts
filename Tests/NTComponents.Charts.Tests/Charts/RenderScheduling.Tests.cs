@@ -46,6 +46,7 @@ public class RenderScheduling_Tests : BunitContext {
     public async Task Theme_redraw_preserves_animation_timestamp() {
         var chart = CreateChart(animation: true);
         var series = chart.Instance.Series.Single();
+        await Paint(chart);
         var timestamp = Field<long>(series, "_animationStartTimestamp", typeof(NTBaseSeries<Point>));
         _colors["PrimaryFixed"] = "#ff0000";
 
@@ -137,6 +138,7 @@ public class RenderScheduling_Tests : BunitContext {
                 builder.AddAttribute(3, "YValueSelector", (Func<Point, decimal>)(p => p.Y));
                 builder.AddAttribute(4, "AnimationEnabled", animation);
                 builder.AddAttribute(5, "AnimationDuration", NTMotionDuration.Ms1000);
+                builder.AddAttribute(6, "OnClick", EventCallback.Factory.Create<NTSeriesClickEventArgs<Point>>(this, _ => { }));
                 builder.CloseComponent();
             })));
     }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Components;
 using System.Runtime.InteropServices;
 using NTComponents.Charts.Core.Series;
@@ -53,12 +54,30 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
    private readonly List<SKPoint> _animatedPoints = [];
    private (SKRect Area, decimal MaxValue)? _cachedRadarPointsKey;
    private decimal? _cachedRadarDataMax;
+   // Label text per axis; cleared with the geometry (data or selector change) and when the culture changes.
+   private readonly List<string?> _labelTexts = [];
+   private CultureInfo? _labelTextCulture;
 
    /// <inheritdoc />
    protected override void OnCircularGeometryInvalidated() {
       _cachedRadarPoints = null;
       _cachedRadarPointsKey = null;
       _cachedRadarDataMax = null;
+      _labelTexts.Clear();
+   }
+
+   /// <summary>
+   ///     A radar draws each series as one polygon in the series color, so its legend lists the series, not each data point.
+   /// </summary>
+   internal override IEnumerable<LegendItemInfo<TData>> GetLegendItems() {
+      var label = Title ?? $"Series {Chart.GetSeriesIndex(this) + 1}";
+      yield return new LegendItemInfo<TData> {
+         Label = label,
+         Color = Chart.GetSeriesColor(this),
+         Series = this,
+         Key = label,
+         IsVisible = Visible
+      };
    }
 
    /// <inheritdoc />
@@ -149,21 +168,34 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
          if (ShowDataLabels) {
             var labelColor = args?.DataLabelColor ?? pointColor;
             var labelSize = args?.DataLabelSize ?? 12f;
-            RenderDataLabel(context, p.X, p.Y - (10 * context.Density), ValueSelector(item), labelColor, labelSize);
+            RenderDataLabel(context, p.X, p.Y - (10 * context.Density), GetLabelText(i, item), labelColor, labelSize);
          }
       }
 
       return renderArea;
    }
 
-   private void RenderDataLabel(NTRenderContext context, float x, float y, decimal value, SKColor color, float fontSize) {
+   private string GetLabelText(int index, TData item) {
+      var culture = CultureInfo.CurrentCulture;
+      if (!ReferenceEquals(_labelTextCulture, culture)) {
+         _labelTexts.Clear();
+         _labelTextCulture = culture;
+      }
+
+      while (_labelTexts.Count <= index) {
+         _labelTexts.Add(null);
+      }
+
+      return _labelTexts[index] ??= string.Format("{0:N0}", ValueSelector(item));
+   }
+
+   private void RenderDataLabel(NTRenderContext context, float x, float y, string text, SKColor color, float fontSize) {
       var canvas = context.Canvas;
-      var text = string.Format("{0:N0}", value);
 
       _labelPaint ??= new SKPaint { IsAntialias = true };
       _labelPaint.Color = color;
 
-      _labelFont ??= new SKFont { Typeface = Chart.DefaultFont.Typeface };
+      _labelFont ??= new SKFont { Typeface = NTChartTokens.Typeface(NTTypography.LabelMedium) };
       _labelFont.Size = fontSize * context.Density;
 
       canvas.DrawText(text, x, y, SKTextAlign.Center, _labelFont, _labelPaint);
@@ -180,7 +212,7 @@ public class NTRadarSeries<TData> : NTCircularSeries<TData> where TData : class 
    public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
       // Radar hit testing is usually proximity based
       var dataList = GetCachedData();
-      if (dataList.Count == 0) return null;
+      if (dataList.Count < 3) return null;
       float centerX = renderArea.MidX;
       float centerY = renderArea.MidY;
       decimal max = GetRadarMax(dataList);

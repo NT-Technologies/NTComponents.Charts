@@ -34,13 +34,16 @@ public class RobotoDrawing_Tests : BunitContext {
             .GetMethod("OnPaintSurface", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(SKCanvas), typeof(SKImageInfo)])!
             .Invoke(cut.Instance, [surface.Canvas, info]));
 
-        AssertFont(Font(Field(cut.Instance, "_title"), "_titleFont"), 700);
-        AssertFont(Font(cut.Instance.Legend!, "_font"), 700);
-        AssertFont(Font(cut.Instance.Series.Single(), "_labelFont"), 700);
+        AssertFont(Font(Field(cut.Instance, "_title"), "_titleFont"), 500);
+        AssertFont(Font(cut.Instance.Legend!, "_font"), 500);
+        // Labels use label-medium (500); the treemap value line, drawn last, uses body-medium (400).
+        AssertFont(Font(cut.Instance.Series.Single(), "_labelFont"), kind == "treemap" ? 400 : 500);
         AssertFont(Font(cut.Instance, "_debugFont"), 400);
         if (kind is "line" or "bar") {
-            AssertFont(Font(cut.Instance.XAxis, "_textFont"), 700);
-            AssertFont(Font(cut.Instance.YAxis, "_textFont"), 700);
+            AssertFont(Font(cut.Instance.XAxis, "_textFont"), 400);
+            AssertFont(Font(cut.Instance.YAxis, "_textFont"), 400);
+            AssertFont(Font(cut.Instance.XAxis, "_titleFont"), 500);
+            AssertFont(Font(cut.Instance.YAxis, "_titleFont"), 500);
         }
         if (kind is "treemap" or "bubble") {
             AssertFont(Font(cut.Instance.Series.Single(), "_navFont"), 500);
@@ -49,7 +52,7 @@ public class RobotoDrawing_Tests : BunitContext {
     }
 
     [Fact]
-    public void Title_draws_the_exact_embedded_Roboto_Bold_glyphs() {
+    public void Title_draws_the_exact_embedded_Roboto_Medium_glyphs() {
         var cut = Render<NTChart<Point>>(parameters => parameters
             .Add(p => p.TitleOptions, new NTTitleOptions("Roboto drawing 123") { TextColor = NTColor.OnSurface }));
         var info = new SKImageInfo(320, 80);
@@ -60,12 +63,12 @@ public class RobotoDrawing_Tests : BunitContext {
         var context = Context(cut.Instance, actual, info);
 
         ((IRenderable)Field(cut.Instance, "_title")).Render(context, context.TotalArea);
-        using var stream = typeof(NTChart<>).Assembly.GetManifestResourceStream("NTComponents.Charts.Fonts.Roboto-Bold.ttf")!;
+        using var stream = typeof(NTChart<>).Assembly.GetManifestResourceStream("NTComponents.Charts.Fonts.Roboto-Medium.ttf")!;
         using var fontData = SKData.Create(stream);
         using var typeface = SKTypeface.FromData(fontData)!;
-        using var font = new SKFont(typeface, 20);
+        using var font = new SKFont(typeface, 16);
         using var paint = new SKPaint { Color = SKColors.Black, IsAntialias = true, Style = SKPaintStyle.Fill };
-        expected.Canvas.DrawText("Roboto drawing 123", 160, 15, SKTextAlign.Center, font, paint);
+        expected.Canvas.DrawText("Roboto drawing 123", 160, NTChartTokens.TextBaseline(0, 24, 16), SKTextAlign.Center, font, paint);
         using var actualImage = actual.Snapshot();
         using var expectedImage = expected.Snapshot();
         using var actualBitmap = SKBitmap.FromImage(actualImage);
@@ -75,7 +78,7 @@ public class RobotoDrawing_Tests : BunitContext {
     }
 
     [Fact]
-    public void Tooltip_drawings_use_Roboto_Medium_labels_and_Bold_values() {
+    public void Tooltip_drawings_use_Roboto_Medium_header_Regular_labels_and_Medium_values() {
         var cut = RenderChart("line");
         var tooltip = cut.FindComponent<NTTooltip<Point>>().Instance;
         typeof(NTChart<Point>).GetProperty(nameof(NTChart<Point>.HoveredDataPoint))!.SetValue(cut.Instance, _points[0]);
@@ -88,8 +91,8 @@ public class RobotoDrawing_Tests : BunitContext {
         tooltip.Render(context, context.TotalArea);
 
         AssertFont(Font(tooltip, "_headerFont"), 500);
-        AssertFont(Font(tooltip, "_labelFont"), 500);
-        AssertFont(Font(tooltip, "_valueFont"), 700);
+        AssertFont(Font(tooltip, "_labelFont"), 400);
+        AssertFont(Font(tooltip, "_valueFont"), 500);
     }
 
     private IRenderedComponent<NTChart<Point>> RenderChart(string kind) {

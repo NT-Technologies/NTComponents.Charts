@@ -36,7 +36,7 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
     ///     Gets or sets the spacing between legend items.
     /// </summary>
     [Parameter]
-    public float ItemSpacing { get; set; } = 15.0f;
+    public float ItemSpacing { get; set; } = NTChartTokens.LegendItemSpacing;
 
     /// <summary>
     ///     Gets or sets whether the legend is visible.
@@ -47,7 +47,7 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
     /// <summary>
     ///     Gets or sets the background color for the legend.
     ///     Currently only applied when <see cref="Position"/> is <see cref="LegendPosition.Floating"/>.
-    ///     If null, uses the chart's background color with some transparency.
+    ///     If null, uses the opaque <see cref="NTColor.SurfaceContainer"/> role.
     /// </summary>
     [Parameter]
     public NTColor? BackgroundColor { get; set; }
@@ -77,7 +77,7 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
         _borderPaint?.Dispose();
         _items = null;
         _cachedRows = null;
-        _itemWidths.Clear();
+        ClearItemMeasurements();
         Chart?.UnregisterLegend(this);
         Chart?.UnregisterRenderable(this);
     }
@@ -89,7 +89,7 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
     public void Invalidate() {
         _items = null;
         _cachedRows = null;
-        _itemWidths.Clear();
+        ClearItemMeasurements();
     }
 
     private SKPaint? _iconPaint;
@@ -100,26 +100,28 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
     private List<LegendItemInfo<TData>>? _items;
     private List<List<LegendItemInfo<TData>>>? _cachedRows;
     private readonly Dictionary<LegendItemInfo<TData>, float> _itemWidths = [];
+    // Pre-shaped labels: drawing a string through Skia creates a text blob per call, every frame.
+    private readonly Dictionary<LegendItemInfo<TData>, SKTextBlob?> _labelBlobs = [];
     private float _cachedRowsWidth;
     private float _cachedRowsDensity;
     private float _cachedRowsFontSize;
     private float _cachedRowsIconSize;
     private float _cachedRowsSpacing;
     private float _fontDensity;
-    private SKTypeface? _fontTypeface;
+
+    // Row height in dp: the 24dp minimum touch target, grown for larger fonts.
+    private float RowHeight => Math.Max(NTChartTokens.LegendRowHeight, FontSize + 8);
+
+    // Inset the hover state layer extends past the swatch and the label.
+    private static float ItemInset => NTChartTokens.LegendPadding / 2;
 
     private SKFont GetFont(float density) {
-        var typeface = Chart.DefaultFont.Typeface;
-        if (_font is null) {
-            _font = new SKFont();
-        }
-        if (_fontDensity != density || !ReferenceEquals(_fontTypeface, typeface) || _font.Size != FontSize * density) {
+        _font ??= new SKFont { Typeface = NTChartTokens.Typeface(NTTypography.LabelMedium) };
+        if (_fontDensity != density || _font.Size != FontSize * density) {
             _font.Size = FontSize * density;
-            _font.Typeface = typeface;
             _fontDensity = density;
-            _fontTypeface = typeface;
             _cachedRows = null;
-            _itemWidths.Clear();
+            ClearItemMeasurements();
         }
         return _font;
     }
@@ -161,8 +163,16 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
         var font = GetFont(density);
         var items = GetItems();
 
-        var maxWidth = items.Any() ? items.Max(s => GetItemWidth(s, font, density)) + (15 * density) : 100 * density;
-        var totalHeight = (items.Count * ((FontSize + 5) * density)) + (15 * density);
+        // Same NaN handling as Enumerable.Max: NaN widths are skipped unless every width is NaN.
+        float? widest = null;
+        foreach (var item in items) {
+            var width = GetItemWidth(item, font, density);
+            if (widest is null || width > widest || float.IsNaN(widest.Value)) {
+                widest = width;
+            }
+        }
+        var maxWidth = widest + (2 * NTChartTokens.LegendPadding * density) ?? 100 * density;
+        var totalHeight = (items.Count * RowHeight * density) + (2 * NTChartTokens.LegendPadding * density);
 
         float x, y;
         if (FloatingOffset.HasValue) {
@@ -171,8 +181,8 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
         }
         else {
             // Default position
-            x = plotArea.Right - maxWidth - (10 * density);
-            y = plotArea.Top + (10 * density);
+            x = plotArea.Right - maxWidth - (NTChartTokens.LegendPadding * density);
+            y = plotArea.Top + (NTChartTokens.LegendPadding * density);
         }
 
         return new SKRect(x, y, x + maxWidth, y + totalHeight);
@@ -191,18 +201,17 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
             var contentArea = GetHorizontalLegendContentArea(legendDrawArea);
             var maxWidth = GetHorizontalLegendMaxWidth(contentArea, density);
             var rows = GetLegendRows(font, maxWidth, density);
-            var rowHeight = (FontSize + 10) * density;
+            var rowHeight = RowHeight * density;
             for (var r = 0; r < rows.Count; r++) {
                 var rowItems = rows[r];
-                var totalRowWidth = rowItems.Sum(i => GetItemWidth(i, font, density)) + ((rowItems.Count - 1) * (ItemSpacing * density));
-                var startX = GetHorizontalLegendRowStartX(contentArea, totalRowWidth);
+                var startX = GetHorizontalLegendRowStartX(contentArea, GetRowWidth(rowItems, font, density));
 
-                var y = legendDrawArea.Top + (5 * density) + (FontSize * density) + (r * rowHeight);
+                var rowTop = legendDrawArea.Top + (NTChartTokens.LegendPadding / 2 * density) + (r * rowHeight);
                 var currentX = startX;
 
                 foreach (var item in rowItems) {
                     var itemWidth = GetItemWidth(item, font, density);
-                    var itemRect = new SKRect(currentX, y - (FontSize * density), currentX + itemWidth, y + (5 * density));
+                    var itemRect = new SKRect(currentX, rowTop, currentX + itemWidth, rowTop + rowHeight);
                     if (itemRect.Contains(point)) {
                         return item;
                     }
@@ -212,34 +221,34 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
             }
         }
         else if (Position is LegendPosition.Left or LegendPosition.Right) {
-            var x = legendDrawArea.Left + (5 * density);
-            var currentY = legendDrawArea.Top + (20 * density);
+            var x = legendDrawArea.Left + (NTChartTokens.LegendPadding * density);
+            var rowTop = legendDrawArea.Top + (NTChartTokens.LegendPadding * density);
             var items = GetItems();
             foreach (var item in items) {
                 var itemWidth = GetItemWidth(item, font, density);
-                var itemRect = new SKRect(x - (2 * density), currentY - (FontSize * density), x + itemWidth, currentY + (5 * density));
+                var itemRect = new SKRect(x, rowTop, x + itemWidth, rowTop + (RowHeight * density));
                 if (itemRect.Contains(point)) {
                     return item;
                 }
 
-                currentY += (FontSize + 10) * density;
+                rowTop += RowHeight * density;
             }
         }
         else if (Position == LegendPosition.Floating) {
             var rect = (legendDrawArea.Width > 0 && legendDrawArea.Height > 0)
                 ? legendDrawArea
                 : GetFloatingRect(plotArea, density);
-            var x = rect.Left + (5 * density);
-            var y = rect.Top + (5 * density) + (FontSize * density);
+            var x = rect.Left + (NTChartTokens.LegendPadding * density);
+            var rowTop = rect.Top + (NTChartTokens.LegendPadding * density);
             var items = GetItems();
             foreach (var item in items) {
                 var itemWidth = GetItemWidth(item, font, density);
-                var itemRect = new SKRect(x - (2 * density), y - (FontSize * density), x + itemWidth, y + (5 * density));
+                var itemRect = new SKRect(x, rowTop, x + itemWidth, rowTop + (RowHeight * density));
                 if (itemRect.Contains(point)) {
                     return item;
                 }
 
-                y += (FontSize + 5) * density;
+                rowTop += RowHeight * density;
             }
         }
 
@@ -279,7 +288,7 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
                     var contentArea = GetHorizontalLegendContentArea(renderArea);
                     var maxWidth = GetHorizontalLegendMaxWidth(contentArea, context.Density);
                     var rows = GetLegendRows(font, maxWidth, context.Density);
-                    var legendHeight = (rows.Count * ((FontSize + 10) * context.Density)) + (10 * context.Density);
+                    var legendHeight = (rows.Count * RowHeight * context.Density) + (NTChartTokens.LegendPadding * context.Density);
 
                     if (Position == LegendPosition.Top) {
                         legendArea = new SKRect(contentArea.Left, renderArea.Top, contentArea.Right, renderArea.Top + legendHeight);
@@ -296,9 +305,9 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
                     float legendWidth = 0;
                     var items = GetItems();
                     foreach (var item in items) {
-                        legendWidth = Math.Max(legendWidth, GetItemWidth(item, font, context.Density) + (5 * context.Density));
+                        legendWidth = Math.Max(legendWidth, GetItemWidth(item, font, context.Density));
                     }
-                    legendWidth += 10 * context.Density;
+                    legendWidth += 2 * NTChartTokens.LegendPadding * context.Density;
 
                     if (Position == LegendPosition.Left) {
                         legendArea = new SKRect(renderArea.Left, renderArea.Top, renderArea.Left + legendWidth, renderArea.Bottom);
@@ -322,7 +331,7 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
             var contentArea = GetHorizontalLegendContentArea(legendArea);
             var maxWidth = GetHorizontalLegendMaxWidth(contentArea, context.Density);
             var rows = GetLegendRows(font, maxWidth, context.Density);
-            var rowHeight = (FontSize + 10) * context.Density;
+            var rowHeight = RowHeight * context.Density;
 
             context.Canvas.Save();
             context.Canvas.ClipRect(contentArea);
@@ -330,13 +339,12 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
             try {
                 for (var r = 0; r < rows.Count; r++) {
                     var rowItems = rows[r];
-                    var totalRowWidth = rowItems.Sum(i => GetItemWidth(i, font, context.Density)) + ((rowItems.Count - 1) * (ItemSpacing * context.Density));
-                    var startX = GetHorizontalLegendRowStartX(contentArea, totalRowWidth);
-                    var y = legendArea.Top + (5 * context.Density) + (FontSize * context.Density) + (r * rowHeight);
+                    var startX = GetHorizontalLegendRowStartX(contentArea, GetRowWidth(rowItems, font, context.Density));
+                    var rowTop = legendArea.Top + (NTChartTokens.LegendPadding / 2 * context.Density) + (r * rowHeight);
 
                     var currentX = startX;
                     foreach (var item in rowItems) {
-                        RenderItem(context, font, item, currentX, y);
+                        RenderItem(context, font, item, currentX, rowTop);
                         var itemWidth = GetItemWidth(item, font, context.Density);
                         currentX += itemWidth + (ItemSpacing * context.Density);
                     }
@@ -347,81 +355,83 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
             }
         }
         else if (Position is LegendPosition.Left or LegendPosition.Right) {
-            var x = legendArea.Left + (5 * context.Density);
-            var currentY = legendArea.Top + (20 * context.Density);
+            var x = legendArea.Left + (NTChartTokens.LegendPadding * context.Density);
+            var rowTop = legendArea.Top + (NTChartTokens.LegendPadding * context.Density);
 
             var items = GetItems();
             foreach (var item in items) {
-                RenderItem(context, font, item, x, currentY);
-                currentY += (FontSize + 10) * context.Density;
+                RenderItem(context, font, item, x, rowTop);
+                rowTop += RowHeight * context.Density;
             }
         }
         else if (Position == LegendPosition.Floating) {
-            var x = legendArea.Left + (5 * context.Density);
-            var y = legendArea.Top + (5 * context.Density) + (FontSize * context.Density);
+            var x = legendArea.Left + (NTChartTokens.LegendPadding * context.Density);
+            var rowTop = legendArea.Top + (NTChartTokens.LegendPadding * context.Density);
 
             var items = GetItems();
-            var bgColor = BackgroundColor ?? Chart.BackgroundColor;
+            var corner = NTChartTokens.Radius(NTChartTokens.LegendCorner) * context.Density;
 
             var bgPaint = GetPaint(ref _backgroundPaint);
-            bgPaint.Color = Chart.GetThemeColor(bgColor).WithAlpha(200);
+            bgPaint.Color = Chart.GetThemeColor(BackgroundColor ?? NTColor.SurfaceContainer);
             bgPaint.Style = SKPaintStyle.Fill;
-            context.Canvas.DrawRoundRect(legendArea, 4 * context.Density, 4 * context.Density, bgPaint);
+            context.Canvas.DrawRoundRect(legendArea, corner, corner, bgPaint);
 
             var borderPaint = GetPaint(ref _borderPaint);
             borderPaint.Color = Chart.GetThemeColor(NTColor.OutlineVariant);
             borderPaint.Style = SKPaintStyle.Stroke;
             borderPaint.StrokeWidth = context.Density;
-            context.Canvas.DrawRoundRect(legendArea, 4 * context.Density, 4 * context.Density, borderPaint);
+            context.Canvas.DrawRoundRect(legendArea, corner, corner, borderPaint);
 
             foreach (var item in items) {
-                RenderItem(context, font, item, x, y);
-                y += (FontSize + 5) * context.Density;
+                RenderItem(context, font, item, x, rowTop);
+                rowTop += RowHeight * context.Density;
             }
         }
 
         return remainingArea;
     }
 
-    private void RenderItem(NTRenderContext context, SKFont font, LegendItemInfo<TData> item, float x, float y) {
+    private void RenderItem(NTRenderContext context, SKFont font, LegendItemInfo<TData> item, float x, float rowTop) {
         var canvas = context.Canvas;
         var density = context.Density;
 
         var itemWidth = GetItemWidth(item, font, density);
-        var itemRect = new SKRect(x, y - (FontSize * density), x + itemWidth, y + (5 * density));
+        var rowHeight = RowHeight * density;
+        var itemRect = new SKRect(x, rowTop, x + itemWidth, rowTop + rowHeight);
 
-        var isItemHovered = item.Series?.IsLegendItemHovered(item) ?? false;
-
+        // Only the swatch fades while another series is hovered; the label keeps its contrast. Hidden items are disabled content.
         var iconColor = item.Color;
-        var currentTextColor = context.TextColor;
-
+        var textColor = NTChartTokens.SecondaryTextColor(Chart);
         if (item.Series != null) {
-            var hoverFactor = item.Series.GetLegendItemAlphaFactor(item);
-            iconColor = iconColor.WithAlpha((byte)(iconColor.Alpha * hoverFactor));
-            currentTextColor = currentTextColor.WithAlpha((byte)(currentTextColor.Alpha * hoverFactor));
+            iconColor = iconColor.WithAlpha((byte)(iconColor.Alpha * item.Series.GetLegendItemAlphaFactor(item)));
         }
 
         if (!item.IsVisible) {
-            iconColor = iconColor.WithAlpha((byte)(iconColor.Alpha * 0.3f));
-            currentTextColor = currentTextColor.WithAlpha((byte)(currentTextColor.Alpha * 0.3f));
+            iconColor = iconColor.WithAlpha((byte)(iconColor.Alpha * NTChartTokens.DeEmphasisOpacity));
+            textColor = textColor.WithAlpha((byte)(textColor.Alpha * NTChartTokens.DeEmphasisOpacity));
         }
 
-        if (isItemHovered) {
+        if (item.Series?.IsLegendItemHovered(item) ?? false) {
+            var corner = Math.Min(NTChartTokens.Radius(NTChartTokens.LegendCorner) * density, rowHeight / 2);
             var highlightPaint = GetPaint(ref _highlightPaint);
-            highlightPaint.Color = item.Color.WithAlpha(40);
+            highlightPaint.Color = NTChartTokens.SecondaryTextColor(Chart).WithAlpha((byte)(255 * NTChartTokens.HoverOpacity));
             highlightPaint.Style = SKPaintStyle.Fill;
-            canvas.DrawRoundRect(itemRect, 4 * density, 4 * density, highlightPaint);
+            canvas.DrawRoundRect(itemRect, corner, corner, highlightPaint);
         }
 
         var iconPaint = GetPaint(ref _iconPaint);
         iconPaint.Color = iconColor;
         iconPaint.Style = SKPaintStyle.Fill;
         var currentTextPaint = GetPaint(ref _textPaint);
-        currentTextPaint.Color = currentTextColor;
+        currentTextPaint.Color = textColor;
         currentTextPaint.Style = SKPaintStyle.Fill;
 
-        canvas.DrawRect(x, y - (IconSize * density) + (2 * density), IconSize * density, IconSize * density, iconPaint);
-        canvas.DrawText(item.Label, x + (IconSize * density) + (5 * density), y, SKTextAlign.Left, font, currentTextPaint);
+        var iconSize = IconSize * density;
+        var swatchLeft = x + (ItemInset * density);
+        canvas.DrawCircle(swatchLeft + (iconSize / 2), rowTop + (rowHeight / 2), iconSize / 2, iconPaint);
+        if (GetLabelBlob(item, font) is { } label) {
+            canvas.DrawText(label, swatchLeft + iconSize + (NTChartTokens.LegendSwatchGap * density), NTChartTokens.TextBaseline(rowTop, rowHeight, font.Size), currentTextPaint);
+        }
     }
 
     private List<List<LegendItemInfo<TData>>> GetLegendRows(SKFont font, float maxWidth, float density) {
@@ -464,7 +474,32 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
         return rows;
     }
 
-    private float GetItemWidth(LegendItemInfo<TData> item, SKFont font, float density) => _itemWidths.TryGetValue(item, out var width) ? width : _itemWidths[item] = font.MeasureText(item.Label) + (IconSize * density) + (10 * density);
+    private float GetRowWidth(List<LegendItemInfo<TData>> rowItems, SKFont font, float density) {
+        // Accumulate in double like Enumerable.Sum so row positions stay pixel-identical.
+        var width = 0d;
+        foreach (var item in rowItems) {
+            width += GetItemWidth(item, font, density);
+        }
+        return (float)width + ((rowItems.Count - 1) * (ItemSpacing * density));
+    }
+
+    private SKTextBlob? GetLabelBlob(LegendItemInfo<TData> item, SKFont font) {
+        if (!_labelBlobs.TryGetValue(item, out var blob)) {
+            blob = SKTextBlob.Create(item.Label, font);
+            _labelBlobs[item] = blob;
+        }
+        return blob;
+    }
+
+    private void ClearItemMeasurements() {
+        _itemWidths.Clear();
+        foreach (var blob in _labelBlobs.Values) {
+            blob?.Dispose();
+        }
+        _labelBlobs.Clear();
+    }
+
+    private float GetItemWidth(LegendItemInfo<TData> item, SKFont font, float density) => _itemWidths.TryGetValue(item, out var width) ? width : _itemWidths[item] = font.MeasureText(item.Label) + ((IconSize + NTChartTokens.LegendSwatchGap + (2 * ItemInset)) * density);
 
     private SKRect GetHorizontalLegendContentArea(SKRect area) {
         if (Position != LegendPosition.Bottom || Chart.LastPlotArea.Width <= 0) {
@@ -475,7 +510,7 @@ public class NTLegend<TData> : ComponentBase, IRenderable where TData : class {
     }
 
     private float GetHorizontalLegendMaxWidth(SKRect area, float density) {
-        return Math.Max(1f, area.Width - (10 * density));
+        return Math.Max(1f, area.Width - (NTChartTokens.LegendPadding * density));
     }
 
     private float GetHorizontalLegendRowStartX(SKRect area, float rowWidth) {

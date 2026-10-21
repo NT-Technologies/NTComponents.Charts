@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using NTComponents.Charts.Core.Axes;
@@ -91,8 +94,8 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         var min = decimal.MaxValue;
         var max = decimal.MinValue;
 
-        var window = xMin.HasValue && xMax.HasValue ? GetVisibleWindow(xMin.Value, xMax.Value) : points;
-        if (window.Count == 0) {
+        var window = xMin.HasValue && xMax.HasValue ? GetVisibleSpan(xMin.Value, xMax.Value) : CollectionsMarshal.AsSpan(points);
+        if (window.Length == 0) {
             return null;
         }
 
@@ -129,7 +132,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     }
 
     /// <inheritdoc />
-    internal override void RegisterXValues(HashSet<object> values) {
+    internal override void RegisterXValues(List<object> values, HashSet<object> seen) {
 
         if (Data == null) {
             return;
@@ -137,7 +140,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
 
         foreach (var item in Data) {
             var val = XValue.Invoke(item);
-            if (val != null) {
+            if (val != null && seen.Add(val)) {
                 values.Add(val);
             }
         }
@@ -221,13 +224,17 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     private (decimal Min, decimal Max)? _cachedTotalYRange;
     private (double Min, double Max)? _cachedWindowYRangeKey;
     private (decimal Min, decimal Max)? _cachedWindowYRange;
-    private List<VisiblePoint>? _cachedSortedVisiblePoints;
+    private const int MaxCachedLabelTexts = 1024;
+    private static readonly int _pointShapeCount = Enum.GetValues<PointShape>().Length;
+    private readonly Dictionary<Int128, string> _labelTexts = [];
+    private string? _labelTextFormat;
+    private CultureInfo? _labelTextCulture;
+    private readonly List<VisiblePoint> _sortedVisiblePoints = [];
+    private bool _sortedVisiblePointsValid;
     private Func<TData, decimal>? _previousYValueSelector;
 
     private SKPaint? _pointPaint;
     private SKPaint? _labelPaint;
-    private SKPaint? _labelBgPaint;
-    private SKPaint? _labelBorderPaint;
     private SKFont? _labelFont;
 
     /// <summary>Indicates whether a pan gesture is currently in progress.</summary>
@@ -379,8 +386,6 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         if (disposing) {
             _pointPaint?.Dispose();
             _labelPaint?.Dispose();
-            _labelBgPaint?.Dispose();
-            _labelBorderPaint?.Dispose();
             _labelFont?.Dispose();
         }
         base.Dispose(disposing);
@@ -402,7 +407,8 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         _cachedTotalYRange = null;
         _cachedWindowYRangeKey = null;
         _cachedWindowYRange = null;
-        _cachedSortedVisiblePoints = null;
+        _sortedVisiblePointsValid = false;
+        _labelTexts.Clear();
         base.OnDataChanged();
     }
 
@@ -419,7 +425,10 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
     /// <param name="minX">The minimum X boundary of the visible window.</param>
     /// <param name="maxX">The maximum X boundary of the visible window.</param>
     /// <param name="overscan">Number of extra points to include beyond each edge for smooth rendering.</param>
-    protected List<VisiblePoint> GetVisibleWindow(double minX, double maxX, int overscan = 1) {
+    protected List<VisiblePoint> GetVisibleWindow(double minX, double maxX, int overscan = 1) => [.. GetVisibleSpan(minX, maxX, overscan)];
+
+    /// <summary>Returns the sorted points within the window (plus overscan) as a view over the cached sorted points; valid until the next data change.</summary>
+    private protected ReadOnlySpan<VisiblePoint> GetVisibleSpan(double minX, double maxX, int overscan = 1) {
         var points = GetSortedVisiblePoints();
         if (points.Count == 0) {
             return [];
@@ -438,19 +447,29 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
 
         start = Math.Max(0, start - overscan);
         end = Math.Min(points.Count - 1, end + overscan);
-        return points.GetRange(start, (end - start) + 1);
+        return CollectionsMarshal.AsSpan(points).Slice(start, (end - start) + 1);
     }
 
     private List<VisiblePoint> GetSortedVisiblePoints() {
-        if (_cachedSortedVisiblePoints is not null) {
-            return _cachedSortedVisiblePoints;
+        if (_sortedVisiblePointsValid) {
+            return _sortedVisiblePoints;
         }
 
-        var points = new List<VisiblePoint>();
+        // The buffer is refilled in place: callers only hold spans over it transiently, never across a data change.
+        var points = _sortedVisiblePoints;
+        points.Clear();
         if (Data != null) {
+            if (Data.TryGetNonEnumeratedCount(out var count)) {
+                points.EnsureCapacity(count);
+            }
+
             var index = 0;
             foreach (var item in Data) {
-                points.Add(new VisiblePoint(item, index, Chart.GetScaledXValue(XValue.Invoke(item))));
+                var x = Chart.GetScaledXValue(XValue.Invoke(item));
+                // A NaN or infinite X has no position and would poison the sort order and the X range.
+                if (double.IsFinite(x)) {
+                    points.Add(new VisiblePoint(item, index, x));
+                }
                 index++;
             }
         }
@@ -460,8 +479,8 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             return cmp != 0 ? cmp : a.Index.CompareTo(b.Index);
         });
 
-        _cachedSortedVisiblePoints = points;
-        return _cachedSortedVisiblePoints;
+        _sortedVisiblePointsValid = true;
+        return points;
     }
 
     private static int LowerBound(List<VisiblePoint> values, double target) {
@@ -508,65 +527,62 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             return;
         }
 
-        var alphaFactor = Math.Clamp(HoverFactor * VisibilityFactor, 0f, 1f);
-        var color = overrideColor ?? Chart.GetSeriesTextColor(this);
-        color = color.WithAlpha((byte)Math.Clamp((int)(color.Alpha * alphaFactor), 0, 255));
-        var size = (overrideFontSize ?? DataLabelSize) * context.Density;
-
-        _labelFont ??= new SKFont {
-            Typeface = context.DefaultFont.Typeface
-        };
-        _labelFont.Size = size;
-
-        _labelPaint ??= new SKPaint {
-            IsAntialias = true
-        };
-        _labelPaint.Color = color;
-
-        var text = string.Format(DataLabelFormat, value);
-        var textWidth = _labelFont.MeasureText(text);
-        var textHeight = _labelFont.Size;
-
-        var paddingX = 6f * context.Density;
-        var paddingY = 2f * context.Density;
-
-        var drawY = y;
+        var sizePx = (overrideFontSize ?? DataLabelSize) * context.Density;
+        var boxHalf = NTRenderContextExtensions.LabelBoxHeight(sizePx, context.Density) / 2f;
+        var centerY = y;
         if (textAlign == SKTextAlign.Center) {
-            drawY = y - ((size / 2) + (5 * context.Density));
-            if (drawY - textHeight < renderArea.Top) {
-                drawY = y + ((size / 2) + textHeight + (5 * context.Density));
+            centerY = y - (NTRenderContextExtensions.LabelPointGap * context.Density) - boxHalf;
+            if (centerY - boxHalf < renderArea.Top) {
+                centerY = y + (NTRenderContextExtensions.LabelPointGap * context.Density) + boxHalf;
             }
         }
 
-        if (ShowDataLabelBackground) {
-            var bgColor = DataLabelBackgroundColor.HasValue ? Chart.GetThemeColor(DataLabelBackgroundColor.Value) : Chart.GetSeriesColor(this);
-            bgColor = bgColor.WithAlpha((byte)Math.Clamp((int)(bgColor.Alpha * alphaFactor), 0, 255));
+        var background = GetLabelBackground(NTSeriesGeometry.WithFactor(Chart.GetSeriesColor(this), HoverFactor * VisibilityFactor));
+        DrawLabelText(context, FormatDataLabel(value), x, centerY, textAlign, sizePx, overrideColor, background, background);
+    }
 
-            _labelBgPaint ??= new SKPaint {
-                Style = SKPaintStyle.Fill,
-                IsAntialias = true,
-                ImageFilter = SKImageFilter.CreateDropShadow(2 * context.Density, 2 * context.Density, 4 * context.Density, 4 * context.Density, SKColors.Black.WithAlpha(80))
-            };
-            _labelBgPaint.Color = bgColor;
+    /// <summary>Measures <paramref name="text" /> in the data label font at <paramref name="sizePx" />.</summary>
+    private protected float MeasureLabelText(string text, float sizePx) {
+        _labelFont ??= new SKFont();
+        _labelFont.Typeface = NTChartTokens.Typeface(NTTypography.LabelMedium);
+        _labelFont.Size = sizePx;
+        return _labelFont.MeasureText(text);
+    }
 
-            var bgRect = textAlign switch {
-                SKTextAlign.Left => new SKRect(x - paddingX, drawY - (textHeight / 2) - paddingY, x + textWidth + paddingX, drawY + (textHeight / 2) + paddingY),
-                SKTextAlign.Right => new SKRect(x - textWidth - paddingX, drawY - (textHeight / 2) - paddingY, x + paddingX, drawY + (textHeight / 2) + paddingY),
-                _ => new SKRect(x - (textWidth / 2) - paddingX, drawY - textHeight - paddingY, x + (textWidth / 2) + paddingX + (2 * context.Density), drawY + paddingY)
-            };
+    /// <summary>The data label background: <see cref="DataLabelBackgroundColor" /> or <paramref name="fill" />, or null when <see cref="ShowDataLabelBackground" /> is off.</summary>
+    private protected SKColor? GetLabelBackground(SKColor fill) => ShowDataLabelBackground ? DataLabelBackgroundColor.HasValue ? Chart.GetThemeColor(DataLabelBackgroundColor.Value) : fill : null;
 
-            context.Canvas.DrawRoundRect(bgRect, 6 * context.Density, 6 * context.Density, _labelBgPaint);
+    /// <summary>
+    ///     Draws a data label with the shared renderer. The text color is <paramref name="textColor" />, else <see cref="DataLabelColor" />, else readable on
+    ///     <paramref name="over" /> (the series text color when it passes 4.5:1, otherwise black or white), or the chart text color when the label sits on the chart background.
+    ///     Text fades with visibility only, so a de-emphasized series keeps readable labels.
+    /// </summary>
+    private protected void DrawLabelText(NTRenderContext context, string text, float x, float centerY, SKTextAlign align, float sizePx, SKColor? textColor, SKColor? background, SKColor? over, SKRect? bounds = null) {
+        var color = textColor ?? (DataLabelColor.HasValue ? Chart.GetThemeColor(DataLabelColor.Value) : over is { } fill ? NTSeriesGeometry.LegibleTextColor(Chart.GetSeriesTextColor(this), fill, Chart.GetThemeColor(Chart.BackgroundColor)) : Chart.GetThemeColor(Chart.TextColor));
+        _labelFont ??= new SKFont();
+        _labelPaint ??= new SKPaint();
+        NTRenderContextExtensions.DrawLabel(context.Canvas, _labelFont, _labelPaint, text, x, centerY, align, context.Density, sizePx, NTSeriesGeometry.WithFactor(color, VisibilityFactor), background, bounds);
+    }
 
-            _labelBorderPaint ??= new SKPaint {
-                Style = SKPaintStyle.Stroke,
-                StrokeWidth = 1,
-                IsAntialias = true
-            };
-            _labelBorderPaint.Color = Chart.GetThemeColor(NTColor.Outline).WithAlpha((byte)Math.Clamp((int)(255 * alphaFactor), 0, 255));
-            context.Canvas.DrawRoundRect(bgRect, 6 * context.Density, 6 * context.Density, _labelBorderPaint);
+    /// <summary>
+    ///     Formats a value with <see cref="DataLabelFormat" />, reusing the text for a repeated exact value (bit pattern, so scale and sign
+    ///     are respected) while the format and current culture are unchanged. The cache is bounded and dropped on data changes.
+    /// </summary>
+    private protected string FormatDataLabel(decimal value) {
+        var culture = CultureInfo.CurrentCulture;
+        if (!ReferenceEquals(_labelTextFormat, DataLabelFormat) || !ReferenceEquals(_labelTextCulture, culture) || _labelTexts.Count >= MaxCachedLabelTexts) {
+            _labelTexts.Clear();
+            _labelTextFormat = DataLabelFormat;
+            _labelTextCulture = culture;
         }
 
-        context.Canvas.DrawText(text, x, drawY, textAlign, _labelFont, _labelPaint);
+        var key = Unsafe.BitCast<decimal, Int128>(value);
+        if (!_labelTexts.TryGetValue(key, out var text)) {
+            text = string.Format(DataLabelFormat, value);
+            _labelTexts.Add(key, text);
+        }
+
+        return text;
     }
 
     /// <summary>Renders a styled data point marker at the specified canvas position.</summary>
@@ -583,7 +599,7 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
         }
 
         var size = pointSize ?? PointSize;
-        var shape = pointShape ?? PointShape ?? (PointShape)(Chart.GetSeriesIndex(this) % Enum.GetValues<PointShape>().Length);
+        var shape = pointShape ?? PointShape ?? (PointShape)(Chart.GetSeriesIndex(this) % _pointShapeCount);
 
         _pointPaint ??= new SKPaint {
             IsAntialias = true

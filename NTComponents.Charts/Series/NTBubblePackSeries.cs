@@ -257,7 +257,11 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     private readonly Dictionary<int, BubbleState> _bubbleStates = [];
     private readonly Dictionary<(int X, int Y), List<int>> _collisionBuckets = [];
     private readonly List<(int X, int Y)> _bubbleCellPositions = [];
-    private readonly SortedSet<int> _collisionCandidates = [];
+    // Pending collision candidates for one bubble, processed in ascending index order (candidates are only added above the one just processed).
+    private readonly PriorityQueue<int, int> _collisionCandidates = new();
+    private readonly HashSet<int> _queuedCollisionCandidates = [];
+    private readonly Stack<List<int>> _spareCollisionBuckets = [];
+    private readonly HashSet<int> _activeNodeIds = [];
     private float _collisionCellSize;
     private TreeNode? _cachedRadiusNode;
     private SKRect _cachedRadiusArea = SKRect.Empty;
@@ -434,14 +438,14 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             var color = ResolveNodeColor(node, i);
             var labelColorOverride = default(SKColor?);
 
-            if (!node.IsGroup && node.SampleData is not null) {
+            if (!node.IsGroup && node.SampleData is not null && styleSeries.OnDataPointRender is { } onDataPointRender) {
                 var args = new NTDataPointRenderArgs<TData> {
                     Data = node.SampleData,
                     Index = node.StableIndex,
                     Color = color,
                     GetThemeColor = Chart.GetThemeColor
                 };
-                styleSeries.OnDataPointRender?.Invoke(args);
+                onDataPointRender(args);
                 color = args.Color ?? color;
                 labelColorOverride = args.DataLabelColor;
             }
@@ -449,11 +453,16 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             var isHovered = hoveredNodeId == node.StableIndex;
             var alphaFactor = 1f;
             if (hoveredNodeId.HasValue && !isHovered) {
-                alphaFactor = 0.35f;
+                alphaFactor = NTChartTokens.DeEmphasisOpacity;
             }
 
             _bubblePaint!.Color = color.WithAlpha((byte)(color.Alpha * visibility * alphaFactor));
             context.Canvas.DrawCircle(center, radius, _bubblePaint);
+
+            if (isHovered) {
+                // Material 3 state layer: on-color overlay, hover (or pressed) opacity.
+                context.Canvas.DrawCircle(center, radius, GetStateLayerPaint(NTChartTokens.ContrastingTextColor(color).WithAlpha((byte)(255f * StateLayerOpacity * visibility))));
+            }
 
             _strokePaint!.StrokeWidth = Math.Max(1f, context.Density) + (isHovered ? 1.2f * context.Density : 0f);
             _strokePaint.Color = Chart.GetThemeColor(NTColor.OutlineVariant).WithAlpha((byte)(220f * visibility * alphaFactor));
@@ -464,7 +473,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             }
 
             if (styleSeries.ShowLabels) {
-                RenderBubbleLabel(context, node, center, radius, color, labelColorOverride, styleSeries);
+                RenderBubbleLabel(context, node, center, radius, _bubblePaint.Color, labelColorOverride, styleSeries);
             }
         }
 
@@ -640,7 +649,9 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         };
     }
 
-    internal override TooltipInfo GetTooltipInfo(TData data) {
+    internal override TooltipInfo GetTooltipInfo(TData data) => ResolveTooltipInfo(data, BuildTooltipInfo(data), Chart.HoveredPointIndex);
+
+    private TooltipInfo BuildTooltipInfo(TData data) {
         if (Chart.HoveredSeries == this &&
             Chart.HoveredPointIndex is int hoveredPointIndex) {
             for (var i = _visibleBubbles.Count - 1; i >= 0; i--) {
@@ -714,7 +725,6 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             return;
         }
 
-        var allItems = dataItems.ToList();
         var chain = BuildSeriesChain();
         var rootSeries = chain[0];
 
@@ -729,8 +739,8 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             PathLabels = []
         };
 
-        var positiveItems = new List<TData>(allItems.Count);
-        foreach (var item in allItems) {
+        var positiveItems = new List<TData>(dataItems.TryGetNonEnumeratedCount(out var count) ? count : 0);
+        foreach (var item in dataItems) {
             var value = Math.Max(0m, rootSeries.ValueSelector(item));
             if (value <= 0m) {
                 continue;
@@ -757,15 +767,28 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
 
         var styleSeries = chain[chainIndex];
         if (styleSeries.GroupSelector is not null) {
-            foreach (var group in items.GroupBy(item => NormalizeGroupKey(styleSeries.GroupSelector(item)))) {
-                var groupedItems = group.ToList();
-                var groupValue = groupedItems.Sum(item => Math.Max(0m, styleSeries.ValueSelector(item)));
+            var groupIndexes = new Dictionary<string, int>(StringComparer.Ordinal);
+            var groups = new List<(string Key, List<TData> Items)>();
+            foreach (var item in items) {
+                var key = NormalizeGroupKey(styleSeries.GroupSelector(item));
+                if (!groupIndexes.TryGetValue(key, out var groupIndex)) {
+                    groupIndex = groups.Count;
+                    groupIndexes.Add(key, groupIndex);
+                    groups.Add((key, []));
+                }
+                groups[groupIndex].Items.Add(item);
+            }
+
+            foreach (var (groupKey, groupedItems) in groups) {
+                var groupValue = 0m;
+                foreach (var item in groupedItems) {
+                    groupValue += Math.Max(0m, styleSeries.ValueSelector(item));
+                }
                 if (groupValue <= 0m) {
                     continue;
                 }
 
                 parent.ChildLookup ??= new Dictionary<string, TreeNode>(StringComparer.Ordinal);
-                var groupKey = group.Key;
                 if (!parent.ChildLookup.TryGetValue(groupKey, out var child)) {
                     child = new TreeNode {
                         Key = groupKey,
@@ -886,7 +909,8 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
 
         var center = new SKPoint(contentArea.MidX, contentArea.MidY);
         var radiusProgress = EaseAnimation(GetAnimationProgress());
-        var activeNodeIds = new HashSet<int>(nodes.Count);
+        var activeNodeIds = _activeNodeIds;
+        activeNodeIds.Clear();
         if (_cachedTargetRadii is null || !ReferenceEquals(_cachedRadiusNode, current) || _cachedRadiusArea != contentArea || _cachedRadiusDensity != context.Density) {
             _cachedTargetRadii = ComputeRelativeTargetRadii(nodes, contentArea, context.Density);
             _cachedRadiusNode = current;
@@ -934,9 +958,11 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             activeNodeIds.Add(node.StableIndex);
         }
 
-        var stale = _bubbleStates.Keys.Where(key => !activeNodeIds.Contains(key)).ToList();
-        for (var i = 0; i < stale.Count; i++) {
-            _bubbleStates.Remove(stale[i]);
+        // Dictionary.Remove does not invalidate an active enumeration (.NET Core 3.0+).
+        foreach (var nodeId in _bubbleStates.Keys) {
+            if (!activeNodeIds.Contains(nodeId)) {
+                _bubbleStates.Remove(nodeId);
+            }
         }
     }
 
@@ -1069,6 +1095,9 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     }
 
     private void BuildCollisionBuckets(float spacing) {
+        foreach (var bucket in _collisionBuckets.Values) {
+            ReleaseCollisionBucket(bucket);
+        }
         _collisionBuckets.Clear();
         _bubbleCellPositions.Clear();
         var maxRadius = 0f;
@@ -1081,7 +1110,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         }
     }
 
-    private void AddNearbyCollisionCandidates(int bubbleIndex, int firstCandidate, SortedSet<int> candidates) {
+    private void AddNearbyCollisionCandidates(int bubbleIndex, int firstCandidate) {
         var cell = GetCollisionCell(_visibleBubbles[bubbleIndex].State.Position);
         for (var x = cell.X - 1; x <= cell.X + 1; x++) {
             for (var y = cell.Y - 1; y <= cell.Y + 1; y++) {
@@ -1089,8 +1118,8 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
                     continue;
                 }
                 foreach (var candidate in bucket) {
-                    if (candidate >= firstCandidate) {
-                        candidates.Add(candidate);
+                    if (candidate >= firstCandidate && _queuedCollisionCandidates.Add(candidate)) {
+                        _collisionCandidates.Enqueue(candidate, candidate);
                     }
                 }
             }
@@ -1101,10 +1130,17 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         var cell = GetCollisionCell(position);
         _bubbleCellPositions.Add(cell);
         if (!_collisionBuckets.TryGetValue(cell, out var bucket)) {
-            bucket = [];
+            bucket = RentCollisionBucket();
             _collisionBuckets[cell] = bucket;
         }
         bucket.Add(index);
+    }
+
+    private List<int> RentCollisionBucket() => _spareCollisionBuckets.TryPop(out var bucket) ? bucket : [];
+
+    private void ReleaseCollisionBucket(List<int> bucket) {
+        bucket.Clear();
+        _spareCollisionBuckets.Push(bucket);
     }
 
     private void UpdateCollisionBucket(int index, SKPoint position) {
@@ -1118,10 +1154,11 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         oldBucket.Remove(index);
         if (oldBucket.Count == 0) {
             _collisionBuckets.Remove(oldCell);
+            ReleaseCollisionBucket(oldBucket);
         }
 
         if (!_collisionBuckets.TryGetValue(newCell, out var newBucket)) {
-            newBucket = [];
+            newBucket = RentCollisionBucket();
             _collisionBuckets[newCell] = newBucket;
         }
         newBucket.Add(index);
@@ -1228,10 +1265,9 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             }
 
             _collisionCandidates.Clear();
-            AddNearbyCollisionCandidates(i, i + 1, _collisionCandidates);
-            while (_collisionCandidates.Count > 0) {
-                var j = _collisionCandidates.Min;
-                _collisionCandidates.Remove(j);
+            _queuedCollisionCandidates.Clear();
+            AddNearbyCollisionCandidates(i, i + 1);
+            while (_collisionCandidates.TryDequeue(out var j, out _)) {
                 var b = _visibleBubbles[j].State;
                 if (!IsCollisionBucketCandidate(a.Position, b.Position, _collisionCellSize)) {
                     continue;
@@ -1242,7 +1278,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
 
                 UpdateCollisionBucket(i, a.Position);
                 UpdateCollisionBucket(j, b.Position);
-                AddNearbyCollisionCandidates(i, j + 1, _collisionCandidates);
+                AddNearbyCollisionCandidates(i, j + 1);
             }
         }
 
@@ -1336,7 +1372,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         };
 
         _labelFont ??= new SKFont {
-            Typeface = context.DefaultFont.Typeface
+            Typeface = NTChartTokens.Typeface(NTTypography.LabelLarge)
         };
 
         _navFont ??= new SKFont {
@@ -1457,14 +1493,17 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
             Math.Min(configuredMinFont, interiorDiameter * (styleSeries.ShowValuesInLabels ? 0.14f : 0.18f)));
         var preferredPrimary = interiorDiameter * (styleSeries.ShowValuesInLabels ? 0.20f : 0.26f);
         var primaryMaxByInterior = interiorDiameter * (styleSeries.ShowValuesInLabels ? 0.32f : 0.44f);
-        var primaryFont = Math.Clamp(preferredPrimary, adaptiveMinFont, Math.Min(maxFont, primaryMaxByInterior));
+        var primaryMaxFont = Math.Min(maxFont, primaryMaxByInterior);
+        var primaryFont = Math.Clamp(preferredPrimary, Math.Min(adaptiveMinFont, primaryMaxFont), primaryMaxFont);
         if (primaryFont < (4f * context.Density)) {
             return;
         }
 
-        var textColor = labelColorOverride ?? GetContrastColor(bubbleColor);
+        // bubbleColor is the fill as drawn (dimmed when another bubble is hovered); the label stays readable on it.
+        var textColor = labelColorOverride ?? NTSeriesGeometry.LegibleTextColor(NTChartTokens.ContrastingTextColor(bubbleColor.WithAlpha(255)), bubbleColor, Chart.GetThemeColor(Chart.BackgroundColor));
+        _labelFont!.Typeface = NTChartTokens.Typeface(NTTypography.LabelLarge);
         _labelPaint!.Color = textColor.WithAlpha((byte)(255f * VisibilityFactor));
-        _labelFont!.Size = primaryFont;
+        _labelFont.Size = primaryFont;
 
         var label = node.DisplayLabel;
         if (string.IsNullOrWhiteSpace(label)) {
@@ -1489,6 +1528,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         }
 
         var valueText = FormatValue(node.Value, styleSeries.DataLabelFormat);
+        _labelFont.Typeface = NTChartTokens.Typeface(NTTypography.BodyMedium);
         var valueFontSize = Math.Max(4f * context.Density, Math.Min(_labelFont.Size * 0.52f, interiorDiameter * 0.22f));
         _labelFont.Size = valueFontSize;
         var valueWidth = EstimateTextWidth(valueText, valueFontSize);
@@ -1602,7 +1642,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         }
 
         var paletteIndex = node.IsGroup
-            ? Math.Abs(HashCode.Combine(node.Depth, node.Key))
+            ? NTStableHash.Combine(node.Depth, node.Key)
             : Math.Abs(node.StableIndex + fallbackIndex);
         return Chart.GetPaletteColor(paletteIndex);
     }
@@ -1619,11 +1659,6 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         catch {
             return value.ToString("N0");
         }
-    }
-
-    private static SKColor GetContrastColor(SKColor bgColor) {
-        var luminance = (0.2126f * bgColor.Red) + (0.7152f * bgColor.Green) + (0.0722f * bgColor.Blue);
-        return luminance > 140f ? SKColors.Black : SKColors.White;
     }
 
     private static float EstimateTextWidth(string text, float size) {
@@ -1686,7 +1721,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         }
 
         var spacing = Math.Max(0f, BubbleSpacing * density);
-        var seedOffset = (Math.Abs(HashCode.Combine(nodeId, 1301)) % 628) / 100f;
+        var seedOffset = (NTStableHash.Combine(nodeId, 1301) % 628) / 100f;
         var radialStep = Math.Max(3f * density, targetRadius * 0.34f);
         const float goldenAngle = 2.3999632f;
 

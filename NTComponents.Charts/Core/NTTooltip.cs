@@ -43,16 +43,27 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
     [EditorBrowsable(EditorBrowsableState.Never)]
     public RenderOrdered RenderOrder => RenderOrdered.Tooltip;
 
-    private SKPaint? _bgPaint;
-    private SKPaint? _borderPaint;
+    private readonly record struct Run(SKTextBlob Blob, float X, float Y);
+
+    private readonly List<Run> _runs = [];
+    private readonly List<(float Y, SKColor Color)> _keys = [];
+    private readonly List<TooltipLine> _cachedLines = [];
+    private readonly List<string> _wrapped = [];
+    private string? _cachedHeader;
+    private bool _cachedShowLabels;
+    private float _cachedDensity;
+    private bool _hasLayout;
+    private float _width;
+    private float _height;
+    private float _fontDensity;
     private SKFont? _headerFont;
     private SKFont? _labelFont;
     private SKFont? _valueFont;
-    private SKPaint? _headerPaint;
-    private SKPaint? _separatorPaint;
+    private SKPaint? _bgPaint;
+    private SKPaint? _keyShadowPaint;
+    private SKPaint? _ambientShadowPaint;
+    private SKPaint? _textPaint;
     private SKPaint? _iconPaint;
-    private SKPaint? _labelPaint;
-    private SKPaint? _valuePaint;
 
     /// <inheritdoc />
     protected override void OnInitialized() {
@@ -66,40 +77,31 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
     /// <inheritdoc />
     public void Dispose() {
         Chart?.UnregisterRenderable(this);
-        _bgPaint?.Dispose();
-        _borderPaint?.Dispose();
-        _headerFont?.Dispose();
-        _labelFont?.Dispose();
-        _valueFont?.Dispose();
-        _headerPaint?.Dispose();
-        _separatorPaint?.Dispose();
-        _iconPaint?.Dispose();
-        _labelPaint?.Dispose();
-        _valuePaint?.Dispose();
+        Invalidate();
     }
 
     /// <inheritdoc />
     public void Invalidate() {
+        ClearLayout();
         _bgPaint?.Dispose();
         _bgPaint = null;
-        _borderPaint?.Dispose();
-        _borderPaint = null;
+        _keyShadowPaint?.MaskFilter?.Dispose();
+        _keyShadowPaint?.Dispose();
+        _keyShadowPaint = null;
+        _ambientShadowPaint?.MaskFilter?.Dispose();
+        _ambientShadowPaint?.Dispose();
+        _ambientShadowPaint = null;
+        _textPaint?.Dispose();
+        _textPaint = null;
+        _iconPaint?.Dispose();
+        _iconPaint = null;
         _headerFont?.Dispose();
         _headerFont = null;
         _labelFont?.Dispose();
         _labelFont = null;
         _valueFont?.Dispose();
         _valueFont = null;
-        _headerPaint?.Dispose();
-        _headerPaint = null;
-        _separatorPaint?.Dispose();
-        _separatorPaint = null;
-        _iconPaint?.Dispose();
-        _iconPaint = null;
-        _labelPaint?.Dispose();
-        _labelPaint = null;
-        _valuePaint?.Dispose();
-        _valuePaint = null;
+        _fontDensity = 0;
     }
 
     /// <inheritdoc />
@@ -108,105 +110,187 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
             return renderArea;
         }
 
-        var canvas = context.Canvas;
-        var mousePoint = Chart.LastMousePosition.Value;
         var tooltipInfo = Chart.HoveredSeries.GetTooltipInfo(Chart.HoveredDataPoint);
-
         if (tooltipInfo.Lines.Count == 0) {
             return renderArea;
         }
 
-        var bgColor = Chart.GetThemeColor(BackgroundColor ?? Chart.HoveredSeries.TooltipBackgroundColor ?? Chart.TooltipBackgroundColor);
-        var textColor = Chart.GetThemeColor(TextColor ?? Chart.HoveredSeries.TooltipTextColor ?? Chart.TooltipTextColor);
-        var subTextColor = textColor.WithAlpha(200);
+        var canvas = context.Canvas;
+        var density = context.Density;
+        var mousePoint = Chart.LastMousePosition.Value;
 
-        _headerFont ??= new SKFont { Typeface = context.RegularFont.Typeface, Size = 14 * context.Density };
-        _labelFont ??= new SKFont { Typeface = context.RegularFont.Typeface, Size = 12 * context.Density };
-        _valueFont ??= new SKFont { Typeface = context.DefaultFont.Typeface, Size = 12 * context.Density };
-
-        var padding = 8f * context.Density;
-        var headerHeight = string.IsNullOrEmpty(tooltipInfo.Header) ? 0 : _headerFont.Size + (6 * context.Density);
-        var separatorHeight = string.IsNullOrEmpty(tooltipInfo.Header) ? 0 : 6 * context.Density;
-        var lineHeight = 18f * context.Density;
-        var iconSize = 8f * context.Density;
-        var iconSpacing = 8f * context.Density;
-
-        float maxWidth = 0;
-        if (!string.IsNullOrEmpty(tooltipInfo.Header)) {
-            maxWidth = _headerFont.MeasureText(tooltipInfo.Header);
+        EnsureResources(density);
+        if (!IsCurrent(tooltipInfo, density)) {
+            Build(tooltipInfo, density);
         }
 
-        foreach (var line in tooltipInfo.Lines) {
-            var labelText = ShowSeriesLabels && !string.IsNullOrWhiteSpace(line.Label)
-                ? line.Label + ": "
-                : string.Empty;
-            var lineWidth = iconSize + iconSpacing + _labelFont.MeasureText(labelText) + _valueFont.MeasureText(line.Value);
-            maxWidth = Math.Max(maxWidth, lineWidth);
+        var offset = NTChartTokens.TooltipCursorOffset * density;
+        var rect = new SKRect(mousePoint.X + offset, mousePoint.Y - _height - offset, mousePoint.X + offset + _width, mousePoint.Y - offset);
+        if (rect.Right > context.Info.Width - (Chart.Margin.Right * density)) {
+            rect.Offset(-(_width + (2 * offset)), 0);
+        }
+        if (rect.Top < Chart.Margin.Top * density) {
+            rect.Offset(0, _height + (2 * offset));
         }
 
-        var totalWidth = maxWidth + (padding * 2);
-        var totalHeight = headerHeight + separatorHeight + (tooltipInfo.Lines.Count * lineHeight) + (padding * 2) - (2 * context.Density);
+        // Elevation level 2: a tight key shadow plus a wider ambient shadow, drawn beneath the container.
+        var corner = NTChartTokens.Radius(NTChartTokens.TooltipCorner) * density;
+        var spread = NTChartTokens.AmbientShadowSpread * density;
+        var shadowColor = Chart.GetThemeColor(NTColor.Shadow);
+        _keyShadowPaint!.Color = shadowColor.WithAlpha((byte)(255 * NTChartTokens.KeyShadowAlpha));
+        var keyRect = rect;
+        keyRect.Offset(0, NTChartTokens.KeyShadowY * density);
+        canvas.DrawRoundRect(keyRect, corner, corner, _keyShadowPaint);
+        _ambientShadowPaint!.Color = shadowColor.WithAlpha((byte)(255 * NTChartTokens.AmbientShadowAlpha));
+        var ambientRect = rect;
+        ambientRect.Offset(0, NTChartTokens.AmbientShadowY * density);
+        ambientRect.Inflate(spread, spread);
+        canvas.DrawRoundRect(ambientRect, corner + spread, corner + spread, _ambientShadowPaint);
 
-        var rect = new SKRect(mousePoint.X + (15 * context.Density), mousePoint.Y - totalHeight - (15 * context.Density), mousePoint.X + (15 * context.Density) + totalWidth, mousePoint.Y - (15 * context.Density));
+        _bgPaint!.Color = Chart.GetThemeColor(BackgroundColor ?? Chart.HoveredSeries.TooltipBackgroundColor ?? Chart.TooltipBackgroundColor);
+        canvas.DrawRoundRect(rect, corner, corner, _bgPaint);
 
-        if (rect.Right > context.Info.Width - (Chart.Margin.Right * context.Density)) {
-            rect.Offset(-(totalWidth + (30 * context.Density)), 0);
-        }
-        if (rect.Top < Chart.Margin.Top * context.Density) {
-            rect.Offset(0, totalHeight + (30 * context.Density));
-        }
+        _textPaint!.Color = Chart.GetThemeColor(TextColor ?? Chart.HoveredSeries.TooltipTextColor ?? Chart.TooltipTextColor);
+        var left = rect.Left + (NTChartTokens.TooltipPaddingInline * density);
+        var top = rect.Top + (NTChartTokens.TooltipPaddingBlock * density);
 
-        _bgPaint ??= new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = true };
-        _bgPaint.Color = bgColor.WithAlpha(250);
-        canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, _bgPaint);
-
-        _borderPaint ??= new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = 1, IsAntialias = true };
-        _borderPaint.Color = Chart.GetThemeColor(NTColor.OutlineVariant);
-        canvas.DrawRoundRect(rect, 4 * context.Density, 4 * context.Density, _borderPaint);
-
-        var currentY = rect.Top + padding;
-
-        if (!string.IsNullOrEmpty(tooltipInfo.Header)) {
-            _headerPaint ??= new SKPaint { IsAntialias = true, Color = subTextColor };
-            _headerPaint.Color = subTextColor;
-            canvas.DrawText(tooltipInfo.Header, rect.Left + padding, currentY + _headerFont.Size - (2 * context.Density), SKTextAlign.Left, _headerFont, _headerPaint);
-            currentY += headerHeight;
-
-            _separatorPaint ??= new SKPaint { StrokeWidth = 1, IsAntialias = true, Color = Chart.GetThemeColor(NTColor.OutlineVariant) };
-            _separatorPaint.Color = Chart.GetThemeColor(NTColor.OutlineVariant);
-            canvas.DrawLine(rect.Left, currentY - (4 * context.Density), rect.Right, currentY - (4 * context.Density), _separatorPaint);
-            currentY += separatorHeight - (4 * context.Density);
+        var keyRadius = NTChartTokens.TooltipKeySize * density / 2;
+        foreach (var (y, color) in _keys) {
+            _iconPaint!.Color = color;
+            canvas.DrawCircle(left + keyRadius, top + y, keyRadius, _iconPaint);
         }
 
-        foreach (var line in tooltipInfo.Lines) {
-            var centerX = rect.Left + padding + (iconSize / 2);
-            var centerY = currentY + (lineHeight / 2) - (1 * context.Density);
-
-            _iconPaint ??= new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = true };
-            _iconPaint.Color = line.Color;
-            canvas.DrawCircle(centerX, centerY, iconSize / 2, _iconPaint);
-
-            var textX = rect.Left + padding + iconSize + iconSpacing;
-            var textY = currentY + (14 * context.Density);
-            var labelText = ShowSeriesLabels && !string.IsNullOrWhiteSpace(line.Label)
-                ? line.Label + ": "
-                : string.Empty;
-
-            _labelPaint ??= new SKPaint { IsAntialias = true, Color = subTextColor };
-            _labelPaint.Color = subTextColor;
-            if (!string.IsNullOrEmpty(labelText)) {
-                canvas.DrawText(labelText, textX, textY, SKTextAlign.Left, _labelFont, _labelPaint);
-            }
-
-            var labelWidth = _labelFont.MeasureText(labelText);
-
-            _valuePaint ??= new SKPaint { IsAntialias = true, Color = textColor };
-            _valuePaint.Color = textColor;
-            canvas.DrawText(line.Value, textX + labelWidth, textY, SKTextAlign.Left, _valueFont, _valuePaint);
-
-            currentY += lineHeight;
+        foreach (var run in _runs) {
+            canvas.DrawText(run.Blob, left + run.X, top + run.Y, _textPaint);
         }
 
         return renderArea;
+    }
+
+    private void EnsureResources(float density) {
+        if (_fontDensity != density) {
+            ClearLayout();
+            _headerFont ??= new SKFont { Typeface = NTChartTokens.Typeface(NTTypography.TitleSmall) };
+            _labelFont ??= new SKFont { Typeface = NTChartTokens.Typeface(NTTypography.BodyMedium) };
+            _valueFont ??= new SKFont { Typeface = NTChartTokens.Typeface(NTTypography.BodyMedium, emphasized: true) };
+            _headerFont.Size = NTChartTokens.Size(NTTypography.TitleSmall) * density;
+            _labelFont.Size = NTChartTokens.Size(NTTypography.BodyMedium) * density;
+            _valueFont.Size = NTChartTokens.Size(NTTypography.BodyMedium) * density;
+
+            _keyShadowPaint?.MaskFilter?.Dispose();
+            _keyShadowPaint ??= new SKPaint { IsAntialias = true };
+            _keyShadowPaint.MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, NTChartTokens.KeyShadowBlur / 2 * density);
+            _ambientShadowPaint?.MaskFilter?.Dispose();
+            _ambientShadowPaint ??= new SKPaint { IsAntialias = true };
+            _ambientShadowPaint.MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, NTChartTokens.AmbientShadowBlur / 2 * density);
+            _fontDensity = density;
+        }
+        _bgPaint ??= new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = true };
+        _textPaint ??= new SKPaint { IsAntialias = true };
+        _iconPaint ??= new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = true };
+    }
+
+    // The series rebuilds the tooltip payload every frame, so the shaped text is reused only while its content is unchanged.
+    private bool IsCurrent(TooltipInfo info, float density) {
+        if (!_hasLayout || _cachedDensity != density || _cachedShowLabels != ShowSeriesLabels || _cachedHeader != info.Header || _cachedLines.Count != info.Lines.Count) {
+            return false;
+        }
+        for (var i = 0; i < _cachedLines.Count; i++) {
+            var cached = _cachedLines[i];
+            var line = info.Lines[i];
+            if (cached.Label != line.Label || cached.Value != line.Value || cached.Color != line.Color) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void Build(TooltipInfo info, float density) {
+        ClearLayout();
+        _cachedHeader = info.Header;
+        _cachedLines.AddRange(info.Lines);
+        _cachedDensity = density;
+        _cachedShowLabels = ShowSeriesLabels;
+        _hasLayout = true;
+
+        var available = (NTChartTokens.TooltipMaxWidth - (2 * NTChartTokens.TooltipPaddingInline)) * density;
+        var headerRow = NTChartTokens.LineHeight(NTTypography.TitleSmall) * density;
+        var row = NTChartTokens.LineHeight(NTTypography.BodyMedium) * density;
+        var indent = (NTChartTokens.TooltipKeySize + NTChartTokens.TooltipKeyGap) * density;
+        var y = 0f;
+        var width = 0f;
+
+        if (!string.IsNullOrEmpty(info.Header)) {
+            y = Wrap(info.Header, _headerFont!, 0, y, headerRow, available, ref width) +NTChartTokens.TooltipContentGap * density;
+        }
+
+        foreach (var line in info.Lines) {
+            var label = ShowSeriesLabels && !string.IsNullOrWhiteSpace(line.Label) ? line.Label + ": " : string.Empty;
+            var value = line.Value ?? string.Empty;
+            _keys.Add((y + (row / 2), line.Color));
+
+            if (_labelFont!.MeasureText(label) + _valueFont!.MeasureText(value) <= available - indent) {
+                var labelWidth = AddRun(label, _labelFont, indent, y, row);
+                width = Math.Max(width, indent + labelWidth + AddRun(value, _valueFont, indent + labelWidth, y, row));
+                y += row;
+                continue;
+            }
+
+            // Too wide for one row: wrap the label, then the value beneath it, both indented past the key.
+            y = Wrap(label.TrimEnd(), _labelFont, indent, y, row, available - indent, ref width);
+            y = Wrap(value, _valueFont, indent, y, row, available - indent, ref width);
+        }
+
+        _width = width + (2 * NTChartTokens.TooltipPaddingInline * density);
+        _height = y + (2 * NTChartTokens.TooltipPaddingBlock * density);
+    }
+
+    private float Wrap(string text, SKFont font, float x, float y, float row, float maxWidth, ref float width) {
+        _wrapped.Clear();
+        Wrap(text, font, maxWidth, _wrapped);
+        foreach (var part in _wrapped) {
+            width = Math.Max(width, x + AddRun(part, font, x, y, row));
+            y += row;
+        }
+        return y;
+    }
+
+    // Adds a shaped text run centered in a line starting at rowTop and returns its measured width.
+    private float AddRun(string text, SKFont font, float x, float rowTop, float rowHeight) {
+        if (text.Length == 0) {
+            return 0f;
+        }
+        var blob = SKTextBlob.Create(text, font);
+        if (blob is not null) {
+            _runs.Add(new Run(blob, x, NTChartTokens.TextBaseline(rowTop, rowHeight, font.Size)));
+        }
+        return font.MeasureText(text);
+    }
+
+    // Greedy word wrap; a single word wider than maxWidth is split by characters.
+    private static void Wrap(string text, SKFont font, float maxWidth, List<string> lines) {
+        while (text.Length > 0) {
+            var fit = (int)font.BreakText(text, maxWidth);
+            if (fit >= text.Length) {
+                lines.Add(text);
+                return;
+            }
+            fit = Math.Max(fit, 1);
+            var space = text.LastIndexOf(' ', fit - 1);
+            var take = space > 0 ? space : fit;
+            lines.Add(text[..take]);
+            text = text[take..].TrimStart(' ');
+        }
+    }
+
+    private void ClearLayout() {
+        foreach (var run in _runs) {
+            run.Blob.Dispose();
+        }
+        _runs.Clear();
+        _keys.Clear();
+        _cachedLines.Clear();
+        _cachedHeader = null;
+        _hasLayout = false;
     }
 }

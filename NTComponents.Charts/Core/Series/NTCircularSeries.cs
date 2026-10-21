@@ -27,6 +27,12 @@ public abstract class NTCircularSeries<TData> : NTBaseSeries<TData> where TData 
     /// <inheritdoc />
     internal override TooltipInfo GetTooltipInfo(TData data)
     {
+        var defaultInfo = BuildDefaultTooltipInfo(data);
+        return ResolveTooltipInfo(data, defaultInfo, Chart.HoveredPointIndex);
+    }
+
+    private TooltipInfo BuildDefaultTooltipInfo(TData data)
+    {
         var value = ValueSelector(data);
         var labelValue = string.Format(DataLabelFormat, value);
         var xValue = XValue?.Invoke(data);

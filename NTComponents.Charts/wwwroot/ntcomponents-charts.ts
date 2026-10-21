@@ -2,6 +2,7 @@ import type { ChartDotNetReference } from './ChartDotNetReference.js';
 
 const ON_THEME_CHANGED = 'OnThemeChanged';
 const ON_NATIVE_WHEEL = 'OnNativeWheel';
+const ON_REDUCED_MOTION_CHANGED = 'OnReducedMotionChanged';
 
 export function getDevicePixelRatio(): number {
     return window.devicePixelRatio || 1;
@@ -122,13 +123,52 @@ export function initializeChart(element: HTMLElement | null, dotNetHelper: Chart
         void notifyViewport();
     };
     watchDensity();
-    document.addEventListener('nt-theme-changed', async () => {
+
+    // Honour prefers-reduced-motion: report it once when set and whenever it changes.
+    const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
+    const notifyReducedMotion = async (): Promise<void> => {
+        try {
+            await dotNetHelper.invokeMethodAsync(ON_REDUCED_MOTION_CHANGED, motionQuery?.matches ?? false);
+        } catch {
+            // The chart or its Blazor circuit has been disposed.
+        }
+    };
+    const onMotionChange = (): void => { void notifyReducedMotion(); };
+    motionQuery?.addEventListener('change', onMotionChange);
+    if (motionQuery?.matches) {
+        void notifyReducedMotion();
+    }
+    const notifyThemeChanged = async (): Promise<void> => {
         try {
             await dotNetHelper.invokeMethodAsync(ON_THEME_CHANGED);
         } catch {
             // The chart or its Blazor circuit has been disposed.
         }
-    }, { signal: controller.signal });
+    };
+    const themeApplied = (): boolean => !!window.NTComponents.getColorValueFromEnumName('Primary');
+    let waitingForTheme = false;
+    // A theme stylesheet that is still loading (at start-up, or mid-swap when a theme event fires) leaves the color variables empty.
+    // Wait for it in the capture phase, because resource load events do not bubble, and refresh once its colors apply.
+    const onResourceLoad = (): void => {
+        if (waitingForTheme && themeApplied()) {
+            waitingForTheme = false;
+            document.removeEventListener('load', onResourceLoad, { capture: true });
+            void notifyThemeChanged();
+        }
+    };
+    const refreshWhenThemeApplies = (): void => {
+        if (themeApplied()) {
+            void notifyThemeChanged();
+        }
+        else if (!waitingForTheme) {
+            waitingForTheme = true;
+            document.addEventListener('load', onResourceLoad, { capture: true, signal: controller.signal });
+        }
+    };
+    document.addEventListener('nt-theme-changed', refreshWhenThemeApplies, { signal: controller.signal });
+    if (!themeApplied()) {
+        refreshWhenThemeApplies();
+    }
 
     element?.addEventListener('wheel', async event => {
         flushMove();
@@ -159,6 +199,7 @@ export function initializeChart(element: HTMLElement | null, dotNetHelper: Chart
             intersection?.disconnect();
             resize?.disconnect();
             densityQuery?.removeEventListener('change', onDensityChange);
+            motionQuery?.removeEventListener('change', onMotionChange);
             if (moveFrame !== 0) {
                 window.cancelAnimationFrame(moveFrame);
             }

@@ -28,6 +28,7 @@
 
 	<ItemGroup>
 		<SupportedPlatform Include="browser" />
+		<InternalsVisibleTo Include="NTComponents.Charts.Tests" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -82,7 +82,7 @@ public class ChartMotion_Tests : BunitContext {
 
         series.AnimationDuration.Should().Be(NTMotionDuration.Ms500);
         series.AnimationEasing.Should().Be(NTMotionEasing.Emphasized);
-        cut.Instance.HoverAnimationDuration.Should().Be(NTMotionDuration.Ms250);
+        cut.Instance.HoverAnimationDuration.Should().Be(NTMotionDuration.Ms150, "hover follows the short3 state-change duration");
         cut.Instance.HoverAnimationEasing.Should().Be(NTMotionEasing.Standard);
     }
 

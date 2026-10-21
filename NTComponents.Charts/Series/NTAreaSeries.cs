@@ -24,47 +24,31 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
 
    private SKPaint? _areaPaint;
    private SKPath? _areaPath;
+   private (int Version, decimal Baseline)? _areaPathKey;
 
-   /// <summary>
-   ///    Renders the area series onto the provided canvas within the given render area.
-   /// </summary>
-   /// <param name="context">The rendering context containing the canvas and theme information.</param>
-   /// <param name="renderArea">The bounding rectangle available for rendering.</param>
-   /// <returns>The render area after rendering.</returns>
-   public override SKRect Render(NTRenderContext context, SKRect renderArea) {
-      //var canvas = context.Canvas;
-      //if (Data == null || !Data.Any()) return renderArea;
+   /// <inheritdoc />
+   protected override void OnDataChanged() {
+      _areaPathKey = null;
+      base.OnDataChanged();
+   }
 
-      //var (xMin, xMax) = Chart.GetXRange(Chart.XAxis, true);
-      //var (yMin, yMax) = Chart.GetYRange(Chart.YAxis, true);
+   /// <inheritdoc />
+   protected override void RenderFill(NTRenderContext context, SKRect renderArea, SKColor color) {
+      var points = RenderScreenPoints;
+      if (points.Count < 2) {
+         return;
+      }
 
-      //var points = GetAreaPoints(renderArea, xMin, xMax, yMin, yMax);
-      //if (points.Count < 2) {
-      //   return base.Render(context, renderArea);
-      //}
+      var key = (RenderVersion, BaselineValue);
+      if (_areaPath is null || _areaPathKey != key) {
+         _areaPath?.Dispose();
+         _areaPath = BuildAreaPath(points, ScaleSeriesY(BaselineValue, renderArea));
+         _areaPathKey = key;
+      }
 
-      //var isHovered = Chart.HoveredSeries == this;
-      //var color = Chart.GetSeriesColor(this);
-      //var visibilityFactor = VisibilityFactor;
-      //var hoverFactor = HoverFactor;
-
-      //var strokeColor = color.WithAlpha((byte)(color.Alpha * hoverFactor * visibilityFactor));
-
-      //var fillColor = strokeColor.WithAlpha((byte)(strokeColor.Alpha * AreaOpacity));
-
-      //// Draw Area Fill
-      //_areaPaint ??= new SKPaint {
-      //   Style = SKPaintStyle.Fill,
-      //   IsAntialias = true
-      //};
-      //_areaPaint.Color = fillColor;
-
-      //_areaPath?.Dispose();
-      //_areaPath = BuildAreaPath(points, renderArea);
-      //canvas.DrawPath(_areaPath, _areaPaint);
-
-      // Use base.Render to draw the line and points
-      return base.Render(context, renderArea);
+      _areaPaint ??= new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = true };
+      _areaPaint.Color = color.WithAlpha((byte)(color.Alpha * Math.Clamp(AreaOpacity, 0f, 1f)));
+      context.Canvas.DrawPath(_areaPath, _areaPaint);
    }
 
    /// <inheritdoc />
@@ -78,42 +62,12 @@ public class NTAreaSeries<TData> : NTLineSeries<TData> where TData : class {
       base.Dispose(disposing);
    }
 
-   private List<SKPoint> GetAreaPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {
-      var dataList = Data.ToList();
-      var points = new List<SKPoint>();
-      var progress = GetAnimationProgress();
-      var easedProgress = (decimal)EaseAnimation(progress);
-
-      for (var i = 0; i < dataList.Count; i++) {
-         var originalX = XValue.Invoke(dataList[i]);
-         var xValue = Chart.GetScaledXValue(originalX);
-         var targetYValue = YValueSelector(dataList[i]);
-
-         // Area animations often start from the baseline
-         var currentYValue = BaselineValue + ((targetYValue - BaselineValue) * easedProgress);
-
-         var vFactor = (decimal)VisibilityFactor;
-         currentYValue *= vFactor * vFactor;
-
-         var screenXCoord = Chart.ScaleX(xValue, renderArea);
-         var screenYCoord = Chart.ScaleY(currentYValue, renderArea);
-
-         points.Add(new SKPoint(screenXCoord, screenYCoord));
-      }
-      return points;
-   }
-
-   private SKPath BuildAreaPath(List<SKPoint> points, SKRect renderArea) {
+   private SKPath BuildAreaPath(List<SKPoint> points, float baselineCoord) {
       var path = BuildPath(points);
-      if (points.Count < 2) return path;
-
-      // Close the path to the baseline
-      float baselineCoord = Chart.ScaleY(BaselineValue, renderArea);
-
       using var pathBuilder = new SKPathBuilder(path);
       path.Dispose();
-      pathBuilder.LineTo(points.Last().X, baselineCoord);
-      pathBuilder.LineTo(points.First().X, baselineCoord);
+      pathBuilder.LineTo(points[^1].X, baselineCoord);
+      pathBuilder.LineTo(points[0].X, baselineCoord);
       pathBuilder.Close();
 
       return pathBuilder.Detach();

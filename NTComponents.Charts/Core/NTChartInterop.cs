@@ -40,7 +40,11 @@ internal sealed class NTChartInterop(IJSRuntime _jsRuntime) : IAsyncDisposable {
 
     internal async ValueTask<Dictionary<string, string?>> GetThemeColorsAsync(string[] colorNames) {
         try {
-            return _module is null ? [] : await _module.InvokeAsync<Dictionary<string, string?>>("getThemeColors", (object)colorNames);
+            if (_module is null) {
+                return [];
+            }
+            // A page without the theme runtime answers null; the chart then falls back to its default colors instead of failing.
+            return await _module.InvokeAsync<Dictionary<string, string?>?>("getThemeColors", (object)colorNames) ?? [];
         }
         catch (JSDisconnectedException) {
             return [];

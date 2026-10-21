@@ -141,7 +141,11 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
 
     private NTTitle<TData>? _title;
     private NTTitleOptions? _lastTitleOptionsRef;
-    private readonly Dictionary<RenderOrdered, List<IRenderable>> _renderablesByOrder = Enum.GetValues<RenderOrdered>().ToDictionary(r => r, _ => new List<IRenderable>());
+    private static readonly RenderOrdered[] RenderOrders = Enum.GetValues<RenderOrdered>();
+    private readonly Dictionary<RenderOrdered, List<IRenderable>> _renderablesByOrder = RenderOrders.ToDictionary(r => r, _ => new List<IRenderable>());
+    // Scratch lists reused by every frame and pointer event so neither allocates.
+    private readonly List<NTBaseSeries<TData>> _renderSeries = [];
+    private readonly List<NTBaseSeries<TData>> _interactionSeries = [];
     private bool _defaultAxesAttached;
 
     private void AttachDefaultAxes() {
@@ -242,7 +246,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     ///     Gets or sets the NTComponents motion duration for hover animations.
     /// </summary>
     [Parameter]
-    public NTMotionDuration HoverAnimationDuration { get; set; } = NTMotionDuration.Ms250;
+    public NTMotionDuration HoverAnimationDuration { get; set; } = NTChartTokens.HoverDuration;
 
     /// <summary>
     ///     Gets or sets the NTComponents easing curve for hover animations.
@@ -254,7 +258,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     ///     Gets or sets the margin around the chart.
     /// </summary>
     [Parameter]
-    public ChartMargin Margin { get; set; } = ChartMargin.All(5);
+    public ChartMargin Margin { get; set; } = ChartMargin.All(NTChartTokens.ChartMargin);
 
     /// <summary>
     ///     Gets or sets the default color palette for the chart.
@@ -262,12 +266,12 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     [Parameter]
     public List<(NTColor Background, NTColor Text)> Palette { get; set; } =
     [
-        (NTColor.PrimaryFixed, NTColor.OnPrimaryFixed),
-        (NTColor.SecondaryFixed, NTColor.OnSecondaryFixed),
-        (NTColor.TertiaryFixed, NTColor.OnTertiaryFixed),
         (NTColor.Primary, NTColor.OnPrimary),
+        (NTColor.Tertiary, NTColor.OnTertiary),
         (NTColor.Secondary, NTColor.OnSecondary),
-        (NTColor.Tertiary, NTColor.OnTertiary)
+        (NTColor.Assert, NTColor.OnAssert),
+        (NTColor.Warning, NTColor.OnWarning),
+        (NTColor.Success, NTColor.OnSuccess)
     ];
 
     /// <summary>
@@ -286,7 +290,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     ///     Gets or sets the background color of the tooltip.
     /// </summary>
     [Parameter]
-    public NTColor TooltipBackgroundColor { get; set; } = NTColor.SurfaceVariant;
+    public NTColor TooltipBackgroundColor { get; set; } = NTColor.SurfaceContainer;
 
     /// <summary>
     ///     Gets or sets the text color of the tooltip.
@@ -314,20 +318,11 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     /// </summary>
     public NTBaseSeries<TData>? HoveredSeries { get; private set; }
 
+    // Cached with the other data caches: series ask for it in every range calculation, and it boxes one X value per series.
     /// <summary>
     ///     Gets a value indicating whether the X axis of any series uses <see cref="DateTime" /> values.
     /// </summary>
-    public bool IsXAxisDateTime {
-        get {
-            foreach (var s in Series) {
-                var first = s.Data?.Cast<TData>().FirstOrDefault();
-                if (first != null && s.XValue(first) is DateTime) {
-                    return true;
-                }
-            }
-            return false;
-        }
-    }
+    public bool IsXAxisDateTime => _cachedIsXAxisDateTime ??= Series.Any(s => s.Data?.FirstOrDefault() is { } first && s.XValue(first) is DateTime);
 
     internal bool IsXPanEnabled => Series.Any(s => s.Interactions.HasFlag(ChartInteractions.XPan));
     internal bool IsXZoomEnabled => Series.Any(s => s.Interactions.HasFlag(ChartInteractions.XZoom));
@@ -360,13 +355,18 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
                 return "cursor: pointer;";
             }
 
-            if (HoveredSeries != null) {
+            if (HoveredSeries is not null && IsHoveredSeriesClickable(HoveredSeries)) {
                 return "cursor: pointer;";
             }
 
-            return Series.Any(s => s.IsPanning) ? "cursor: grabbing;" : (IsXPanEnabled || IsYPanEnabled) ? "cursor: grab;" : "cursor: default;";
+            return IsAnySeriesPanning() ? "cursor: grabbing;" : (IsXPanEnabled || IsYPanEnabled) ? "cursor: grab;" : "cursor: default;";
         }
     }
+
+    // Hover alone is not an affordance: only series that react to a click show the pointer cursor.
+    private bool IsHoveredSeriesClickable(NTBaseSeries<TData> series) => series.OnClick.HasDelegate
+        || series is NTTreeMapSeries<TData> or NTBubblePackSeries<TData>
+        || (series is NTLineSeries<TData> line && (line.ZoomToDateGroupOnClick || line.OnDateGroupClick.HasDelegate) && IsXAxisDateTime);
 
     /// <summary>
     ///     Gets the JavaScript runtime used for JS interop operations.
@@ -386,6 +386,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     private List<object>? _cachedAllX;
     private List<object>? _cachedAllY;
     private Dictionary<object, int>? _cachedXIndexMap;
+    private bool? _cachedIsXAxisDateTime;
     /// <summary>
     ///     Gets the device pixel ratio (physical-to-logical pixel density) of the display.
     /// </summary>
@@ -410,6 +411,8 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     private bool _hasDraggedLegend;
     private bool _isDraggingLegend;
     private bool _isHoveringLegend;
+    // The canvas cursor style written by the last render (assigned in NTChart.razor).
+    private string? _renderedCanvasStyle;
     private NTBaseSeries<TData>? _lastHoverNotifiedSeries;
     private string? _lastHoverNotifiedLegendKey;
     private int? _lastHoverNotifiedPointIndex;
@@ -444,14 +447,12 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     private SKRect _titleRemainingArea;
     private (SKRect Area, (double Min, double Max) X, (decimal Min, decimal Max) Y, (decimal Min, decimal Max)? SecondaryY)? _axesPictureKey;
 
-    // Per-frame scale range caches to avoid O(points * range-calculation) cost.
-    private bool _useFrameScaleCache;
-    private bool _frameXRangeReady;
-    private bool _framePrimaryYRangeReady;
-    private bool _frameSecondaryYRangeReady;
-    private (double Min, double Max) _frameXRange;
-    private (decimal Min, decimal Max) _framePrimaryYRange;
-    private (decimal Min, decimal Max) _frameSecondaryYRange;
+    // Per-frame range caches: axes, scaling and every series ask for the same ranges many times per frame.
+    // Cleared when a frame starts and whenever geometry changes (RequestDraw(geometryChanged: true)).
+    private bool _useFrameRangeCache;
+    private (double Min, double Max)? _frameXRange;
+    private (double Min, double Max)? _framePaddedXRange;
+    private readonly List<(NTAxisOptions<TData>? Axis, bool Padded, (decimal Min, decimal Max) Range)> _frameYRanges = [];
 
     // Cached paints and fonts to avoid allocations in render loop
     private SKPaint? _debugBgPaint;
@@ -464,6 +465,8 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     private SKPaint? _annotationTextPaint;
     private SKPaint? _annotationLabelBgPaint;
     private SKFont? _annotationFont;
+    private SKPathEffect? _annotationDashEffect;
+    private float _annotationDash;
 
     /// <summary>
     ///     Exports the current chart as a PNG image.
@@ -494,19 +497,24 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     }
 
     /// <summary>
-    ///     Returns a list of all unique X values across all cartesian series, sorted.
+    ///     Returns a list of all unique X values across all visible cartesian series in first-seen order:
+    ///     series in registration order, then data order within each series.
     /// </summary>
     public List<object> GetAllXValues() {
         if (_cachedAllX != null) {
             return _cachedAllX;
         }
 
-        var allX = new HashSet<object>();
-        foreach (var s in Series.Where(s => s.IsEffectivelyVisible)) {
-            s.RegisterXValues(allX);
+        // Categories keep first-seen order: series in registration order, then data order.
+        var allX = new List<object>();
+        var seen = new HashSet<object>();
+        foreach (var s in Series) {
+            if (s.IsEffectivelyVisible) {
+                s.RegisterXValues(allX, seen);
+            }
         }
 
-        _cachedAllX = [.. allX.OrderBy(x => x)];
+        _cachedAllX = allX;
         return _cachedAllX;
     }
 
@@ -538,9 +546,14 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         }
 
         if (XAxis?.IsCategorical == true) {
-            _cachedXIndexMap ??= GetAllXValues()
-                .Select((x, index) => new { x, index })
-                .ToDictionary(item => item.x, item => item.index);
+            if (_cachedXIndexMap is null) {
+                var allX = GetAllXValues();
+                var map = new Dictionary<object, int>(allX.Count);
+                for (var i = 0; i < allX.Count; i++) {
+                    map.Add(allX[i], i);
+                }
+                _cachedXIndexMap = map;
+            }
 
             return _cachedXIndexMap.TryGetValue(originalX, out var index) ? index : 0;
         }
@@ -574,46 +587,81 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     /// <param name="padded">When <see langword="true" />, applies <see cref="RangePadding" /> to the result.</param>
     /// <returns>A tuple containing the minimum and maximum X values.</returns>
     public (double Min, double Max) GetXRange(NTAxisOptions<TData>? axis, bool padded = false) {
-        var cartesianSeries = Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible).ToList();
-        if (!cartesianSeries.Any()) {
+        if (!_useFrameRangeCache) {
+            return CalculateXRange(padded);
+        }
+
+        return padded
+            ? _framePaddedXRange ??= CalculateXRange(true)
+            : _frameXRange ??= CalculateXRange(false);
+    }
+
+    private (double Min, double Max) CalculateXRange(bool padded) {
+        var hasSeries = false;
+        var hasHorizontalBars = false;
+        var hasVerticalBars = false;
+        var hasCellSeries = false;
+        var hasViewRange = false;
+        var hasValueAxisMinimum = false;
+        double viewMin = 0, viewMax = 0, valueAxisMinimum = 0;
+        foreach (var s in Series) {
+            if (s is not NTCartesianSeries<TData> { IsEffectivelyVisible: true } series) {
+                continue;
+            }
+
+            hasSeries = true;
+            hasCellSeries |= series is NTHeatMapSeries<TData> or NTBoxPlotSeries<TData>;
+            if (series is NTBarSeries<TData> bar) {
+                if (bar.Orientation == NTChartOrientation.Horizontal) {
+                    hasHorizontalBars = true;
+                    if (bar.ValueAxisMinimum is { } minimum) {
+                        valueAxisMinimum = hasValueAxisMinimum ? Math.Min(valueAxisMinimum, (double)minimum) : (double)minimum;
+                        hasValueAxisMinimum = true;
+                    }
+                }
+                else if (bar.Orientation == NTChartOrientation.Vertical) {
+                    hasVerticalBars = true;
+                }
+            }
+
+            if (series.GetViewXRange() is { } view) {
+                // Same NaN handling as Enumerable.Min/Max: a NaN minimum wins, NaN maximums are skipped.
+                if (!hasViewRange || view.Min < viewMin || double.IsNaN(view.Min)) {
+                    viewMin = view.Min;
+                }
+                if (!hasViewRange || view.Max > viewMax || double.IsNaN(viewMax)) {
+                    viewMax = view.Max;
+                }
+                hasViewRange = true;
+            }
+        }
+
+        if (!hasSeries) {
             return (0, 1);
         }
 
-        var horizontalBars = cartesianSeries
-            .OfType<NTBarSeries<TData>>()
-            .Where(s => s.Orientation == NTChartOrientation.Horizontal)
-            .ToList();
-        var hasHorizontalBars = horizontalBars.Count > 0;
-
-        var viewRanges = cartesianSeries
-            .Select(s => s.GetViewXRange())
-            .Where(r => r.HasValue)
-            .Select(r => r!.Value)
-            .ToList();
-        var hasViewRange = viewRanges.Count > 0;
-
         if (XAxis.IsCategorical && !hasHorizontalBars) {
-            var allX = GetAllXValues();
-            if (!allX.Any()) {
+            var count = GetAllXValues().Count;
+            if (count == 0) {
                 return (0, 1);
             }
 
-            double min = 0;
-            double max = Math.Max(1, allX.Count - 1);
+            // A lone category sits at index 0, so center it instead of leaving it on the left edge.
+            double min = count == 1 ? -0.5 : 0;
+            double max = count == 1 ? 0.5 : Math.Max(1, count - 1);
 
             if (hasViewRange) {
-                min = viewRanges.Min(v => v.Min);
-                max = viewRanges.Max(v => v.Max);
+                min = viewMin;
+                max = viewMax;
             }
 
             if (!padded || hasViewRange) {
                 return NormalizeRange(min, max);
             }
 
-            var catRange = Math.Max(1, max - min);
-            var padding = catRange * RangePadding;
-            // Bar charts need at least half-category edge padding so first/last bars are not clipped.
-            if (Series.OfType<NTBarSeries<TData>>().Any(s => s.IsEffectivelyVisible && s.Orientation == NTChartOrientation.Vertical)) {
+            var padding = Math.Max(1, max - min) * RangePadding;
+            // Bars, heat map cells and boxes need at least half-category edge padding so the first/last are not clipped.
+            if (hasVerticalBars || hasCellSeries) {
                 padding = Math.Max(padding, 0.5);
             }
             return NormalizeRange(min - padding, max + padding);
@@ -622,30 +670,22 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         double dataMin = double.MaxValue;
         double dataMax = double.MinValue;
 
-        foreach (var s in cartesianSeries) {
-            var range = s.GetXRange();
-            if (!range.HasValue) {
-                continue;
+        foreach (var s in Series) {
+            if (s is NTCartesianSeries<TData> { IsEffectivelyVisible: true } series && series.GetXRange() is { } range) {
+                dataMin = Math.Min(dataMin, range.Min);
+                dataMax = Math.Max(dataMax, range.Max);
             }
-
-            dataMin = Math.Min(dataMin, range.Value.Min);
-            dataMax = Math.Max(dataMax, range.Value.Max);
         }
 
         if (hasViewRange) {
-            dataMin = viewRanges.Min(v => v.Min);
-            dataMax = viewRanges.Max(v => v.Max);
+            dataMin = viewMin;
+            dataMax = viewMax;
         }
-        else if (horizontalBars.Count > 0) {
+        else if (hasHorizontalBars) {
             // Horizontal bar value axis floor: default to 0 for all-positive, otherwise data min.
             // Can be overridden by ValueAxisMinimum on NTBarSeries.
-            var overrideMins = horizontalBars
-                .Where(s => s.ValueAxisMinimum.HasValue)
-                .Select(s => (double)s.ValueAxisMinimum!.Value)
-                .ToList();
-
-            if (overrideMins.Count > 0) {
-                dataMin = overrideMins.Min();
+            if (hasValueAxisMinimum) {
+                dataMin = valueAxisMinimum;
             }
             else if (dataMin > 0) {
                 dataMin = 0;
@@ -660,8 +700,12 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             return NormalizeRange(dataMin, dataMax);
         }
 
-        var rangeSize = Math.Max(1e-9, dataMax - dataMin);
-        var rangePadding = rangeSize * RangePadding;
+        if (dataMax - dataMin <= double.Epsilon) {
+            // Padding a zero-width range by a fraction of nothing leaves it collapsed; widen it as the unpadded range is.
+            return NormalizeRange(dataMin, dataMax);
+        }
+
+        var rangePadding = (dataMax - dataMin) * RangePadding;
 
         if (hasHorizontalBars) {
             if (dataMin >= 0) {
@@ -685,33 +729,60 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     /// <param name="padded">When <see langword="true" />, applies <see cref="RangePadding" /> to the result.</param>
     /// <returns>A tuple containing the minimum and maximum Y values.</returns>
     public (decimal Min, decimal Max) GetYRange(NTAxisOptions<TData>? axis, bool padded = false) {
+        if (!_useFrameRangeCache) {
+            return CalculateYRange(axis, padded);
+        }
+
+        foreach (var entry in _frameYRanges) {
+            if (ReferenceEquals(entry.Axis, axis) && entry.Padded == padded) {
+                return entry.Range;
+            }
+        }
+
+        var range = CalculateYRange(axis, padded);
+        _frameYRanges.Add((axis, padded, range));
+        return range;
+    }
+
+    private (decimal Min, decimal Max) CalculateYRange(NTAxisOptions<TData>? axis, bool padded) {
         var useSecondaryAxis = axis is not null && SecondaryYAxis is not null && ReferenceEquals(axis, SecondaryYAxis);
         var absoluteMinimum = (axis as INTYAxis<TData>)?.AbsoluteMinimum;
 
+        var hasSeries = false;
+        var hasHorizontalBars = false;
+        var hasVerticalBars = false;
+        var hasViewRange = false;
+        var hasValueAxisMinimum = false;
+        decimal viewMin = 0, viewMax = 0, valueAxisMinimum = 0;
+        foreach (var s in Series) {
+            if (s is not NTCartesianSeries<TData> { IsEffectivelyVisible: true } series || series.UseSecondaryYAxis != useSecondaryAxis) {
+                continue;
+            }
 
-        var cartesianSeries = Series
-            .OfType<NTCartesianSeries<TData>>()
-            .Where(s => s.IsEffectivelyVisible && s.UseSecondaryYAxis == useSecondaryAxis)
-            .ToList();
+            hasSeries = true;
+            if (series is NTBarSeries<TData> bar) {
+                if (bar.Orientation == NTChartOrientation.Horizontal) {
+                    hasHorizontalBars = true;
+                }
+                else if (bar.Orientation == NTChartOrientation.Vertical) {
+                    hasVerticalBars = true;
+                    if (bar.ValueAxisMinimum is { } minimum) {
+                        valueAxisMinimum = hasValueAxisMinimum ? Math.Min(valueAxisMinimum, minimum) : minimum;
+                        hasValueAxisMinimum = true;
+                    }
+                }
+            }
 
-        if (!cartesianSeries.Any()) {
-            return (0, 1);
+            if (series.GetViewYRange() is { } view) {
+                viewMin = hasViewRange ? Math.Min(viewMin, view.Min) : view.Min;
+                viewMax = hasViewRange ? Math.Max(viewMax, view.Max) : view.Max;
+                hasViewRange = true;
+            }
         }
 
-        var hasHorizontalBars = cartesianSeries
-            .OfType<NTBarSeries<TData>>()
-            .Any(s => s.Orientation == NTChartOrientation.Horizontal);
-        var verticalBars = cartesianSeries
-            .OfType<NTBarSeries<TData>>()
-            .Where(s => s.Orientation == NTChartOrientation.Vertical)
-            .ToList();
-
-        var viewRanges = cartesianSeries
-            .Select(s => s.GetViewYRange())
-            .Where(r => r.HasValue)
-            .Select(r => r!.Value)
-            .ToList();
-        var hasViewRange = viewRanges.Count > 0;
+        if (!hasSeries) {
+            return (0, 1);
+        }
 
         decimal min = decimal.MaxValue;
         decimal max = decimal.MinValue;
@@ -720,8 +791,12 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         var hasXViewRange = xAxisOptions is not null && HasViewRange(xAxisOptions);
         var viewXRange = hasXViewRange ? GetXRange(xAxisOptions, true) : (Min: 0d, Max: 0d);
 
-        foreach (var s in cartesianSeries) {
-            var yRange = hasXViewRange ? s.GetYRange(viewXRange.Min, viewXRange.Max) : s.GetYRange();
+        foreach (var s in Series) {
+            if (s is not NTCartesianSeries<TData> { IsEffectivelyVisible: true } series || series.UseSecondaryYAxis != useSecondaryAxis) {
+                continue;
+            }
+
+            var yRange = hasXViewRange ? series.GetYRange(viewXRange.Min, viewXRange.Max) : series.GetYRange();
             if (!yRange.HasValue) {
                 continue;
             }
@@ -731,20 +806,15 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         }
 
         if (hasViewRange) {
-            min = viewRanges.Min(v => v.Min);
-            max = viewRanges.Max(v => v.Max);
+            min = viewMin;
+            max = viewMax;
         }
 
         // Bar chart value axis floor: default to 0 for all-positive, otherwise data min.
         // Can be overridden by ValueAxisMinimum on NTBarSeries.
-        if (!hasViewRange && verticalBars.Count > 0) {
-            var overrideMins = verticalBars
-                .Where(s => s.ValueAxisMinimum.HasValue)
-                .Select(s => s.ValueAxisMinimum!.Value)
-                .ToList();
-
-            if (overrideMins.Count > 0) {
-                min = overrideMins.Min();
+        if (!hasViewRange && hasVerticalBars) {
+            if (hasValueAxisMinimum) {
+                min = valueAxisMinimum;
             }
             else if (min > 0) {
                 min = 0;
@@ -759,9 +829,12 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             return NormalizeYRange(min, max, absoluteMinimum);
         }
 
-        var rangeSize = Math.Max(0.0000001m, max - min);
-        var rangePadding = rangeSize * (decimal)RangePadding;
-        if (verticalBars.Count > 0) {
+        if (max == min && !hasHorizontalBars) {
+            return NormalizeYRange(min, max, absoluteMinimum);
+        }
+
+        var rangePadding = (max - min) * (decimal)RangePadding;
+        if (hasVerticalBars) {
             // Keep the lower bound anchored for bar charts (0/data-min/override-min),
             // and only pad the top.
             return NormalizeYRange(min, max + rangePadding, absoluteMinimum);
@@ -825,7 +898,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     /// <param name="plotArea">The bounding rectangle of the plot area on the canvas.</param>
     /// <returns>The pixel X coordinate as a <see cref="float" />.</returns>
     public float ScaleX(double x, SKRect plotArea) {
-        var (min, max) = GetScaleXRange();
+        var (min, max) = GetXRange(XAxis as NTAxisOptions<TData>, true);
         var scale = (XAxis as NTAxisOptions<TData>)?.Scale ?? NTAxisScale.Linear;
 
         double t;
@@ -856,7 +929,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     /// <param name="plotArea">The bounding rectangle of the plot area on the canvas.</param>
     /// <returns>The corresponding data X value as a <see cref="double" />.</returns>
     public double ScaleXInverse(float coord, SKRect plotArea) {
-        var (min, max) = GetScaleXRange();
+        var (min, max) = GetXRange(XAxis as NTAxisOptions<TData>, true);
         var scale = (XAxis as NTAxisOptions<TData>)?.Scale ?? NTAxisScale.Linear;
 
         const float p = 3f;
@@ -883,8 +956,8 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     /// <returns>The pixel Y coordinate as a <see cref="float" />.</returns>
     public float ScaleY(decimal y, SKRect plotArea) => ScaleY(y, YAxis as NTAxisOptions<TData>, plotArea);
 
-    private float ScaleY(decimal y, NTAxisOptions<TData>? axis, SKRect plotArea) {
-        var (min, max) = GetScaleYRange(axis);
+    internal float ScaleY(decimal y, NTAxisOptions<TData>? axis, SKRect plotArea) {
+        var (min, max) = GetYRange(axis, true);
         var absoluteMinimum = (axis as INTYAxis<TData>)?.AbsoluteMinimum;
         var scale = axis?.Scale ?? NTAxisScale.Linear;
 
@@ -917,7 +990,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     ///     Converts a screen coordinate back to a data Y value.
     /// </summary>
     public decimal ScaleYInverse(float coord, NTAxisOptions<TData>? axis, SKRect plotArea) {
-        var (min, max) = GetScaleYRange(axis);
+        var (min, max) = GetYRange(axis, true);
         var scale = axis?.Scale ?? NTAxisScale.Linear;
 
         double t;
@@ -1031,9 +1104,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             return skColor;
         }
 
-        var bgColor = GetPaletteColor(index);
-        var luminance = (0.2126f * bgColor.Red) + (0.7152f * bgColor.Green) + (0.0722f * bgColor.Blue);
-        return luminance > 128 ? SKColors.Black : SKColors.White;
+        return NTChartTokens.ContrastingTextColor(GetPaletteColor(index));
     }
 
     internal SKColor GetSeriesColor(NTBaseSeries<TData> series) {
@@ -1063,10 +1134,8 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             }
         }
 
-        // Final fallback: Use black or white based on series background color brightness
-        var bgColor = GetSeriesColor(series);
-        var luminance = (0.2126f * bgColor.Red) + (0.7152f * bgColor.Green) + (0.0722f * bgColor.Blue);
-        return luminance > 128 ? SKColors.Black : SKColors.White;
+        // Final fallback: black or white, whichever contrasts more with the series color
+        return NTChartTokens.ContrastingTextColor(GetSeriesColor(series));
     }
 
     /// <summary>
@@ -1087,6 +1156,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         _cachedAllX = null;
         _cachedAllY = null;
         _cachedXIndexMap = null;
+        _cachedIsXAxisDateTime = null;
         RequestDraw(geometryChanged: true);
     }
 
@@ -1109,6 +1179,9 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         _annotationTextPaint?.Dispose();
         _annotationLabelBgPaint?.Dispose();
         _annotationFont?.Dispose();
+        _annotationDashEffect?.Dispose();
+        _extensionPaint?.Dispose();
+        _extensionFont?.Dispose();
         base.Dispose(disposing);
     }
 
@@ -1226,6 +1299,11 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     protected virtual void OnMouseDown(MouseEventArgs e) {
         var point = new SKPoint((float)e.OffsetX * Density, (float)e.OffsetY * Density);
 
+        if (HoveredSeries is { IsPressed: false } hoveredSeries) {
+            hoveredSeries.IsPressed = true;
+            RequestDraw();
+        }
+
         if (Legend != null && Legend.Visible && Legend.Position == LegendPosition.Floating) {
             var rect = Legend.LastDrawArea.Width > 0 && Legend.LastDrawArea.Height > 0
                 ? Legend.LastDrawArea
@@ -1259,17 +1337,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             }
         }
         else {
-            var visibleSeries = Series.Where(s => s.IsEffectivelyVisible).ToList();
-            var callbackLeaderIndex = FindInteractionCallbackLeaderIndex(visibleSeries, ChartInteractions.XPan | ChartInteractions.YPan);
-            for (var i = 0; i < visibleSeries.Count; i++) {
-                var series = visibleSeries[i];
-                series.SuppressInteractionCallbacks = i != callbackLeaderIndex;
-                series.HandleMouseDown(e);
-            }
-
-            foreach (var series in visibleSeries) {
-                series.SuppressInteractionCallbacks = false;
-            }
+            DispatchToVisibleSeries(e, ChartInteractions.XPan | ChartInteractions.YPan, static (series, e) => series.HandleMouseDown(e));
         }
 
         _lastInteractionTimestamp = Stopwatch.GetTimestamp();
@@ -1282,7 +1350,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     /// <param name="e">The mouse event arguments.</param>
     protected virtual void OnMouseMove(MouseEventArgs e) {
         var nextMousePosition = new SKPoint((float)e.OffsetX * Density, (float)e.OffsetY * Density);
-        if (LastMousePosition == nextMousePosition && !_isDraggingLegend && !Series.Any(s => s.IsPanning)) {
+        if (LastMousePosition == nextMousePosition && !_isDraggingLegend && !IsAnySeriesPanning()) {
             return;
         }
         LastMousePosition = nextMousePosition;
@@ -1312,20 +1380,10 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             return;
         }
 
-        var visibleSeries = Series.Where(s => s.IsEffectivelyVisible).ToList();
-        var callbackLeaderIndex = FindInteractionCallbackLeaderIndex(visibleSeries, ChartInteractions.XPan | ChartInteractions.YPan);
-        for (var i = 0; i < visibleSeries.Count; i++) {
-            var series = visibleSeries[i];
-            series.SuppressInteractionCallbacks = i != callbackLeaderIndex;
-            series.HandleMouseMove(e);
-        }
-
-        foreach (var series in visibleSeries) {
-            series.SuppressInteractionCallbacks = false;
-        }
+        DispatchToVisibleSeries(e, ChartInteractions.XPan | ChartInteractions.YPan, static (series, e) => series.HandleMouseMove(e));
 
         _lastInteractionTimestamp = Stopwatch.GetTimestamp();
-        RequestDraw(geometryChanged: Series.Any(s => s.IsPanning));
+        RequestDraw(geometryChanged: IsAnySeriesPanning());
     }
 
     /// <summary>
@@ -1342,6 +1400,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             _lastHoverNotifiedPointIndex = null;
         }
 
+        ClearPressed();
         LastMousePosition = null;
         HoveredSeries = null;
         HoveredPointIndex = null;
@@ -1352,23 +1411,28 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         RequestUiRefresh(force: true);
     }
 
+    // Releases the pressed state layer on every series that still shows it; a pressed state only changes canvas pixels.
+    private void ClearPressed() {
+        var cleared = false;
+        for (var i = 0; i < Series.Count; i++) {
+            if (Series[i].IsPressed) {
+                Series[i].IsPressed = false;
+                cleared = true;
+            }
+        }
+        if (cleared) {
+            RequestDraw();
+        }
+    }
+
     /// <summary>
     ///     Handles a mouse button release on the chart canvas, finalizing panning or legend drag.
     /// </summary>
     /// <param name="e">The mouse event arguments.</param>
     protected virtual void OnMouseUp(MouseEventArgs e) {
-        var visibleSeries = Series.Where(s => s.IsEffectivelyVisible).ToList();
-        var callbackLeaderIndex = FindInteractionCallbackLeaderIndex(visibleSeries, ChartInteractions.XPan | ChartInteractions.YPan);
-        for (var i = 0; i < visibleSeries.Count; i++) {
-            var series = visibleSeries[i];
-            series.SuppressInteractionCallbacks = i != callbackLeaderIndex;
-            series.HandleMouseUp(e);
-        }
-
-        foreach (var series in visibleSeries) {
-            series.SuppressInteractionCallbacks = false;
-        }
+        DispatchToVisibleSeries(e, ChartInteractions.XPan | ChartInteractions.YPan, static (series, e) => series.HandleMouseUp(e));
         _isDraggingLegend = false;
+        ClearPressed();
         _lastInteractionTimestamp = Stopwatch.GetTimestamp();
         RequestUiRefresh();
     }
@@ -1427,12 +1491,13 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
 
         canvas.Clear(GetThemeColor(BackgroundColor));
 
-        _useFrameScaleCache = true;
-        _frameXRangeReady = false;
-        _framePrimaryYRangeReady = false;
-        _frameSecondaryYRangeReady = false;
+        // A bottom legend centers under the previous frame's plot area, which does not exist yet on the first frame.
+        var settleLegend = Legend is { Visible: true, Position: LegendPosition.Bottom } && LastPlotArea.Width <= 0;
+
+        ClearFrameRanges();
+        _useFrameRangeCache = true;
         try {
-            foreach (var order in Enum.GetValues<RenderOrdered>()) {
+            foreach (var order in RenderOrders) {
                 if (order is RenderOrdered.Axis && _chartCoordSystem is ChartCoordinateSystem.Cartesian) {
                     renderArea = RenderAxes(context, renderArea);
                     continue;
@@ -1448,10 +1513,13 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
 
                     PerformHitTesting(context, renderArea);
 
-                    var renderSeries = _renderablesByOrder[order]
-                        .OfType<NTBaseSeries<TData>>()
-                        .Where(s => s.IsEffectivelyVisible)
-                        .ToList();
+                    var renderSeries = _renderSeries;
+                    renderSeries.Clear();
+                    foreach (var renderable in _renderablesByOrder[order]) {
+                        if (renderable is NTBaseSeries<TData> { IsEffectivelyVisible: true } visibleSeries) {
+                            renderSeries.Add(visibleSeries);
+                        }
+                    }
 
                     if (HoveredSeries is not null && renderSeries.Count > 1) {
                         var hoveredIndex = renderSeries.IndexOf(HoveredSeries);
@@ -1502,7 +1570,12 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             }
         }
         finally {
-            _useFrameScaleCache = false;
+            _useFrameRangeCache = false;
+        }
+
+        if (settleLegend && LastPlotArea.Width > 0) {
+            OnPaintSurface(canvas, info);
+            return;
         }
 
         if (sw != null) {
@@ -1510,9 +1583,29 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             _lastRenderTimeMs = sw.Elapsed.TotalMilliseconds;
             RenderDebugInfo(context);
         }
-        SetRenderLoop(_isVisible && Series.Any(series => series.RequiresAnimationFrame));
+        SetRenderLoop(_isVisible && AnySeriesRequiresAnimationFrame());
     }
     private ChartCoordinateSystem _chartCoordSystem;
+
+    private bool IsAnySeriesPanning() {
+        foreach (var series in Series) {
+            if (series.IsPanning) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool AnySeriesRequiresAnimationFrame() {
+        foreach (var series in Series) {
+            if (series.RequiresAnimationFrame) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private void PerformHitTesting(NTRenderContext context, SKRect plotArea) {
         if (!LastMousePosition.HasValue) {
@@ -1520,7 +1613,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         }
 
         // Skip hover hit-testing while panning to avoid expensive per-frame path checks.
-        if (Series.Any(s => s.IsPanning)) {
+        if (IsAnySeriesPanning()) {
             return;
         }
 
@@ -1534,17 +1627,24 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         var wasHoveringLegend = _isHoveringLegend;
         _isHoveringLegend = Legend is { Visible: true } && Legend.Position != LegendPosition.None && Legend.LastDrawArea.Contains(mousePoint);
         if (wasHoveringLegend != _isHoveringLegend) {
-            RequestUiRefresh(force: true);
+            RefreshHover();
         }
 
         // Check legend items for hover (if legend is present)
         if (Legend != null && Legend.Visible && Legend.Position != LegendPosition.None) {
-            if (Legend.LastDrawArea.Contains(mousePoint)) {
-                _isHoveringLegend = true;
-            }
-
             var hoveredLegendItem = Legend.GetItemAtPoint(mousePoint, plotArea, Legend.LastDrawArea, Density);
             if (hoveredLegendItem?.Series is not null && hoveredLegendItem.InteractsWithChart) {
+                if (!hoveredLegendItem.IsVisible) {
+                    // A hidden item emphasizes nothing; it only keeps its own legend hover state layer.
+                    var previousLegendItem = HoveredLegendItem;
+                    ClearHoveredState(mousePoint);
+                    HoveredLegendItem = hoveredLegendItem;
+                    if (!ReferenceEquals(previousLegendItem, hoveredLegendItem)) {
+                        RefreshHover();
+                    }
+                    return;
+                }
+
                 SetHoveredState(
                     hoveredLegendItem.Series,
                     hoveredLegendItem.Index,
@@ -1578,7 +1678,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     }
 
     private void SetHoveredState(NTBaseSeries<TData> hoveredSeries, int? hoveredPointIndex, TData? hoveredDataPoint, SKPoint mousePoint, LegendItemInfo<TData>? hoveredLegendItem = null) {
-        var cursorChanged = HoveredSeries is null;
+        var cursorChanged = HoveredSeries is null || IsHoveredSeriesClickable(HoveredSeries) != IsHoveredSeriesClickable(hoveredSeries);
         HoveredSeries = hoveredSeries;
         HoveredPointIndex = hoveredPointIndex;
         HoveredDataPoint = hoveredDataPoint;
@@ -1607,7 +1707,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             _lastHoverNotifiedLegendKey = hoveredLegendKey;
         }
         if (cursorChanged) {
-            RequestUiRefresh(force: true);
+            RefreshHover();
         }
     }
 
@@ -1630,7 +1730,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             _lastHoverNotifiedLegendKey = null;
         }
         if (cursorChanged) {
-            RequestUiRefresh(force: true);
+            RefreshHover();
         }
     }
 
@@ -1872,8 +1972,12 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
 
         if (annotation.DashLength > 0f) {
             var dash = Math.Max(1f, annotation.DashLength * density);
-            using var effect = SKPathEffect.CreateDash(new[] { dash, dash }, 0f);
-            _annotationLinePaint.PathEffect = effect;
+            if (_annotationDashEffect is null || _annotationDash != dash) {
+                _annotationDashEffect?.Dispose();
+                _annotationDashEffect = SKPathEffect.CreateDash([dash, dash], 0f);
+                _annotationDash = dash;
+            }
+            _annotationLinePaint.PathEffect = _annotationDashEffect;
             canvas.DrawLine(start, end, _annotationLinePaint);
             _annotationLinePaint.PathEffect = null;
             return;
@@ -1979,33 +2083,37 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     /// </summary>
     /// <param name="e">The wheel event arguments.</param>
     protected virtual void OnWheel(WheelEventArgs e) {
-        var visibleSeries = Series.Where(s => s.IsEffectivelyVisible).ToList();
-        var callbackLeaderIndex = FindInteractionCallbackLeaderIndex(visibleSeries, ChartInteractions.XZoom | ChartInteractions.YZoom);
-        for (var i = 0; i < visibleSeries.Count; i++) {
-            var series = visibleSeries[i];
-            series.SuppressInteractionCallbacks = i != callbackLeaderIndex;
-            series.HandleMouseWheel(e);
-        }
-
-        foreach (var series in visibleSeries) {
-            series.SuppressInteractionCallbacks = false;
-        }
+        DispatchToVisibleSeries(e, ChartInteractions.XZoom | ChartInteractions.YZoom, static (series, e) => series.HandleMouseWheel(e));
         _lastInteractionTimestamp = Stopwatch.GetTimestamp();
         RequestUiRefresh();
     }
 
-    private static int FindInteractionCallbackLeaderIndex(IReadOnlyList<NTBaseSeries<TData>> visibleSeries, ChartInteractions interactionMask) {
-        if (visibleSeries.Count == 0) {
-            return -1;
-        }
-
-        for (var i = 0; i < visibleSeries.Count; i++) {
-            if ((visibleSeries[i].Interactions & interactionMask) != ChartInteractions.None) {
-                return i;
+    /// <summary>
+    ///     Forwards a pointer event to every visible series. Only the first series that enables an interaction in
+    ///     <paramref name="callbackMask"/> (or the first series when none does) raises the interaction callbacks, so a
+    ///     gesture reports once per chart rather than once per series.
+    /// </summary>
+    private void DispatchToVisibleSeries<TArgs>(TArgs e, ChartInteractions callbackMask, Action<NTBaseSeries<TData>, TArgs> handle) {
+        _interactionSeries.Clear();
+        var callbackLeaderIndex = -1;
+        foreach (var series in Series) {
+            if (series.IsEffectivelyVisible) {
+                if (callbackLeaderIndex < 0 && (series.Interactions & callbackMask) != ChartInteractions.None) {
+                    callbackLeaderIndex = _interactionSeries.Count;
+                }
+                _interactionSeries.Add(series);
             }
         }
+        callbackLeaderIndex = Math.Max(callbackLeaderIndex, 0);
 
-        return 0;
+        for (var i = 0; i < _interactionSeries.Count; i++) {
+            _interactionSeries[i].SuppressInteractionCallbacks = i != callbackLeaderIndex;
+            handle(_interactionSeries[i], e);
+        }
+
+        foreach (var series in _interactionSeries) {
+            series.SuppressInteractionCallbacks = false;
+        }
     }
 
     private void CalculateTreeMapAreas(SKRect plotArea) {
@@ -2115,9 +2223,9 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         };
 
         _treeMapGroupFont ??= new SKFont {
-            Typeface = context.DefaultFont.Typeface
+            Typeface = NTChartTokens.Typeface(NTTypography.TitleSmall)
         };
-        _treeMapGroupFont.Size = 14 * context.Density;
+        _treeMapGroupFont.Size = NTChartTokens.Size(NTTypography.TitleSmall) * context.Density;
 
         foreach (var series in treeMapSeries) {
             if (!_treeMapAreas.TryGetValue(series, out var area)) {
@@ -2154,13 +2262,9 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             if (!string.IsNullOrEmpty(hex) && SKColor.TryParse(hex, out var skColor)) {
                 _resolvedColors[color] = skColor;
             }
-            else {
-                // Fallback for primary/secondary etc if not found in CSS
-                _resolvedColors[color] = color switch {
-                    NTColor.Primary => SKColors.RoyalBlue,
-                    NTColor.Secondary => SKColors.Gray,
-                    _ => SKColors.Gray
-                };
+            else if (!_resolvedColors.ContainsKey(color)) {
+                // A theme swap briefly leaves its variables empty; keep the last applied color and fall back only when none was ever resolved.
+                _resolvedColors[color] = color is NTColor.Primary ? SKColors.RoyalBlue : SKColors.Gray;
             }
         }
     }
@@ -2173,40 +2277,22 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     /// <returns>The corresponding data Y value as a <see cref="decimal" />.</returns>
     public decimal ScaleYInverse(float coord, SKRect plotArea) => ScaleYInverse(coord, YAxis as NTAxisOptions<TData>, plotArea);
 
-    private (double Min, double Max) GetScaleXRange() {
-        if (!_useFrameScaleCache) {
-            return GetXRange(XAxis as NTAxisOptions<TData>, true);
-        }
-
-        if (!_frameXRangeReady) {
-            _frameXRange = GetXRange(XAxis as NTAxisOptions<TData>, true);
-            _frameXRangeReady = true;
-        }
-
-        return _frameXRange;
+    private void ClearFrameRanges() {
+        _frameXRange = null;
+        _framePaddedXRange = null;
+        _frameYRanges.Clear();
     }
 
-    private (decimal Min, decimal Max) GetScaleYRange(NTAxisOptions<TData>? axis) {
-        if (!_useFrameScaleCache) {
-            return GetYRange(axis, true);
+    /// <summary>
+    ///     Hover never changes geometry: redraw (the legend paints before hit testing runs) and re-render the markup only
+    ///     when the canvas cursor it shows actually changes.
+    /// </summary>
+    private void RefreshHover() {
+        RequestDraw();
+        if (!string.Equals(CanvasStyle, _renderedCanvasStyle, StringComparison.Ordinal)) {
+            _lastUiRefreshTimestamp = Stopwatch.GetTimestamp();
+            StateHasChanged();
         }
-
-        var isSecondary = axis is not null && SecondaryYAxis is not null && ReferenceEquals(axis, SecondaryYAxis);
-        if (isSecondary) {
-            if (!_frameSecondaryYRangeReady) {
-                _frameSecondaryYRange = GetYRange(axis, true);
-                _frameSecondaryYRangeReady = true;
-            }
-
-            return _frameSecondaryYRange;
-        }
-
-        if (!_framePrimaryYRangeReady) {
-            _framePrimaryYRange = GetYRange(axis, true);
-            _framePrimaryYRangeReady = true;
-        }
-
-        return _framePrimaryYRange;
     }
 
     private void RequestUiRefresh(bool force = false) {
@@ -2258,15 +2344,30 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     /// <param name="axis">The axis to check for an active view range.</param>
     /// <returns><see langword="true" /> if at least one series has a view range on the axis; otherwise <see langword="false" />.</returns>
     public bool HasViewRange(NTAxisOptions<TData> axis) {
-        if (ReferenceEquals(axis, XAxis)) {
-            return Series.OfType<NTCartesianSeries<TData>>().Where(s => s.IsEffectivelyVisible).Any(s => s.GetViewXRange().HasValue);
+        var isXAxis = ReferenceEquals(axis, XAxis);
+        var isSecondary = SecondaryYAxis is not null && ReferenceEquals(axis, SecondaryYAxis);
+        foreach (var s in Series) {
+            if (s is not NTCartesianSeries<TData> { IsEffectivelyVisible: true } series) {
+                continue;
+            }
+
+            if (isXAxis ? series.GetViewXRange().HasValue : series.UseSecondaryYAxis == isSecondary && series.GetViewYRange().HasValue) {
+                return true;
+            }
         }
 
-        var isSecondary = SecondaryYAxis is not null && ReferenceEquals(axis, SecondaryYAxis);
-        return Series
-            .OfType<NTCartesianSeries<TData>>()
-            .Where(s => s.IsEffectivelyVisible && s.UseSecondaryYAxis == isSecondary)
-            .Any(s => s.GetViewYRange().HasValue);
+        return false;
+    }
+
+    /// <summary>Gets whether any visible bar series is horizontal, which turns the X axis into a value axis.</summary>
+    internal bool HasVisibleHorizontalBars() {
+        foreach (var s in Series) {
+            if (s is NTBarSeries<TData> { Orientation: NTChartOrientation.Horizontal, IsEffectivelyVisible: true }) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static (double Min, double Max) NormalizeRange(double min, double max) {

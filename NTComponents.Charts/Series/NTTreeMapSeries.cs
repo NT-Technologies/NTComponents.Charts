@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.Rendering;
@@ -157,7 +158,9 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     public RenderFragment? ChildContent { get; set; }
 
     /// <inheritdoc />
-    internal override TooltipInfo GetTooltipInfo(TData data) {
+    internal override TooltipInfo GetTooltipInfo(TData data) => ResolveTooltipInfo(data, BuildTooltipInfo(data), Chart.HoveredPointIndex);
+
+    private TooltipInfo BuildTooltipInfo(TData data) {
         if (Chart.HoveredSeries == this &&
             Chart.HoveredPointIndex is int hoveredPointIndex) {
             for (var i = _visibleNodes.Count - 1; i >= 0; i--) {
@@ -237,7 +240,13 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         public List<TreeNode> Children { get; } = [];
         public Dictionary<string, TreeNode>? ChildLookup { get; set; }
         public bool IsGroup => Children.Count > 0;
+
+        // Formatted Value; the node is rebuilt when its value or its style series' DataLabelFormat changes, so only the culture is checked.
+        public string? ValueText { get; set; }
+        public CultureInfo? ValueTextCulture { get; set; }
     }
+
+    private readonly record struct LayoutKey(int HierarchyVersion, int CurrentIndex, double Left, double Top, double Right, double Bottom, double Density, double ItemPadding, int DrillDepth);
 
     private readonly record struct DrillStep(string Key, string Label);
 
@@ -247,7 +256,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     private readonly List<DrillStep> _drillPath = [];
     private readonly List<RenderedNode> _visibleNodes = [];
     private readonly List<NTTreeMapSeries<TData>> _childSeries = [];
-    private string? _lastLayoutKey;
+    private LayoutKey? _lastLayoutKey;
     private int _hierarchyVersion;
     private int _nodeId;
 
@@ -279,8 +288,8 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     private long _hoverAnimStartTimestamp;
 
     internal override bool RequiresAnimationFrame => base.RequiresAnimationFrame ||
-        (_isDrillTransitionActive && AnimationEnabled && GetAnimationProgress() < 1f) ||
-        (AnimationEnabled && _hoverAnimFromIndex != _hoverAnimToIndex && GetHoverAnimationProgress() < 1f);
+        (_isDrillTransitionActive && IsAnimationRunning) ||
+        (AnimationActive && _hoverAnimFromIndex != _hoverAnimToIndex && GetHoverAnimationProgress() < 1f);
 
     /// <inheritdoc />
     protected override void OnDataChanged() {
@@ -401,24 +410,19 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             var baseColor = ResolveNodeColor(node, i);
             var labelColorOverride = default(SKColor?);
 
-            if (!node.IsGroup && node.SampleData is not null) {
+            if (!node.IsGroup && node.SampleData is not null && styleSeries.OnDataPointRender is { } onDataPointRender) {
                 var args = new NTDataPointRenderArgs<TData> {
                     Data = node.SampleData,
                     Index = node.StableIndex,
                     Color = baseColor,
                     GetThemeColor = Chart.GetThemeColor
                 };
-                styleSeries.OnDataPointRender?.Invoke(args);
+                onDataPointRender(args);
                 baseColor = args.Color ?? baseColor;
                 labelColorOverride = args.DataLabelColor;
             }
 
             var hoverIntensity = GetNodeHoverIntensity(node.StableIndex, hoverProgress);
-            if (hoverIntensity > 0f) {
-                var scale = 1f + (0.04f * hoverIntensity);
-                rect = ScaleRect(rect, scale);
-                baseColor = BlendTowards(baseColor, SKColors.White, 0.15f * hoverIntensity);
-            }
 
             var nodeAlphaFactor = rendered.IsInteractive ? 1f : nodePhaseProgress;
             if (applyDrillTransition && rendered.IsInteractive) {
@@ -426,11 +430,35 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             }
             var color = baseColor.WithAlpha((byte)(baseColor.Alpha * visibilityFactor * nodeAlphaFactor));
             _itemPaint!.Color = color;
-            context.Canvas.DrawRect(rect, _itemPaint);
+            var radius = Math.Min(NTChartTokens.Radius(NTCornerRadius.ExtraSmall) * context.Density, Math.Min(rect.Width, rect.Height) / 2f);
+            // A sub-pixel radius is invisible; a plain rect is cheaper to rasterize.
+            var rounded = radius >= 1f;
+            if (rounded) {
+                context.Canvas.DrawRoundRect(rect, radius, radius, _itemPaint);
+            }
+            else {
+                context.Canvas.DrawRect(rect, _itemPaint);
+            }
+
+            if (hoverIntensity > 0f) {
+                // Material 3 state layer: on-color overlay, hover (or pressed) opacity.
+                var stateLayerPaint = GetStateLayerPaint(NTChartTokens.ContrastingTextColor(baseColor).WithAlpha((byte)(255f * StateLayerOpacity * hoverIntensity * color.Alpha / 255f)));
+                if (rounded) {
+                    context.Canvas.DrawRoundRect(rect, radius, radius, stateLayerPaint);
+                }
+                else {
+                    context.Canvas.DrawRect(rect, stateLayerPaint);
+                }
+            }
 
             _borderPaint!.StrokeWidth = baseBorderWidth + (hoverIntensity * 1.4f * context.Density);
             _borderPaint!.Color = Chart.GetThemeColor(NTColor.OutlineVariant).WithAlpha((byte)((210f + (35f * hoverIntensity)) * visibilityFactor));
-            context.Canvas.DrawRect(rect, _borderPaint);
+            if (rounded) {
+                context.Canvas.DrawRoundRect(rect, radius, radius, _borderPaint);
+            }
+            else {
+                context.Canvas.DrawRect(rect, _borderPaint);
+            }
 
             if (styleSeries.ShowDrillIndicator && EnableDrilldown && rendered.IsInteractive && node.IsGroup) {
                 RenderDrillIndicator(context, rect, styleSeries);
@@ -587,10 +615,9 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             return;
         }
 
-        var allItems = dataItems.ToList();
         var chain = BuildSeriesChain();
         var rootSeries = chain[0];
-        var positiveItems = new List<TData>(allItems.Count);
+        var positiveItems = new List<TData>(dataItems.TryGetNonEnumeratedCount(out var count) ? count : 0);
 
         _nodeId = 0;
         var root = new TreeNode {
@@ -603,7 +630,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             PathLabels = []
         };
 
-        foreach (var item in allItems) {
+        foreach (var item in dataItems) {
             var value = Math.Max(0m, rootSeries.ValueSelector(item));
             if (value <= 0m) {
                 continue;
@@ -631,15 +658,28 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
 
         var styleSeries = chain[chainIndex];
         if (styleSeries.GroupSelector is not null) {
-            foreach (var group in items.GroupBy(item => NormalizeGroupKey(styleSeries.GroupSelector(item)))) {
-                var groupedItems = group.ToList();
-                var groupValue = groupedItems.Sum(item => Math.Max(0m, styleSeries.ValueSelector(item)));
+            var groupIndexes = new Dictionary<string, int>(StringComparer.Ordinal);
+            var groups = new List<(string Key, List<TData> Items)>();
+            foreach (var item in items) {
+                var key = NormalizeGroupKey(styleSeries.GroupSelector(item));
+                if (!groupIndexes.TryGetValue(key, out var groupIndex)) {
+                    groupIndex = groups.Count;
+                    groupIndexes.Add(key, groupIndex);
+                    groups.Add((key, []));
+                }
+                groups[groupIndex].Items.Add(item);
+            }
+
+            foreach (var (groupKey, groupedItems) in groups) {
+                var groupValue = 0m;
+                foreach (var item in groupedItems) {
+                    groupValue += Math.Max(0m, styleSeries.ValueSelector(item));
+                }
                 if (groupValue <= 0m) {
                     continue;
                 }
 
                 parent.ChildLookup ??= new Dictionary<string, TreeNode>(StringComparer.Ordinal);
-                var groupKey = group.Key;
                 if (!parent.ChildLookup.TryGetValue(groupKey, out var child)) {
                     child = new TreeNode {
                         Key = groupKey,
@@ -793,7 +833,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         }
 
         var key = BuildLayoutKey(context, current, contentArea);
-        if (string.Equals(_lastLayoutKey, key, StringComparison.Ordinal)) {
+        if (_lastLayoutKey == key) {
             return;
         }
 
@@ -816,9 +856,17 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         PartitionNodes(nodes, 0, nodes.Count, contentArea, horizontal: contentArea.Width >= contentArea.Height, context.Density, nestedDepth: 0);
     }
 
-    private string BuildLayoutKey(NTRenderContext context, TreeNode current, SKRect contentArea) {
-        return $"{_hierarchyVersion}|{current.StableIndex}|{Math.Round(contentArea.Left, 1)}|{Math.Round(contentArea.Top, 1)}|{Math.Round(contentArea.Right, 1)}|{Math.Round(contentArea.Bottom, 1)}|{Math.Round(context.Density, 3)}|{Math.Round(ItemPadding, 2)}|{_drillPath.Count}|{string.Join('>', _drillPath.Select(d => d.Key))}";
-    }
+    // The drill path resolves to the current node, so its StableIndex (per hierarchy version) stands in for the joined path keys.
+    private LayoutKey BuildLayoutKey(NTRenderContext context, TreeNode current, SKRect contentArea) => new(
+        _hierarchyVersion,
+        current.StableIndex,
+        Math.Round(contentArea.Left, 1),
+        Math.Round(contentArea.Top, 1),
+        Math.Round(contentArea.Right, 1),
+        Math.Round(contentArea.Bottom, 1),
+        Math.Round(context.Density, 3),
+        Math.Round(ItemPadding, 2),
+        _drillPath.Count);
 
     private void PartitionNodes(List<TreeNode> nodes, int start, int length, SKRect area, bool horizontal, float density, int nestedDepth) {
         if (length <= 0) {
@@ -912,25 +960,6 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         return rect;
     }
 
-    private static SKRect ScaleRect(SKRect rect, float scale) {
-        if (Math.Abs(scale - 1f) < 0.0001f) {
-            return rect;
-        }
-
-        var halfW = (rect.Width * scale) / 2f;
-        var halfH = (rect.Height * scale) / 2f;
-        return new SKRect(rect.MidX - halfW, rect.MidY - halfH, rect.MidX + halfW, rect.MidY + halfH);
-    }
-
-    private static SKColor BlendTowards(SKColor from, SKColor to, float amount) {
-        var t = Math.Clamp(amount, 0f, 1f);
-        return new SKColor(
-            (byte)(from.Red + ((to.Red - from.Red) * t)),
-            (byte)(from.Green + ((to.Green - from.Green) * t)),
-            (byte)(from.Blue + ((to.Blue - from.Blue) * t)),
-            from.Alpha);
-    }
-
     private void UpdateHoverAnimationState() {
         var nextHoveredIndex = Chart.HoveredSeries == this ? Chart.HoveredPointIndex : null;
         if (nextHoveredIndex == _hoverAnimToIndex) {
@@ -943,7 +972,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     }
 
     private float GetHoverAnimationProgress() {
-        if (!AnimationEnabled || _hoverAnimFromIndex == _hoverAnimToIndex) {
+        if (!AnimationActive || _hoverAnimFromIndex == _hoverAnimToIndex) {
             return 1f;
         }
 
@@ -1000,7 +1029,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         }
 
         var paletteIndex = node.IsGroup
-            ? Math.Abs(HashCode.Combine(node.Depth, node.Key))
+            ? NTStableHash.Combine(node.Depth, node.Key)
             : Math.Abs(node.StableIndex + fallbackIndex);
 
         return Chart.GetPaletteColor(paletteIndex);
@@ -1052,7 +1081,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         };
 
         _labelFont ??= new SKFont {
-            Typeface = context.DefaultFont.Typeface
+            Typeface = NTChartTokens.Typeface(NTTypography.LabelLarge)
         };
 
         _navFont ??= new SKFont {
@@ -1129,6 +1158,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
     private void RenderLabel(NTRenderContext context, SKRect rect, TreeNode node, SKColor bgColor, SKColor? overrideLabelColor, bool hasVisibleChildren, NTTreeMapSeries<TData> styleSeries) {
         var minWidth = styleSeries.MinLabelWidth * context.Density;
         var minHeight = styleSeries.MinLabelHeight * context.Density;
+        _labelFont!.Typeface = NTChartTokens.Typeface(NTTypography.LabelLarge);
         if (rect.Width < minWidth || rect.Height < minHeight) {
             return;
         }
@@ -1141,7 +1171,7 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
             return;
         }
 
-        var textColor = overrideLabelColor ?? GetContrastColor(bgColor);
+        var textColor = overrideLabelColor ?? NTChartTokens.ContrastingTextColor(bgColor);
         _labelPaint!.Color = textColor.WithAlpha((byte)(255 * VisibilityFactor));
 
         var label = node.DisplayLabel;
@@ -1194,7 +1224,8 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         context.Canvas.DrawText(label, centerX, primaryBaseline, SKTextAlign.Center, _labelFont, _labelPaint);
 
         if (styleSeries.ShowValuesInLabels && rect.Height > (primaryFont * 1.9f) && rect.Width > (primaryFont * 2.2f)) {
-            var valueText = FormatValue(node.Value, styleSeries.DataLabelFormat);
+            var valueText = GetValueText(node, styleSeries.DataLabelFormat);
+            _labelFont.Typeface = NTChartTokens.Typeface(NTTypography.BodyMedium);
             var secondarySize = FitTextToBounds(
                 valueText,
                 preferredSize: primaryFont * 0.58f,
@@ -1267,6 +1298,16 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         return FormatValue(value, DataLabelFormat);
     }
 
+    private static string GetValueText(TreeNode node, string? dataLabelFormat) {
+        var culture = CultureInfo.CurrentCulture;
+        if (node.ValueText is null || !ReferenceEquals(node.ValueTextCulture, culture)) {
+            node.ValueText = FormatValue(node.Value, dataLabelFormat);
+            node.ValueTextCulture = culture;
+        }
+
+        return node.ValueText;
+    }
+
     private static string FormatValue(decimal value, string? dataLabelFormat) {
         var format = string.IsNullOrWhiteSpace(dataLabelFormat) ? "{0:N0}" : dataLabelFormat;
         try {
@@ -1279,11 +1320,6 @@ public class NTTreeMapSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableSeri
         catch {
             return value.ToString("N0");
         }
-    }
-
-    private static SKColor GetContrastColor(SKColor bgColor) {
-        var luminance = (0.2126f * bgColor.Red) + (0.7152f * bgColor.Green) + (0.0722f * bgColor.Blue);
-        return luminance > 140f ? SKColors.Black : SKColors.White;
     }
 
     private void InvalidateLayout() {

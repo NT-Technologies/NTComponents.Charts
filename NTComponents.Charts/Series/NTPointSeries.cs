@@ -11,9 +11,9 @@ public class NTPointSeries<TData> : NTLineSeries<TData> where TData : class {
     public NTPointSeries() => LineStyle = NTComponents.Charts.Core.Series.LineStyle.None;
 
     /// <inheritdoc />
-    protected override void OnInitialized() {
-        base.OnInitialized();
-        // Ensure line style is always none for point series
+    protected override void OnParametersSet() {
+        base.OnParametersSet();
+        // Re-applied on every parameter pass so an explicit LineStyle can never draw a connecting line.
         LineStyle = NTComponents.Charts.Core.Series.LineStyle.None;
     }
 }

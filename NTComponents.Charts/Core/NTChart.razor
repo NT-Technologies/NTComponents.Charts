@@ -9,7 +9,8 @@
 		 @ref="_interactionHost"
 		 @onmouseleave="OnMouseOut" @onclick="OnClick"
 		 @onmousedown="OnMouseDown" @onmouseup="OnMouseUp"
-		 style="width: 100%; height: 100%; @CanvasStyle">
+		 role="img" aria-label="@TitleOptions?.Title"
+		 style="width: 100%; height: 100%; @(_renderedCanvasStyle = CanvasStyle)">
 		@RenderCanvas
 	</div>
 	@if (AllowExport || IsXPanEnabled || IsYPanEnabled || IsXZoomEnabled || IsYZoomEnabled) {

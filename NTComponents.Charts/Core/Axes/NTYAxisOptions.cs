@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components;
 using SkiaSharp;
 using System.Numerics;
 using NTComponents.Charts;
+using NTComponents.Charts.Core.Series;
 
 namespace NTComponents.Charts.Core.Axes;
 
@@ -132,7 +133,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         var plotArea = context.PlotArea;
         var isSecondary = IsSecondary(Chart);
         var xLine = isSecondary ? plotArea.Right : plotArea.Left;
-        var suppressGridLinesForHorizontalBars = HasHorizontalBarsForCurrentAxis();
+        var suppressGridLinesForHorizontalBars = HasGridlessSeriesForCurrentAxis();
 
         canvas.DrawLine(xLine, plotArea.Top, xLine, plotArea.Bottom, _linePaint);
 
@@ -147,11 +148,11 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             }
 
             if (isSecondary) {
-                canvas.DrawLine(xLine, y, xLine + (5 * context.Density), y, _linePaint);
+                canvas.DrawLine(xLine, y, xLine + (NTChartTokens.AxisTickLength * context.Density), y, _linePaint);
                 canvas.DrawText(tick.Label, xLine + (8 * context.Density), y + (4 * context.Density), SKTextAlign.Left, _textFont, _textPaint);
             }
             else {
-                canvas.DrawLine(xLine - (5 * context.Density), y, xLine, y, _linePaint);
+                canvas.DrawLine(xLine - (NTChartTokens.AxisTickLength * context.Density), y, xLine, y, _linePaint);
                 canvas.DrawText(tick.Label, xLine - (8 * context.Density), y + (4 * context.Density), SKTextAlign.Right, _textFont, _textPaint);
             }
         }
@@ -161,7 +162,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             var titleTickPadding = 12 * context.Density;
             canvas.Save();
             if (isSecondary) {
-                var titleX = plotArea.Right + _titleWidth + (2 * context.Density);
+                var titleX = plotArea.Right + (8 * context.Density) + _measuredLabelWidth + (4 * context.Density);
                 canvas.RotateDegrees(90, titleX, centerY);
                 canvas.DrawText(Title, titleX, centerY, SKTextAlign.Center, _titleFont, _titlePaint);
             }
@@ -241,17 +242,17 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         return labels.Count > 0 ? labels : null;
     }
 
-    private bool HasHorizontalBarsForCurrentAxis() {
+    private bool HasGridlessSeriesForCurrentAxis() {
         if (Chart is not NTChart<TData> ntChart) {
             return false;
         }
 
         var useSecondaryAxis = IsSecondary(Chart);
         return ntChart.Series
-            .OfType<NTBarSeries<TData>>()
+            .OfType<NTCartesianSeries<TData>>()
             .Any(s => s.IsEffectivelyVisible
-                      && s.Orientation == NTChartOrientation.Horizontal
-                      && s.UseSecondaryYAxis == useSecondaryAxis);
+                      && s.UseSecondaryYAxis == useSecondaryAxis
+                      && (s is NTHeatMapSeries<TData> || s is NTBarSeries<TData> { Orientation: NTChartOrientation.Horizontal }));
     }
 
     private void BuildHorizontalCategoryTicks(List<string> labels) {
@@ -472,10 +473,9 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
 
     private void InitializePaints(NTRenderContext context) {
         _textPaint ??= new SKPaint {
-            IsAntialias = true,
-            Color = context.TextColor
+            IsAntialias = true
         };
-        _textPaint.Color = context.TextColor;
+        _textPaint.Color = NTChartTokens.SecondaryTextColor(Chart);
 
         _titlePaint ??= new SKPaint {
             IsAntialias = true,
@@ -488,7 +488,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             Style = SKPaintStyle.Stroke,
             IsAntialias = true
         };
-        _linePaint.Color = context.TextColor;
+        _linePaint.Color = Chart.GetThemeColor(NTColor.Outline);
         _linePaint.StrokeWidth = context.Density;
 
         _gridLinePaint ??= new SKPaint {
@@ -499,10 +499,10 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         _gridLinePaint.Color = Chart.GetThemeColor(GridLineColor);
         _gridLinePaint.StrokeWidth = context.Density;
 
-        _textFont ??= new SKFont(context.DefaultFont.Typeface, AxisFontSize * context.Density);
+        _textFont ??= new SKFont(NTChartTokens.Typeface(NTTypography.BodySmall), AxisFontSize * context.Density);
         _textFont.Size = AxisFontSize * context.Density;
 
-        _titleFont ??= new SKFont(context.DefaultFont.Typeface, TitleFontSize * context.Density);
+        _titleFont ??= new SKFont(NTChartTokens.Typeface(NTTypography.TitleSmall), TitleFontSize * context.Density);
         _titleFont.Size = TitleFontSize * context.Density;
     }
 

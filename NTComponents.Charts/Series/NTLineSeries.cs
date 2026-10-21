@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using NTComponents.Charts.Core.Axes;
@@ -34,7 +35,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         decimal YMin,
         decimal YMax,
         NTAxisScale YScale,
-        LineInterpolation Interpolation);
+        LineInterpolation Interpolation,
+        LineStyle LineStyle);
 
     /// <summary>
     ///     Gets or sets the width of the line.
@@ -98,9 +100,18 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     private NTChart<TData>? _themeColorChart;
     private Func<NTColor, SKColor>? _themeColorSelector;
 
-    private List<RenderPointInfo>? _cachedRenderPoints;
+    // Reused across rebuilds; valid while _cachedRenderKey matches. _renderScreenPoints mirrors _renderPoints[i].Point for path building.
+    private readonly List<RenderPointInfo> _renderPoints = [];
+    private readonly List<SKPoint> _renderScreenPoints = [];
     private RenderCacheKey? _cachedRenderKey;
     private (double MinX, double MaxX, NTDateGroupingLevel Level, AggregationMode Mode, decimal MinY, decimal MaxY)? _cachedGroupedRange;
+    private int _renderVersion;
+
+    /// <summary>Gets a counter that changes whenever the cached screen points are rebuilt.</summary>
+    protected int RenderVersion => _renderVersion;
+
+    /// <summary>Gets the screen points of the stroked line as of the last render pass.</summary>
+    protected List<SKPoint> RenderScreenPoints => _renderScreenPoints;
 
     /// <inheritdoc />
     protected override void Dispose(bool disposing) {
@@ -118,7 +129,6 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
     /// <inheritdoc />
     protected override void OnDataChanged() {
-        _cachedRenderPoints = null;
         _cachedRenderKey = null;
         _linePathKey = null;
         _hitTestPathKey = null;
@@ -278,8 +288,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         var (cullMinX, cullMaxX) = ExpandCullRange(xMin, xMax, plotWidth, density, useAxisDateGrouping, axisDateGroupingLevel);
         var window = useAxisDateGrouping
             ? GetVisibleWindowIncludingGroupedBuckets(cullMinX, cullMaxX, axisDateGroupingLevel)
-            : GetVisibleWindow(cullMinX, cullMaxX);
-        if (window.Count == 0) {
+            : GetVisibleSpan(cullMinX, cullMaxX);
+        if (window.Length == 0) {
             yValue = 0m;
             return false;
         }
@@ -293,8 +303,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         if (idx <= 0) {
             chosen = 0;
         }
-        else if (idx >= window.Count) {
-            chosen = window.Count - 1;
+        else if (idx >= window.Length) {
+            chosen = window.Length - 1;
         }
         else {
             chosen = Math.Abs(window[idx].X - xValue) < Math.Abs(window[idx - 1].X - xValue) ? idx : idx - 1;
@@ -303,7 +313,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return true;
     }
 
-    private bool TryGetBucketAggregatedY(List<VisiblePoint> window, long bucketKey, double xValue, NTDateGroupingLevel groupingLevel, out decimal aggregatedY) {
+    private bool TryGetBucketAggregatedY(ReadOnlySpan<VisiblePoint> window, long bucketKey, double xValue, NTDateGroupingLevel groupingLevel, out decimal aggregatedY) {
         var hasExactBucket = false;
         long nearestBucket = 0;
         var nearestDistance = long.MaxValue;
@@ -377,9 +387,9 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return true;
     }
 
-    private static int LowerBoundVisible(List<VisiblePoint> values, double target) {
+    private static int LowerBoundVisible(ReadOnlySpan<VisiblePoint> values, double target) {
         var lo = 0;
-        var hi = values.Count;
+        var hi = values.Length;
         while (lo < hi) {
             var mid = lo + ((hi - lo) / 2);
             if (values[mid].X < target) {
@@ -422,7 +432,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         }
 
         var window = GetGroupedRangeWindow(xRange.Value.Min, xRange.Value.Max, level);
-        if (window.Count == 0) {
+        if (window.Length == 0) {
             return base.GetYRange(xMin, xMax);
         }
 
@@ -439,8 +449,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return groupedRange.Value;
     }
 
-    private (decimal Min, decimal Max)? GetGroupedDateYRangeForWindow(List<VisiblePoint> window, NTDateGroupingLevel groupingLevel) {
-        if (window.Count == 0) {
+    private (decimal Min, decimal Max)? GetGroupedDateYRangeForWindow(ReadOnlySpan<VisiblePoint> window, NTDateGroupingLevel groupingLevel) {
+        if (window.Length == 0) {
             return null;
         }
 
@@ -554,11 +564,15 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         _linePaint.StrokeWidth = StrokeWidth * context.Density;
         _linePaint.PathEffect = LineStyle == LineStyle.Dashed ? GetDashEffect(context.Density) : null;
 
+        if (points.Count > 1) {
+            RenderFill(context, renderArea, color);
+        }
+
         if (LineStyle != LineStyle.None && points.Count > 1) {
             if (OnDataPointRender == null) {
                 if (_linePath is null || !_linePathKey.HasValue || !_linePathKey.Value.Equals(renderKey)) {
                     _linePath?.Dispose();
-                    _linePath = BuildPath(points.Select(p => p.Point).ToList());
+                    _linePath = BuildPath(_renderScreenPoints);
                     _linePathKey = renderKey;
                 }
                 canvas.DrawPath(_linePath, _linePaint);
@@ -646,6 +660,21 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return renderArea;
     }
 
+    /// <summary>Draws beneath the line, using <see cref="RenderScreenPoints"/>. Does nothing by default.</summary>
+    /// <param name="context">The rendering context.</param>
+    /// <param name="renderArea">The plot area.</param>
+    /// <param name="color">The series color with hover and visibility alpha applied.</param>
+    protected virtual void RenderFill(NTRenderContext context, SKRect renderArea, SKColor color) { }
+
+    /// <summary>Converts a data Y value to a canvas Y coordinate exactly as this series places its own points.</summary>
+    /// <param name="y">The data Y value.</param>
+    /// <param name="renderArea">The plot area.</param>
+    protected float ScaleSeriesY(decimal y, SKRect renderArea) {
+        var yAxis = (UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis) as NTAxisOptions<TData>;
+        var (yMin, yMax) = Chart.GetYRange(yAxis, true);
+        return ScaleYFast(y, yMin, yMax, yAxis?.Scale ?? NTAxisScale.Linear, renderArea);
+    }
+
     private SKPathEffect GetDashEffect(float density) {
         if (_dashEffect is null || _dashEffectDensity != density) {
             _dashEffect?.Dispose();
@@ -676,7 +705,41 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
     /// <returns>A list of <see cref="SKPoint"/> values mapped to screen coordinates.</returns>
     protected List<SKPoint> GetPoints(SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax) {
         var points = GetRenderPoints(renderArea, xMin, xMax, Chart.YAxis as NTAxisOptions<TData>, Chart.Density, out _);
-        return points.Select(p => p.Point).ToList();
+        return points.ConvertAll(static p => p.Point);
+    }
+
+    /// <summary>Appends, per device-pixel column, the first, lowest, highest and last point in data order.</summary>
+    private static void AddColumnExtremes(ReadOnlySpan<RenderPointInfo> points, List<SKPoint> target) {
+        var start = 0;
+        while (start < points.Length) {
+            var column = MathF.Floor(points[start].Point.X);
+            var min = start;
+            var max = start;
+            var end = start + 1;
+            for (; end < points.Length && MathF.Floor(points[end].Point.X) == column; end++) {
+                if (points[end].Point.Y < points[min].Point.Y) {
+                    min = end;
+                }
+                if (points[end].Point.Y > points[max].Point.Y) {
+                    max = end;
+                }
+            }
+
+            var last = end - 1;
+            var (low, high) = min < max ? (min, max) : (max, min);
+            target.Add(points[start].Point);
+            if (low != start && low != last) {
+                target.Add(points[low].Point);
+            }
+            if (high != start && high != last && high != low) {
+                target.Add(points[high].Point);
+            }
+            if (last != start) {
+                target.Add(points[last].Point);
+            }
+
+            start = end;
+        }
     }
 
     private List<RenderPointInfo> GetRenderPoints(SKRect renderArea, double xMin, double xMax, NTAxisOptions<TData>? yAxis, float density, out RenderCacheKey key) {
@@ -711,33 +774,38 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             decimal.Round(yMin, 6),
             decimal.Round(yMax, 6),
             yScale,
-            Interpolation);
+            Interpolation,
+            LineStyle);
 
-        if (_cachedRenderPoints is not null && _cachedRenderKey.HasValue && _cachedRenderKey.Value.Equals(key)) {
-            return _cachedRenderPoints;
+        var points = _renderPoints;
+        if (_cachedRenderKey.HasValue && _cachedRenderKey.Value.Equals(key)) {
+            return points;
         }
 
+        _cachedRenderKey = null;
+        _renderVersion++;
+        points.Clear();
+        _renderScreenPoints.Clear();
         var (cullMinX, cullMaxX) = ExpandCullRange(xMin, xMax, renderArea.Width, density, useAxisDateGrouping, axisDateGroupingLevel);
         var visibleData = useAxisDateGrouping
             ? GetVisibleWindowIncludingGroupedBuckets(cullMinX, cullMaxX, axisDateGroupingLevel)
-            : GetVisibleWindow(cullMinX, cullMaxX);
-        if (visibleData.Count == 0) {
-            _cachedRenderPoints = [];
+            : GetVisibleSpan(cullMinX, cullMaxX);
+        if (visibleData.Length == 0) {
             _cachedRenderKey = key;
-            return _cachedRenderPoints;
+            return points;
         }
 
         var easedProgress = (decimal)progress;
         var vFactor = (decimal)visibility;
 
         if (useAxisDateGrouping) {
-            _cachedRenderPoints = GetAxisGroupedDatePoints(visibleData, renderArea, xMin, xMax, yMin, yMax, yScale, easedProgress, vFactor, axisDateGroupingLevel);
+            AddAxisGroupedDatePoints(points, visibleData, renderArea, xMin, xMax, yMin, yMax, yScale, easedProgress, vFactor, axisDateGroupingLevel);
         }
-        else if (shouldAggregate && visibleData.Count > effectiveAggregationThreshold) {
-            _cachedRenderPoints = GetAggregatedPoints(visibleData, renderArea, xMin, xMax, yMin, yMax, yScale, easedProgress, vFactor, pixelCapacity);
+        else if (shouldAggregate && visibleData.Length > effectiveAggregationThreshold) {
+            AddAggregatedPoints(points, visibleData, renderArea, xMin, xMax, yMin, yMax, yScale, easedProgress, vFactor, pixelCapacity);
         }
         else {
-            var points = new List<RenderPointInfo>(visibleData.Count);
+            points.EnsureCapacity(visibleData.Length);
             foreach (var item in visibleData) {
                 var targetY = YValueSelector(item.Data);
                 var animatedY = (targetY * easedProgress) * vFactor * vFactor;
@@ -746,16 +814,27 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
                 var screenY = ScaleYFast(animatedY, yMin, yMax, yScale, renderArea);
                 points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), item.Data, item.Index, targetY));
             }
+        }
 
-            _cachedRenderPoints = points;
+        // A dense straight solid line rasterizes the same from each device-pixel column's first, min, max and last point,
+        // so only the stroked path is decimated; markers, labels and hit resolution keep every real point.
+        if (Interpolation == LineInterpolation.Straight && LineStyle == LineStyle.Solid && points.Count > renderArea.Width * 2) {
+            AddColumnExtremes(CollectionsMarshal.AsSpan(points), _renderScreenPoints);
+        }
+        else {
+            _renderScreenPoints.EnsureCapacity(points.Count);
+            foreach (var point in points) {
+                _renderScreenPoints.Add(point.Point);
+            }
         }
 
         _cachedRenderKey = key;
-        return _cachedRenderPoints;
+        return points;
     }
 
-    private List<RenderPointInfo> GetAxisGroupedDatePoints(
-        List<VisiblePoint> visibleData,
+    private void AddAxisGroupedDatePoints(
+        List<RenderPointInfo> points,
+        ReadOnlySpan<VisiblePoint> visibleData,
         SKRect renderArea,
         double xMin,
         double xMax,
@@ -766,11 +845,10 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         decimal vFactor,
         NTDateGroupingLevel groupingLevel) {
 
-        if (visibleData.Count == 0) {
-            return [];
+        if (visibleData.Length == 0) {
+            return;
         }
 
-        var points = new List<RenderPointInfo>(Math.Min(visibleData.Count, 1024));
         var mode = AggregationMode;
         var useMedian = mode == AggregationMode.Median;
         var medianValues = useMedian ? new List<decimal>(32) : null;
@@ -852,7 +930,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             }
 
             var animatedY = (aggregatedY * easedProgress) * vFactor * vFactor;
-            var renderX = GetVisibleBucketAnchorX(currentBucket, groupingLevel, xMin, xMax, cullBufferData);
+            // A day bucket key is the point's own timestamp, so a real day point is drawn there; only synthetic gap days are centered.
+            var renderX = groupingLevel == NTDateGroupingLevel.Day ? currentBucket : GetVisibleBucketAnchorX(currentBucket, groupingLevel, xMin, xMax, cullBufferData);
             var screenX = ScaleXFast(renderX, xMin, xMax, renderArea);
             var screenY = ScaleYFast(animatedY, yMin, yMax, yScale, renderArea);
             points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), selected.Data, selected.Index, aggregatedY));
@@ -905,8 +984,6 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
                 trailingBucket = nextBucket;
             }
         }
-
-        return points;
     }
 
     private static double GetVisibleBucketAnchorX(long bucketKey, NTDateGroupingLevel groupingLevel, double xMin, double xMax, double cullBufferData) {
@@ -941,7 +1018,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         };
     }
 
-    private List<VisiblePoint> GetVisibleWindowIncludingGroupedBuckets(double minX, double maxX, NTDateGroupingLevel groupingLevel) {
+    private ReadOnlySpan<VisiblePoint> GetVisibleWindowIncludingGroupedBuckets(double minX, double maxX, NTDateGroupingLevel groupingLevel) {
         if (maxX < minX) {
             (minX, maxX) = (maxX, minX);
         }
@@ -953,17 +1030,17 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
 
         var inclusiveStart = Math.BitDecrement(bucketStart);
         var inclusiveEnd = Math.BitIncrement(bucketEnd);
-        var window = GetVisibleWindow(inclusiveStart, inclusiveEnd, overscan: 0);
-        if (window.Count > 0) {
+        var window = GetVisibleSpan(inclusiveStart, inclusiveEnd, overscan: 0);
+        if (window.Length > 0) {
             return window;
         }
 
         // If no points are inside the computed bucket span (for example sparse data),
         // fall back to the nearest visible point window so interactions remain stable.
-        return GetVisibleWindow(minX, maxX, overscan: 1);
+        return GetVisibleSpan(minX, maxX, overscan: 1);
     }
 
-    private List<VisiblePoint> GetGroupedRangeWindow(double minX, double maxX, NTDateGroupingLevel groupingLevel) {
+    private ReadOnlySpan<VisiblePoint> GetGroupedRangeWindow(double minX, double maxX, NTDateGroupingLevel groupingLevel) {
         if (maxX < minX) {
             (minX, maxX) = (maxX, minX);
         }
@@ -973,12 +1050,12 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         var (bucketStart, _) = GetDateBucketRange(firstBucket, groupingLevel);
         var (_, bucketEnd) = GetDateBucketRange(lastBucket, groupingLevel);
 
-        var window = GetVisibleWindow(bucketStart, bucketEnd, overscan: 0);
-        if (window.Count > 0) {
+        var window = GetVisibleSpan(bucketStart, bucketEnd, overscan: 0);
+        if (window.Length > 0) {
             return window;
         }
 
-        return GetVisibleWindow(minX, maxX, overscan: 0);
+        return GetVisibleSpan(minX, maxX, overscan: 0);
     }
 
     private static (double Min, double Max) ExpandCullRange(
@@ -1073,13 +1150,13 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return Math.Max(2, (int)MathF.Ceiling(renderArea.Width * 1.25f));
     }
 
-    private static bool HasDateBucketGaps(List<VisiblePoint> window, NTDateGroupingLevel groupingLevel) {
-        if (window.Count < 2) {
+    private static bool HasDateBucketGaps(ReadOnlySpan<VisiblePoint> window, NTDateGroupingLevel groupingLevel) {
+        if (window.Length < 2) {
             return false;
         }
 
         var previousBucket = GetDateBucketKey(window[0].X, groupingLevel);
-        for (var i = 1; i < window.Count; i++) {
+        for (var i = 1; i < window.Length; i++) {
             var bucket = GetDateBucketKey(window[i].X, groupingLevel);
             if (bucket == previousBucket) {
                 continue;
@@ -1095,8 +1172,8 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return false;
     }
 
-    private static bool VisibleRangeContainsMissingDayBuckets(List<VisiblePoint> window, double minX, double maxX, NTDateGroupingLevel groupingLevel) {
-        if (window.Count == 0) {
+    private static bool VisibleRangeContainsMissingDayBuckets(ReadOnlySpan<VisiblePoint> window, double minX, double maxX, NTDateGroupingLevel groupingLevel) {
+        if (window.Length == 0) {
             return false;
         }
 
@@ -1129,8 +1206,9 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         };
     }
 
-    private List<RenderPointInfo> GetAggregatedPoints(
-        List<VisiblePoint> visibleData,
+    private void AddAggregatedPoints(
+        List<RenderPointInfo> points,
+        ReadOnlySpan<VisiblePoint> visibleData,
         SKRect renderArea,
         double xMin,
         double xMax,
@@ -1141,7 +1219,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         decimal vFactor,
         int pixelCapacity) {
 
-        var bucketCount = Math.Min(visibleData.Count, pixelCapacity);
+        var bucketCount = Math.Min(visibleData.Length, pixelCapacity);
         var buckets = new List<VisiblePoint>[bucketCount];
         for (var i = 0; i < buckets.Length; i++) {
             buckets[i] = [];
@@ -1158,7 +1236,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             buckets[bucketIndex].Add(item);
         }
 
-        var points = new List<RenderPointInfo>(bucketCount);
+        points.EnsureCapacity(bucketCount);
         foreach (var bucket in buckets) {
             if (bucket.Count == 0) {
                 continue;
@@ -1204,8 +1282,6 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
             var screenY = ScaleYFast(animatedY, yMin, yMax, yScale, renderArea);
             points.Add(new RenderPointInfo(new SKPoint(screenX, screenY), representative.Data, representative.Index, aggregatedY));
         }
-
-        return points;
     }
 
     private static decimal CalculateMedian(IEnumerable<decimal> values) {
@@ -1358,7 +1434,7 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         if (points.Count > 1 && LineStyle != LineStyle.None) {
             if (_hitTestPath is null || !_hitTestPathKey.HasValue || !_hitTestPathKey.Value.Equals(renderKey)) {
                 _hitTestPath?.Dispose();
-                _hitTestPath = BuildPath(points.Select(p => p.Point).ToList());
+                _hitTestPath = BuildPath(_renderScreenPoints);
                 _hitTestPathKey = renderKey;
             }
 

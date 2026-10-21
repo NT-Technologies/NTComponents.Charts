@@ -124,7 +124,8 @@ public class SeriesCaching_Tests : BunitContext {
         series.Invalidate();
         series.Render(context, area);
 
-        Field(series, "_cachedBarRects").Should().NotBeSameAs(rectangles);
+        var rebuilt = (List<SKRect>)Field(series, "_cachedBarRects");
+        rebuilt[0].Height.Should().BeGreaterThan(rebuilt[1].Height, "the geometry must reflect A=30 over B=20 after invalidation, not the stale A=10");
         selectorCalls.Should().BeGreaterThan(firstSelectorCalls);
         renderCalls.Should().Be(6);
     }

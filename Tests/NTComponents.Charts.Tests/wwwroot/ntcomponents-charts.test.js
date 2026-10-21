@@ -6,12 +6,14 @@ let frames;
 let intersections;
 let sizes;
 let densityQueries;
+let motionQuery;
 
 beforeEach(() => {
     frames = new Map();
     intersections = [];
     sizes = [];
     densityQueries = [];
+    motionQuery = Object.assign(new EventTarget(), { matches: false, media: '(prefers-reduced-motion: reduce)' });
     globalThis.IntersectionObserver = class {
         constructor(callback) { this.callback = callback; intersections.push(this); }
         observe() {}
@@ -29,7 +31,7 @@ beforeEach(() => {
         devicePixelRatio: 2,
         requestAnimationFrame: callback => { frames.set(++frameId, callback); return frameId; },
         cancelAnimationFrame: id => frames.delete(id),
-        matchMedia: query => { const target = Object.assign(new EventTarget(), { media: query }); densityQueries.push(target); return target; },
+        matchMedia: query => { if (query.includes('prefers-reduced-motion')) { return motionQuery; } const target = Object.assign(new EventTarget(), { media: query }); densityQueries.push(target); return target; },
         NTComponents: {
             getColorValueFromEnumName: name => ({ Primary: '#123456', Surface: '#fafafa' })[name] ?? null
         }
@@ -96,6 +98,54 @@ for (const preventDefault of [false, true]) {
         assert.equal(calls.length, 1);
     });
 }
+
+test('a theme stylesheet that loads after the chart starts triggers one theme refresh', async () => {
+    let themeLoaded = false;
+    window.NTComponents.getColorValueFromEnumName = name => (themeLoaded && name === 'Primary' ? '#123456' : null);
+    const calls = [];
+    const chart = initializeChart(new EventTarget(), { invokeMethodAsync: async name => calls.push(name) }, false);
+
+    document.dispatchEvent(new Event('load'));
+    await Promise.resolve();
+    assert.deepEqual(calls, [], 'an unrelated resource load before the theme applies changes nothing');
+
+    themeLoaded = true;
+    document.dispatchEvent(new Event('load'));
+    document.dispatchEvent(new Event('load'));
+    await Promise.resolve();
+    assert.deepEqual(calls, ['OnThemeChanged']);
+    chart.dispose();
+});
+
+test('a theme event fired mid-swap waits for the new stylesheet before refreshing', async () => {
+    let themeLoaded = true;
+    window.NTComponents.getColorValueFromEnumName = name => (themeLoaded && name === 'Primary' ? '#123456' : null);
+    const calls = [];
+    const chart = initializeChart(new EventTarget(), { invokeMethodAsync: async name => calls.push(name) }, false);
+
+    themeLoaded = false;
+    document.dispatchEvent(new Event('nt-theme-changed'));
+    document.dispatchEvent(new Event('nt-theme-changed'));
+    await Promise.resolve();
+    assert.deepEqual(calls, [], 'empty variables mid-swap must not refresh the chart');
+
+    themeLoaded = true;
+    document.dispatchEvent(new Event('load'));
+    document.dispatchEvent(new Event('load'));
+    await Promise.resolve();
+    assert.deepEqual(calls, ['OnThemeChanged']);
+    chart.dispose();
+});
+
+test('a chart that starts with its theme already applied adds no load listener', async () => {
+    const calls = [];
+    const chart = initializeChart(new EventTarget(), { invokeMethodAsync: async name => calls.push(name) }, false);
+
+    document.dispatchEvent(new Event('load'));
+    await Promise.resolve();
+    assert.deepEqual(calls, []);
+    chart.dispose();
+});
 
 test('theme and wheel callbacks tolerate a disconnected Blazor circuit', async () => {
     const element = new EventTarget();
@@ -205,4 +255,24 @@ test('wheel prevention follows updated interaction flags', async () => {
     element.dispatchEvent(disabled);
     assert.equal(disabled.defaultPrevented, false);
     listener.dispose();
+});
+
+test('reduced motion is reported at start only when set and again whenever the preference changes', async () => {
+    const quiet = [];
+    initializeChart(new EventTarget(), { invokeMethodAsync: async (...args) => quiet.push(args) }, false).dispose();
+    assert.equal(quiet.some(call => call[0] === 'OnReducedMotionChanged'), false);
+
+    motionQuery.matches = true;
+    const calls = [];
+    const listener = initializeChart(new EventTarget(), { invokeMethodAsync: async (...args) => calls.push(args) }, false);
+    assert.deepEqual(calls.filter(call => call[0] === 'OnReducedMotionChanged'), [['OnReducedMotionChanged', true]]);
+
+    motionQuery.matches = false;
+    motionQuery.dispatchEvent(new Event('change'));
+    assert.deepEqual(calls.filter(call => call[0] === 'OnReducedMotionChanged').at(-1), ['OnReducedMotionChanged', false]);
+
+    listener.dispose();
+    const before = calls.length;
+    motionQuery.dispatchEvent(new Event('change'));
+    assert.equal(calls.length, before);
 });

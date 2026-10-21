@@ -29,6 +29,9 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     [Parameter]
     public bool AnimationEnabled { get; set; } = true;
 
+    // AnimationEnabled unless the user prefers reduced motion; animations read this so they snap to their target.
+    internal bool AnimationActive => AnimationEnabled && Chart?.ReducedMotion != true;
+
     /// <summary>
     ///     Gets or sets the color of the series. If null, a color will be chosen from the chart's palette.
     /// </summary>
@@ -54,14 +57,14 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
 
 
     /// <summary>
-    ///     Gets the current hover factor (0.15 to 1.0) for animation.
+    ///     Gets the current hover factor (0.38 to 1.0) for animation.
     /// </summary>
     public float HoverFactor {
         get {
-            // Target is 1.0 if this series is hovered OR if nothing is hovered. Target is 0.15 if another series is hovered.
-            float target = (Chart.HoveredSeries == null || Chart.HoveredSeries == this) ? 1f : 0.15f;
+            // Target is 1.0 if this series is hovered OR if nothing is hovered. Target is the Material 3 de-emphasis opacity if another series is hovered.
+            float target = (Chart.HoveredSeries == null || Chart.HoveredSeries == this) ? 1f : NTChartTokens.DeEmphasisOpacity;
 
-            if (!AnimationEnabled) {
+            if (!AnimationActive) {
                 return target;
             }
 
@@ -87,6 +90,19 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
 
             return _currentHoverFactor;
         }
+    }
+
+    /// <summary>Set by the chart while the pointer button is down over this series' hovered mark; selects the pressed state layer.</summary>
+    internal bool IsPressed { get; set; }
+
+    /// <summary>The Material 3 state layer opacity for the hovered mark: pressed while <see cref="IsPressed" />, otherwise hover.</summary>
+    internal float StateLayerOpacity => IsPressed ? NTChartTokens.PressedOpacity : NTChartTokens.HoverOpacity;
+
+    /// <summary>The series' reusable fill paint for its state layer overlay, set to <paramref name="color" />.</summary>
+    internal SKPaint GetStateLayerPaint(SKColor color) {
+        _stateLayerPaint ??= new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
+        _stateLayerPaint.Color = color;
+        return _stateLayerPaint;
     }
 
     /// <summary>
@@ -195,7 +211,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     /// </summary>
     public float VisibilityFactor {
         get {
-            if (!AnimationEnabled) {
+            if (!AnimationActive) {
                 return _currentVisibility = Visible ? 1f : 0f;
             }
 
@@ -227,7 +243,10 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     /// </summary>
     protected DateTime AnimationStartTime {
         get => DateTime.Now - NTChartMotion.ElapsedSince(_animationStartTimestamp);
-        set => _animationStartTimestamp = NTChartMotion.TimestampFor(value);
+        set {
+            _animationStartTimestamp = NTChartMotion.TimestampFor(value);
+            _animationPending = false;
+        }
     }
 
     /// <summary>
@@ -244,12 +263,14 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     /// </summary>
     protected IEnumerable<TData>? PreviousData { get; set; }
 
+    private SKPaint? _stateLayerPaint;
     private float _currentHoverFactor = 1f;
     private float _currentVisibility = 1f;
     private long? _hoverAnimationStartTime;
     private bool _lastVisible = true;
     private float _startHoverFactor = 1f;
     private long _animationStartTimestamp = NTChartMotion.Timestamp;
+    private bool _animationPending;
 
     private float _startVisibility = 1f;
 
@@ -282,6 +303,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
             NestedSeriesParent?.UnregisterChildSeries(this);
             Chart?.UnregisterSeries(this);
             Chart?.UnregisterRenderable(this);
+            _stateLayerPaint?.Dispose();
         }
     }
 
@@ -304,14 +326,14 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
 
     internal virtual bool RequiresAnimationFrame {
         get {
-            if (!AnimationEnabled) {
+            if (!AnimationActive) {
                 _dataAnimationActive = false;
                 _visibilityAnimationStartTime = null;
                 _hoverAnimationStartTime = null;
                 return false;
             }
 
-            var dataAnimating = _dataAnimationActive && GetAnimationProgress() < 1f;
+            var dataAnimating = _dataAnimationActive && IsAnimationRunning;
             if (!dataAnimating) {
                 _dataAnimationActive = false;
             }
@@ -326,8 +348,8 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     ///     Resets the animation to start from the beginning.
     /// </summary>
     public void ResetAnimation() {
-        _animationStartTimestamp = NTChartMotion.Timestamp;
-        _dataAnimationActive = AnimationEnabled && HasData;
+        _animationPending = true;
+        _dataAnimationActive = AnimationActive && HasData;
         Chart?.RequestDraw();
     }
 
@@ -382,7 +404,7 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     /// <summary>
     ///     Registers any categorical X values the series has.
     /// </summary>
-    internal virtual void RegisterXValues(HashSet<object> values) { }
+    internal virtual void RegisterXValues(List<object> values, HashSet<object> seen) { }
 
     /// <summary>
     ///     Registers any categorical Y values the series has.
@@ -404,6 +426,10 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     internal virtual bool IsLegendItemHovered(LegendItemInfo<TData> item) {
         if (!item.InteractsWithChart) {
             return false;
+        }
+
+        if (ReferenceEquals(Chart.HoveredLegendItem, item)) {
+            return true;
         }
 
         return item.Index.HasValue
@@ -472,13 +498,24 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     ///     Returns the normalised animation progress (0.0–1.0) based on elapsed time since <see cref="AnimationStartTime" />.
     /// </summary>
     protected float GetAnimationProgress() {
-        if (!AnimationEnabled) {
+        if (!AnimationActive) {
             return 1.0f;
+        }
+
+        // The clock starts at the first progress read after a reset, which only render paths make.
+        if (_animationPending) {
+            _animationPending = false;
+            _animationStartTimestamp = NTChartMotion.Timestamp;
         }
 
         var elapsed = NTChartMotion.ElapsedSince(_animationStartTimestamp);
         return NTChartMotion.Progress(elapsed, AnimationDuration);
     }
+
+    /// <summary>
+    ///     Gets whether the data animation is waiting for its first render or still running, without starting its clock.
+    /// </summary>
+    protected bool IsAnimationRunning => AnimationActive && (_animationPending || NTChartMotion.Progress(NTChartMotion.ElapsedSince(_animationStartTimestamp), AnimationDuration) < 1f);
 
     /// <summary>
     ///     Called when the data reference changes.
@@ -588,6 +625,13 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
     protected override void OnParametersSet() {
         base.OnParametersSet();
 
+        if (_hasTitle && _lastTitle != Title) {
+            // The legend and tooltips label the series by Title.
+            Chart?.RequestDraw(geometryChanged: true);
+        }
+        _lastTitle = Title;
+        _hasTitle = true;
+
         if (_previousAnimationEnabled != AnimationEnabled) {
             _previousAnimationEnabled = AnimationEnabled;
             if (AnimationEnabled) {
@@ -616,6 +660,9 @@ public abstract class NTBaseSeries<TData> : ComponentBase, ISeries where TData :
             _previousXValue = XValue;
         }
     }
+
+    private string? _lastTitle;
+    private bool _hasTitle;
 
     private void HandleVisibilityChanged() {
         _startVisibility = _currentVisibility;

@@ -27,11 +27,13 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         int SeriesIndex,
         Func<TData, decimal> ValueSelector,
         Func<TData, object> XValue);
+
+    private readonly record struct BarEntry(decimal Total, NTBarSegment[]? Segments, List<NTBarSegment>? DrawnSegments);
     /// <summary>
     ///     Gets or sets the corner radius for the bars.
     /// </summary>
     [Parameter]
-    public float CornerRadius { get; set; } = 0.0f;
+    public float CornerRadius { get; set; } = NTChartTokens.Radius(NTCornerRadius.ExtraSmall);
 
     /// <summary>
     ///    Gets or sets the orientation of the chart (Vertical or Horizontal).
@@ -68,21 +70,23 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     ///     Gets or sets the opacity applied to non-hovered bars when <see cref="FadeOtherBarsOnHover" /> is enabled.
     /// </summary>
     [Parameter]
-    public float NonHoveredBarOpacity { get; set; } = 0.15f;
+    public float NonHoveredBarOpacity { get; set; } = NTChartTokens.DeEmphasisOpacity;
 
     private SKPaint? _barPaint;
     private SKPaint? _highlightPaint;
-    private SKPaint? _labelPaint;
-    private SKPaint? _labelBgPaint;
-    private SKPaint? _labelBorderPaint;
-    private SKFont? _labelFont;
-    private List<TData>? _dataSnapshot;
-    private List<SKRect>? _cachedBarRects;
-    private List<decimal>? _cachedBarValues;
+    private SKRoundRect? _barRoundRect;
+    private readonly SKPoint[] _barRadii = new SKPoint[4];
+    // Buffers are reused: the snapshot is valid while _dataSnapshotValid, the geometry while _cachedBarGeometryKey is set, and
+    // _barEntries until the data, a selector or the segment visibility changes (see ClearBarCaches).
+    private readonly List<TData> _dataSnapshot = [];
+    private bool _dataSnapshotValid;
+    private readonly List<SKRect> _cachedBarRects = [];
+    private readonly List<decimal> _cachedBarValues = [];
     private BarGeometryKey? _cachedBarGeometryKey;
-    private Dictionary<TData, decimal>? _cachedValuesByData;
+    private readonly Dictionary<TData, BarEntry> _barEntries = new(ReferenceEqualityComparer.Instance);
     private Func<TData, decimal>? _cachedValueSelector;
     private Func<TData, object>? _cachedXSelector;
+    private Func<TData, IEnumerable<NTBarSegment>>? _cachedSegmentSelector;
     private NTChart<TData>? _themeColorChart;
     private Func<NTColor, SKColor>? _themeColorSelector;
     private readonly List<(SKRect Rect, int Index, int? SegmentIndex, TData Data, string? SegmentLabel, decimal SegmentValue, SKColor SegmentColor)> _lastBarRects = [];
@@ -96,47 +100,56 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     /// <inheritdoc />
     protected override void OnDataChanged() {
         base.OnDataChanged();
-        _dataSnapshot = null;
-        _cachedBarRects = null;
-        _cachedBarValues = null;
-        _cachedBarGeometryKey = null;
-        _cachedValuesByData = null;
+        _dataSnapshotValid = false;
+        ClearBarCaches();
     }
 
     /// <inheritdoc />
     protected override void OnParametersSet() {
         var valueSelector = YValueSelector;
         var xSelector = XValue;
+        var segmentSelector = SegmentSelector;
         base.OnParametersSet();
         if ((_cachedValueSelector is not null && !ReferenceEquals(_cachedValueSelector, valueSelector)) ||
-            (_cachedXSelector is not null && !ReferenceEquals(_cachedXSelector, xSelector))) {
-            _cachedBarRects = null;
-            _cachedBarValues = null;
-            _cachedBarGeometryKey = null;
-            _cachedValuesByData = null;
+            (_cachedXSelector is not null && !ReferenceEquals(_cachedXSelector, xSelector)) ||
+            !ReferenceEquals(_cachedSegmentSelector, segmentSelector)) {
+            ClearBarCaches();
         }
         _cachedValueSelector = valueSelector;
         _cachedXSelector = xSelector;
+        _cachedSegmentSelector = segmentSelector;
     }
 
-    private List<TData> GetDataSnapshot() => _dataSnapshot ??= Data?.ToList() ?? [];
+    private void ClearBarCaches() {
+        _cachedBarGeometryKey = null;
+        _barEntries.Clear();
+    }
+
+    private List<TData> GetDataSnapshot() {
+        if (!_dataSnapshotValid) {
+            _dataSnapshot.Clear();
+            if (Data is not null) {
+                _dataSnapshot.AddRange(Data);
+            }
+            _dataSnapshotValid = true;
+        }
+
+        return _dataSnapshot;
+    }
 
     private (int Count, int Index) GetVisibleBarSeriesLayout() {
-        var series = Chart.Series
-            .OfType<NTBarSeries<TData>>()
-            .Where(s => s.IsEffectivelyVisible && s.Orientation == Orientation)
-            .ToList();
-
-        if (series.Count == 0) {
-            return (1, 0);
+        var count = 0;
+        var index = 0;
+        foreach (var series in Chart.Series) {
+            if (series is NTBarSeries<TData> bar && bar.IsEffectivelyVisible && bar.Orientation == Orientation) {
+                if (ReferenceEquals(bar, this)) {
+                    index = count;
+                }
+                count++;
+            }
         }
 
-        var index = series.IndexOf(this);
-        if (index < 0) {
-            index = 0;
-        }
-
-        return (series.Count, index);
+        return count == 0 ? (1, 0) : (count, index);
     }
 
     /// <inheritdoc />
@@ -144,10 +157,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         if (disposing) {
             _barPaint?.Dispose();
             _highlightPaint?.Dispose();
-            _labelPaint?.Dispose();
-            _labelBgPaint?.Dispose();
-            _labelBorderPaint?.Dispose();
-            _labelFont?.Dispose();
+            _barRoundRect?.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -231,12 +241,12 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             var isPointHovered = Chart.HoveredSeries == this && Chart.HoveredPointIndex == i;
             var pointAlphaFactor = GetPointAlphaFactor(i);
             pointColor = ApplyAlphaFactor(pointColor, pointAlphaFactor);
-            var value = _cachedBarValues is { Count: > 0 } && SegmentSelector is null ? _cachedBarValues[i] : GetBarTotalValue(item);
+            var value = _cachedBarValues.Count > 0 && SegmentSelector is null ? _cachedBarValues[i] : GetBarTotalValue(item);
 
             if (SegmentSelector is null) {
                 _barPaint.Color = pointColor;
                 _highlightPaint.Color = pointColor.WithAlpha(255);
-                DrawBar(canvas, rect, isPointHovered ? _highlightPaint : _barPaint, context.Density);
+                DrawBar(canvas, rect, isPointHovered ? _highlightPaint : _barPaint, context.Density, GetValueEnd(value), isPointHovered ? GetStateLayerColor(pointColor) : null);
                 _lastBarRects.Add((rect, i, null, item, null, value, pointColor));
             }
             else {
@@ -251,10 +261,10 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 var labelSize = args?.DataLabelSize ?? DataLabelSize;
 
                 if (Orientation == NTChartOrientation.Vertical) {
-                    DrawVerticalBarLabel(context, renderArea, rect, value, pointColor, labelColor, labelSize, pointAlphaFactor);
+                    DrawVerticalBarLabel(context, renderArea, rect, value, pointColor, labelColor, labelSize);
                 }
                 else {
-                    DrawHorizontalBarLabel(context, renderArea, rect, value, pointColor, labelColor, labelSize, xBasePx, pointAlphaFactor);
+                    DrawHorizontalBarLabel(context, renderArea, rect, value, pointColor, labelColor, labelSize);
                 }
             }
         }
@@ -272,9 +282,13 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         }
 
         // Horizontal: X axis shows values (YValueSelector)
-        var values = dataList.Select(item => (double)GetBarTotalValue(item)).ToList();
-        var min = values.Min();
-        var max = values.Max();
+        var min = double.MaxValue;
+        var max = double.MinValue;
+        foreach (var item in dataList) {
+            var value = (double)GetBarTotalValue(item);
+            min = Math.Min(min, value);
+            max = Math.Max(max, value);
+        }
         return (min, max);
     }
 
@@ -284,20 +298,21 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         if (dataList.Count == 0) return null;
 
         if (Orientation == NTChartOrientation.Vertical) {
-            IEnumerable<TData> items = dataList;
-            if (xMin.HasValue && xMax.HasValue) {
-                var minX = Math.Min(xMin.Value, xMax.Value);
-                var maxX = Math.Max(xMin.Value, xMax.Value);
-                items = dataList.Where(item => {
-                    var x = Chart.GetScaledXValue(XValue.Invoke(item));
-                    return x >= minX && x <= maxX;
-                });
-            }
+            var windowed = xMin.HasValue && xMax.HasValue;
+            var minX = windowed ? Math.Min(xMin!.Value, xMax!.Value) : 0d;
+            var maxX = windowed ? Math.Max(xMin!.Value, xMax!.Value) : 0d;
 
             var min = decimal.MaxValue;
             var max = decimal.MinValue;
             var hasValues = false;
-            foreach (var item in items) {
+            foreach (var item in dataList) {
+                if (windowed) {
+                    var x = Chart.GetScaledXValue(XValue.Invoke(item));
+                    if (x < minX || x > maxX) {
+                        continue;
+                    }
+                }
+
                 var value = GetBarTotalValue(item) * (decimal)VisibilityFactor;
                 min = Math.Min(min, value);
                 max = Math.Max(max, value);
@@ -318,9 +333,9 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
 
     /// <inheritdoc />
-    internal override void RegisterXValues(HashSet<object> values) {
+    internal override void RegisterXValues(List<object> values, HashSet<object> seen) {
         if (Data == null || Orientation == NTChartOrientation.Horizontal) return;
-        base.RegisterXValues(values);
+        base.RegisterXValues(values, seen);
     }
 
     /// <inheritdoc />
@@ -339,149 +354,80 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
     }
 
-    private void DrawBar(SKCanvas canvas, SKRect rect, SKPaint paint, float density) {
-        if (CornerRadius > 0) {
-            var scaledRadius = CornerRadius * density;
-            canvas.DrawRoundRect(rect, scaledRadius, scaledRadius, paint);
-        }
-        else {
+    // Inset between a bar edge and a label drawn inside or beside it.
+    private const float LabelInset = 4f;
+
+    private enum BarEnd { None, Top, Bottom, Left, Right }
+
+    /// <summary>
+    ///     Fills a bar, rounding only the corners of its value end (<paramref name="end" />), then draws the Material 3 state layer when
+    ///     <paramref name="stateLayer" /> is set. The radius is clamped to half the bar thickness and to its length. The round rect and radii are reused.
+    /// </summary>
+    private void DrawBar(SKCanvas canvas, SKRect rect, SKPaint paint, float density, BarEnd end, SKColor? stateLayer = null) {
+        var horizontal = end is BarEnd.Left or BarEnd.Right;
+        var radius = Math.Min(CornerRadius * density, Math.Min((horizontal ? rect.Height : rect.Width) / 2f, horizontal ? rect.Width : rect.Height));
+        // A sub-pixel radius is invisible, and a plain rect is cheaper to rasterize than a per-corner round rect.
+        if (radius < 1f || end == BarEnd.None) {
             canvas.DrawRect(rect, paint);
+            if (stateLayer is { } plainLayer) {
+                canvas.DrawRect(rect, GetStateLayerPaint(plainLayer));
+            }
+
+            return;
+        }
+
+        var corner = new SKPoint(radius, radius);
+        _barRadii[0] = end is BarEnd.Top or BarEnd.Left ? corner : default;
+        _barRadii[1] = end is BarEnd.Top or BarEnd.Right ? corner : default;
+        _barRadii[2] = end is BarEnd.Bottom or BarEnd.Right ? corner : default;
+        _barRadii[3] = end is BarEnd.Bottom or BarEnd.Left ? corner : default;
+        _barRoundRect ??= new SKRoundRect();
+        _barRoundRect.SetRectRadii(rect, _barRadii);
+        canvas.DrawRoundRect(_barRoundRect, paint);
+        if (stateLayer is { } layer) {
+            canvas.DrawRoundRect(_barRoundRect, GetStateLayerPaint(layer));
         }
     }
 
-    private void DrawVerticalBarLabel(NTRenderContext context, SKRect renderArea, SKRect barRect, decimal value, SKColor barColor, SKColor? labelColor, float labelSize, float alphaFactor) {
-        var text = string.Format(DataLabelFormat, value);
+    /// <summary>The on-color state layer for a hovered bar filled with <paramref name="fill" />: hover opacity, or pressed opacity while the pointer is down.</summary>
+    private SKColor GetStateLayerColor(SKColor fill) => NTSeriesGeometry.WithFactor(NTSeriesGeometry.LegibleTextColor(Chart.GetSeriesTextColor(this), fill, Chart.GetThemeColor(Chart.BackgroundColor)), StateLayerOpacity * VisibilityFactor);
+
+    private BarEnd GetValueEnd(decimal value) => Orientation == NTChartOrientation.Vertical ? (value >= 0 ? BarEnd.Top : BarEnd.Bottom) : (value >= 0 ? BarEnd.Right : BarEnd.Left);
+
+    /// <summary>Only the outermost segment (the one touching the bar's value end) is rounded; segments stack from the bottom or left.</summary>
+    private BarEnd GetSegmentEnd(decimal total, int segmentIndex, int segmentCount) => segmentIndex == (total >= 0 ? segmentCount - 1 : 0) ? GetValueEnd(total) : BarEnd.None;
+
+    private void DrawVerticalBarLabel(NTRenderContext context, SKRect renderArea, SKRect barRect, decimal value, SKColor barColor, SKColor? labelColor, float labelSize) {
+        var text = FormatDataLabel(value);
         var sizePx = labelSize * context.Density;
+        var boxHeight = NTRenderContextExtensions.LabelBoxHeight(sizePx, context.Density);
+        var inset = LabelInset * context.Density;
 
-        _labelFont ??= new SKFont {
-            Typeface = context.DefaultFont.Typeface
-        };
-        _labelFont.Size = sizePx;
-
-        _labelPaint ??= new SKPaint {
-            IsAntialias = true
-        };
-        _labelPaint.Color = ApplyAlphaFactor(labelColor ?? Chart.GetSeriesTextColor(this), alphaFactor);
-
-        _labelFont.MeasureText(text, out var bounds);
-        var textHeight = bounds.Height;
-        var textWidth = bounds.Width;
-        var textPadding = 4f * context.Density;
-        var minInsideHeight = textHeight + (8f * context.Density);
-        var canRenderInside = barRect.Height >= minInsideHeight;
-
-        var centerX = barRect.MidX;
-        if (canRenderInside) {
-            var baselineY = barRect.Top + textHeight + (3f * context.Density);
-            context.Canvas.DrawText(text, centerX, baselineY, SKTextAlign.Center, _labelFont, _labelPaint);
+        if (barRect.Height >= boxHeight + (2f * inset)) {
+            DrawLabelText(context, text, barRect.MidX, barRect.Top + inset + (boxHeight / 2f), SKTextAlign.Center, sizePx, labelColor, null, barColor);
             return;
         }
 
         // If the bar is too small, render above with a background for readability.
-        var baselineAbove = barRect.Top - (4f * context.Density);
-        var minBaseline = renderArea.Top + textHeight + textPadding;
-        if (baselineAbove < minBaseline) {
-            baselineAbove = minBaseline;
-        }
-
-        var bgRect = new SKRect(
-            centerX - (textWidth / 2f) - textPadding,
-            baselineAbove - textHeight - textPadding,
-            centerX + (textWidth / 2f) + textPadding,
-            baselineAbove + textPadding);
-
-        _labelBgPaint ??= new SKPaint {
-            IsAntialias = true,
-            Style = SKPaintStyle.Fill
-        };
-        _labelBgPaint.Color = ApplyAlphaFactor(barColor.WithAlpha(235), alphaFactor);
-        context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBgPaint);
-
-        _labelBorderPaint ??= new SKPaint {
-            IsAntialias = true,
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = context.Density
-        };
-        _labelBorderPaint.Color = ApplyAlphaFactor(Chart.GetThemeColor(NTColor.OutlineVariant), alphaFactor);
-        context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBorderPaint);
-
-        context.Canvas.DrawText(text, centerX, baselineAbove, SKTextAlign.Center, _labelFont, _labelPaint);
+        var background = GetLabelBackground(barColor);
+        var centerY = Math.Max(barRect.Top - inset - (boxHeight / 2f), renderArea.Top + (boxHeight / 2f));
+        DrawLabelText(context, text, barRect.MidX, centerY, SKTextAlign.Center, sizePx, labelColor, background, background, renderArea);
     }
 
-    private void DrawHorizontalBarLabel(NTRenderContext context, SKRect renderArea, SKRect barRect, decimal value, SKColor barColor, SKColor? labelColor, float labelSize, float xAxisBase, float alphaFactor) {
-        var text = string.Format(DataLabelFormat, value);
+    private void DrawHorizontalBarLabel(NTRenderContext context, SKRect renderArea, SKRect barRect, decimal value, SKColor barColor, SKColor? labelColor, float labelSize) {
+        var text = FormatDataLabel(value);
         var sizePx = labelSize * context.Density;
+        var inset = LabelInset * context.Density;
 
-        _labelFont ??= new SKFont {
-            Typeface = context.DefaultFont.Typeface
-        };
-        _labelFont.Size = sizePx;
-
-        _labelPaint ??= new SKPaint {
-            IsAntialias = true
-        };
-        _labelPaint.Color = ApplyAlphaFactor(labelColor ?? Chart.GetSeriesTextColor(this), alphaFactor);
-
-        _labelFont.MeasureText(text, out var bounds);
-        var textHeight = bounds.Height;
-        var textWidth = bounds.Width;
-        var textPadding = 4f * context.Density;
-        var minInsideWidth = textWidth + (10f * context.Density);
-        var canRenderInside = barRect.Width >= minInsideWidth;
-
-        var baselineY = barRect.MidY + (textHeight / 2f) - (1f * context.Density);
-        if (canRenderInside) {
-            context.Canvas.DrawText(text, barRect.MidX, baselineY, SKTextAlign.Center, _labelFont, _labelPaint);
+        if (barRect.Width >= MeasureLabelText(text, sizePx) + (2f * inset)) {
+            DrawLabelText(context, text, barRect.MidX, barRect.MidY, SKTextAlign.Center, sizePx, labelColor, null, barColor);
             return;
         }
 
         var isPositive = value >= 0;
-        var textAlign = isPositive ? SKTextAlign.Left : SKTextAlign.Right;
-        var outsideOffset = 6f * context.Density;
-        var outsideX = isPositive
-            ? barRect.Right + outsideOffset
-            : barRect.Left - outsideOffset;
-
-        var bgRect = isPositive
-            ? new SKRect(
-                outsideX - textPadding,
-                baselineY - textHeight - textPadding,
-                outsideX + textWidth + textPadding,
-                baselineY + textPadding)
-            : new SKRect(
-                outsideX - textWidth - textPadding,
-                baselineY - textHeight - textPadding,
-                outsideX + textPadding,
-                baselineY + textPadding);
-
-        if (bgRect.Right > renderArea.Right) {
-            var shiftLeft = bgRect.Right - renderArea.Right;
-            bgRect.Offset(-shiftLeft, 0f);
-            outsideX -= shiftLeft;
-        }
-
-        if (bgRect.Left < renderArea.Left) {
-            var shiftRight = renderArea.Left - bgRect.Left;
-            bgRect.Offset(shiftRight, 0f);
-            outsideX += shiftRight;
-        }
-
-        _labelBgPaint ??= new SKPaint {
-            IsAntialias = true,
-            Style = SKPaintStyle.Fill
-        };
-        _labelBgPaint.Color = ApplyAlphaFactor(barColor.WithAlpha(235), alphaFactor);
-        context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBgPaint);
-
-        _labelBorderPaint ??= new SKPaint {
-            IsAntialias = true,
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = context.Density
-        };
-        _labelBorderPaint.Color = ApplyAlphaFactor(Chart.GetThemeColor(NTColor.OutlineVariant), alphaFactor);
-        context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBorderPaint);
-
-        context.Canvas.DrawText(text, outsideX, baselineY, textAlign, _labelFont, _labelPaint);
+        var background = GetLabelBackground(barColor);
+        var anchorX = isPositive ? barRect.Right + inset : barRect.Left - inset;
+        DrawLabelText(context, text, anchorX, barRect.MidY, isPositive ? SKTextAlign.Left : SKTextAlign.Right, sizePx, labelColor, background, background, renderArea);
     }
 
     private List<SKRect> GetBarRects(IReadOnlyList<TData> dataList, SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax, decimal yBase, double xBase, NTAxisScale yScale, float animationFactor) {
@@ -489,21 +435,24 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             return [];
         }
 
-        var (layoutCount, layoutIndex) = GetVisibleBarSeriesLayout();
-        var key = new BarGeometryKey(renderArea, xMin, xMax, yMin, yMax, yBase, xBase, yScale, Orientation, animationFactor, Chart.Density, layoutCount, layoutIndex, YValueSelector, XValue);
-        if (SegmentSelector is null && _cachedBarRects is not null && _cachedBarGeometryKey == key) {
+        var (seriesCount, seriesIndex) = GetVisibleBarSeriesLayout();
+        var key = new BarGeometryKey(renderArea, xMin, xMax, yMin, yMax, yBase, xBase, yScale, Orientation, animationFactor, Chart.Density, seriesCount, seriesIndex, YValueSelector, XValue);
+        if (_cachedBarGeometryKey == key) {
             return _cachedBarRects;
         }
 
-        var rects = new List<SKRect>(dataList.Count);
-        var values = SegmentSelector is null ? new List<decimal>(dataList.Count) : null;
+        _cachedBarGeometryKey = null;
+        var rects = _cachedBarRects;
+        rects.Clear();
+        rects.EnsureCapacity(dataList.Count);
+        _cachedBarValues.Clear();
+        var values = SegmentSelector is null ? _cachedBarValues : null;
 
         if (Orientation == NTChartOrientation.Vertical) {
             var count = dataList.Count;
             var slotWidth = renderArea.Width / Math.Max(1, count);
             var spacing = Math.Max(1f * Chart.Density, slotWidth * 0.08f);
             var clusterWidth = Math.Max(2f, slotWidth - spacing);
-            var (seriesCount, seriesIndex) = GetVisibleBarSeriesLayout();
             var interSeriesGap = seriesCount > 1 ? Math.Min(2f * Chart.Density, clusterWidth * 0.04f) : 0f;
             var totalGap = interSeriesGap * Math.Max(0, seriesCount - 1);
             var barWidth = Math.Max(1f, (clusterWidth - totalGap) / seriesCount);
@@ -526,7 +475,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 rects.Add(new SKRect(left, top, right, bottom));
             }
 
-            CacheBarGeometry(rects, values, key);
+            _cachedBarGeometryKey = key;
             return rects;
         }
 
@@ -535,10 +484,9 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var hSlot = renderArea.Height / Math.Max(1, horizontalCount);
         var spacingY = Math.Max(1f * Chart.Density, hSlot * 0.08f);
         var clusterHeight = Math.Max(2f, hSlot - spacingY);
-        var (hSeriesCount, hSeriesIndex) = GetVisibleBarSeriesLayout();
-        var interSeriesGapY = hSeriesCount > 1 ? Math.Min(2f * Chart.Density, clusterHeight * 0.04f) : 0f;
-        var totalGapY = interSeriesGapY * Math.Max(0, hSeriesCount - 1);
-        var barHeight = Math.Max(1f, (clusterHeight - totalGapY) / hSeriesCount);
+        var interSeriesGapY = seriesCount > 1 ? Math.Min(2f * Chart.Density, clusterHeight * 0.04f) : 0f;
+        var totalGapY = interSeriesGapY * Math.Max(0, seriesCount - 1);
+        var barHeight = Math.Max(1f, (clusterHeight - totalGapY) / seriesCount);
         var baseX = Chart.ScaleX(xBase, renderArea);
 
         for (var i = 0; i < horizontalCount; i++) {
@@ -551,7 +499,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             var animatedXValue = xBase + ((xValue - xBase) * animationFactor);
             var valueX = Chart.ScaleX(animatedXValue, renderArea);
             var clusterTop = centerY - (clusterHeight / 2f);
-            var top = clusterTop + (hSeriesIndex * (barHeight + interSeriesGapY));
+            var top = clusterTop + (seriesIndex * (barHeight + interSeriesGapY));
             var bottom = top + barHeight;
 
             var left = Math.Min(baseX, valueX);
@@ -559,16 +507,8 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             rects.Add(new SKRect(left, top, right, bottom));
         }
 
-        CacheBarGeometry(rects, values, key);
+        _cachedBarGeometryKey = key;
         return rects;
-    }
-
-    private void CacheBarGeometry(List<SKRect> rects, List<decimal>? values, BarGeometryKey key) {
-        if (SegmentSelector is null) {
-            _cachedBarRects = rects;
-            _cachedBarValues = values;
-            _cachedBarGeometryKey = key;
-        }
     }
 
     private static float ScaleYFast(decimal y, decimal min, decimal max, NTAxisScale scale, SKRect plotArea) {
@@ -596,7 +536,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
     internal override TooltipInfo GetTooltipInfo(TData data) {
         var baseInfo = base.GetTooltipInfo(data);
         if (SegmentSelector is null || Chart.HoveredSeries != this || Chart.HoveredPointIndex is null) {
-            return ResolveTooltipInfo(data, baseInfo, Chart.HoveredPointIndex);
+            return baseInfo;
         }
 
         if (_lastHoveredSegmentPointIndex == Chart.HoveredPointIndex &&
@@ -671,6 +611,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 _hiddenSegmentLabels.Remove(key);
             }
 
+            ClearBarCaches();
             ResetAnimation();
             Chart?.InvalidateDataCaches();
             return;
@@ -684,17 +625,17 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             return base.GetLegendItems();
         }
 
-        var dataList = Data?.ToList() ?? [];
-        if (dataList.Count == 0) {
+        if (Data is null) {
             return base.GetLegendItems();
         }
 
         var segmentItems = new Dictionary<string, LegendItemInfo<TData>>(StringComparer.OrdinalIgnoreCase);
         var seriesColor = Chart.GetSeriesColor(this);
 
-        for (var dataIndex = 0; dataIndex < dataList.Count; dataIndex++) {
-            var item = dataList[dataIndex];
-            var segments = SegmentSelector(item) ?? [];
+        var dataIndex = -1;
+        foreach (var item in Data) {
+            dataIndex++;
+            var segments = GetBarEntry(item).Segments ?? [];
             var segmentIndex = 0;
 
             foreach (var segment in segments) {
@@ -767,32 +708,48 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         return Math.Clamp(baseAlphaFactor * NonHoveredBarOpacity, 0f, 1f);
     }
 
-    private decimal GetBarTotalValue(TData item) {
-        if (SegmentSelector is null) {
-            _cachedValuesByData ??= new Dictionary<TData, decimal>(ReferenceEqualityComparer.Instance);
-            if (!_cachedValuesByData.TryGetValue(item, out var value)) {
-                value = YValueSelector(item);
-                _cachedValuesByData.Add(item, value);
-            }
-            return value;
+    private decimal GetBarTotalValue(TData item) => GetBarEntry(item).Total;
+
+    private List<NTBarSegment> GetPointSegments(TData item) => GetBarEntry(item).DrawnSegments ?? [];
+
+    /// <summary>Evaluates the value or segment selector once per item; the total sums visible segments and the drawn list keeps the visible non-zero ones.</summary>
+    private BarEntry GetBarEntry(TData item) {
+        if (_barEntries.TryGetValue(item, out var entry)) {
+            return entry;
         }
 
-        decimal total = 0m;
-        foreach (var segment in SegmentSelector(item) ?? []) {
-            if (!IsSegmentVisible(segment)) {
-                continue;
-            }
+        if (SegmentSelector is null) {
+            entry = new BarEntry(YValueSelector(item), null, null);
+        }
+        else {
+            var segments = SegmentSelector(item)?.ToArray() ?? [];
+            var total = 0m;
+            var drawn = new List<NTBarSegment>(segments.Length);
+            foreach (var segment in segments) {
+                if (!IsSegmentVisible(segment)) {
+                    continue;
+                }
 
-            total += segment.Value;
+                total += segment.Value;
+                if (Math.Abs(segment.Value) > 0m) {
+                    drawn.Add(segment);
+                }
+            }
+            entry = new BarEntry(total, segments, drawn);
+        }
+
+        _barEntries.Add(item, entry);
+        return entry;
+    }
+
+    private static decimal SumMagnitudes(IReadOnlyList<NTBarSegment> segments) {
+        var total = 0m;
+        for (var i = 0; i < segments.Count; i++) {
+            total += Math.Abs(segments[i].Value);
         }
 
         return total;
     }
-
-    private List<NTBarSegment> GetPointSegments(TData item) => (SegmentSelector!(item) ?? [])
-        .Where(IsSegmentVisible)
-        .Where(s => Math.Abs(s.Value) > 0m)
-        .ToList();
 
     private Func<NTColor, SKColor> GetThemeColorSelector() {
         if (!ReferenceEquals(_themeColorChart, Chart)) {
@@ -809,7 +766,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         }
 
         if (Orientation == NTChartOrientation.Vertical) {
-            var totalMagnitude = segments.Sum(s => Math.Abs(s.Value));
+            var totalMagnitude = SumMagnitudes(segments);
             if (totalMagnitude <= 0m) {
                 return;
             }
@@ -831,21 +788,21 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
                 var isSegmentHovered = isPointHovered && _lastHoveredSegmentPointIndex == dataIndex && _lastHoveredSegmentIndex == segmentIndex;
                 _barPaint!.Color = segmentColor;
                 _highlightPaint!.Color = segmentColor.WithAlpha(255);
-                DrawBar(context.Canvas, segmentRect, isSegmentHovered ? _highlightPaint : _barPaint, context.Density);
+                DrawBar(context.Canvas, segmentRect, isSegmentHovered ? _highlightPaint : _barPaint, context.Density, GetSegmentEnd(totalValue, segmentIndex, segments.Count), isSegmentHovered ? GetStateLayerColor(segmentColor) : null);
                 _lastBarRects.Add((segmentRect, dataIndex, segmentIndex, data, segment.Label, segment.Value, segmentColor));
                 if (ShowDataLabels) {
-                    DrawSegmentDataLabel(context, segmentRect, segment.Value, segmentColor, isHorizontal: false, segmentAlphaFactor);
+                    DrawSegmentDataLabel(context, segmentRect, segment.Value, segmentColor, isHorizontal: false);
                 }
             }
 
             if (ShowDataLabels) {
-                DrawSegmentTotalLabel(context, renderArea, rect, totalValue, fallbackColor, isHorizontal: false, pointAlphaFactor);
+                DrawSegmentTotalLabel(context, renderArea, rect, totalValue, fallbackColor, isHorizontal: false);
             }
 
             return;
         }
 
-        var totalWidthMagnitude = segments.Sum(s => Math.Abs(s.Value));
+        var totalWidthMagnitude = SumMagnitudes(segments);
         if (totalWidthMagnitude <= 0m) {
             return;
         }
@@ -867,167 +824,43 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             var isSegmentHovered = isPointHovered && _lastHoveredSegmentPointIndex == dataIndex && _lastHoveredSegmentIndex == segmentIndex;
             _barPaint!.Color = segmentColor;
             _highlightPaint!.Color = segmentColor.WithAlpha(255);
-            DrawBar(context.Canvas, segmentRect, isSegmentHovered ? _highlightPaint : _barPaint, context.Density);
+            DrawBar(context.Canvas, segmentRect, isSegmentHovered ? _highlightPaint : _barPaint, context.Density, GetSegmentEnd(totalValue, segmentIndex, segments.Count), isSegmentHovered ? GetStateLayerColor(segmentColor) : null);
             _lastBarRects.Add((segmentRect, dataIndex, segmentIndex, data, segment.Label, segment.Value, segmentColor));
             if (ShowDataLabels) {
-                DrawSegmentDataLabel(context, segmentRect, segment.Value, segmentColor, isHorizontal: true, segmentAlphaFactor);
+                DrawSegmentDataLabel(context, segmentRect, segment.Value, segmentColor, isHorizontal: true);
             }
         }
 
         if (ShowDataLabels) {
-            DrawSegmentTotalLabel(context, renderArea, rect, totalValue, fallbackColor, isHorizontal: true, pointAlphaFactor);
+            DrawSegmentTotalLabel(context, renderArea, rect, totalValue, fallbackColor, isHorizontal: true);
         }
     }
 
-    private void DrawSegmentDataLabel(NTRenderContext context, SKRect segmentRect, decimal value, SKColor segmentColor, bool isHorizontal, float alphaFactor) {
-        var text = string.Format(DataLabelFormat, value);
-        var labelSize = DataLabelSize * context.Density;
-
-        _labelFont ??= new SKFont {
-            Typeface = context.DefaultFont.Typeface
-        };
-        _labelFont.Size = labelSize;
-
-        _labelPaint ??= new SKPaint {
-            IsAntialias = true
-        };
-        _labelPaint.Color = ApplyAlphaFactor(GetContrastTextColor(segmentColor), alphaFactor);
-
-        _labelFont.MeasureText(text, out var bounds);
-        var textWidth = bounds.Width;
-        var textHeight = bounds.Height;
-        var horizontalPad = 4f * context.Density;
-        var minWidth = textWidth + (horizontalPad * 2f);
-        var minHeight = isHorizontal
-            ? textHeight + (2f * context.Density)
-            : textHeight + (8f * context.Density);
-
-        if (segmentRect.Width < minWidth || segmentRect.Height < minHeight) {
+    private void DrawSegmentDataLabel(NTRenderContext context, SKRect segmentRect, decimal value, SKColor segmentColor, bool isHorizontal) {
+        var text = FormatDataLabel(value);
+        var sizePx = DataLabelSize * context.Density;
+        var inset = LabelInset * context.Density;
+        var minHeight = isHorizontal ? NTRenderContextExtensions.LabelLineHeight(sizePx) : NTRenderContextExtensions.LabelBoxHeight(sizePx, context.Density);
+        if (segmentRect.Width < MeasureLabelText(text, sizePx) + (2f * inset) || segmentRect.Height < minHeight) {
             return;
         }
 
-        var baselineY = segmentRect.MidY + (textHeight / 2f) - (1f * context.Density);
-        var centerX = isHorizontal ? segmentRect.MidX : segmentRect.MidX;
-        context.Canvas.DrawText(text, centerX, baselineY, SKTextAlign.Center, _labelFont, _labelPaint);
+        DrawLabelText(context, text, segmentRect.MidX, segmentRect.MidY, SKTextAlign.Center, sizePx, null, null, segmentColor);
     }
 
-    private void DrawSegmentTotalLabel(NTRenderContext context, SKRect renderArea, SKRect barRect, decimal value, SKColor accentColor, bool isHorizontal, float alphaFactor) {
-        var text = string.Format(DataLabelFormat, value);
-        var labelSize = DataLabelSize * context.Density;
-
-        _labelFont ??= new SKFont {
-            Typeface = context.DefaultFont.Typeface
-        };
-        _labelFont.Size = labelSize;
-
-        _labelPaint ??= new SKPaint {
-            IsAntialias = true
-        };
-        _labelPaint.Color = ApplyAlphaFactor(ResolveTotalLabelTextColor(accentColor), alphaFactor);
-
-        _labelFont.MeasureText(text, out var bounds);
-        var textWidth = bounds.Width;
-        var textHeight = bounds.Height;
-        var textPadding = 4f * context.Density;
+    private void DrawSegmentTotalLabel(NTRenderContext context, SKRect renderArea, SKRect barRect, decimal value, SKColor accentColor, bool isHorizontal) {
+        var text = FormatDataLabel(value);
+        var sizePx = DataLabelSize * context.Density;
+        var inset = LabelInset * context.Density;
+        var background = GetLabelBackground(accentColor);
 
         if (isHorizontal) {
-            var baselineY = barRect.MidY + (textHeight / 2f) - (1f * context.Density);
-            var textX = barRect.Right + (6f * context.Density);
-
-            if (ShowDataLabelBackground) {
-                var bgRect = new SKRect(
-                    textX - textPadding,
-                    baselineY - textHeight - textPadding,
-                    textX + textWidth + textPadding,
-                    baselineY + textPadding);
-
-                if (bgRect.Right > renderArea.Right) {
-                    var shiftLeft = bgRect.Right - renderArea.Right;
-                    bgRect.Offset(-shiftLeft, 0f);
-                    textX -= shiftLeft;
-                }
-
-                if (bgRect.Left < renderArea.Left) {
-                    var shiftRight = renderArea.Left - bgRect.Left;
-                    bgRect.Offset(shiftRight, 0f);
-                    textX += shiftRight;
-                }
-
-                DrawDataLabelBackground(context, bgRect, accentColor, alphaFactor);
-            }
-            else if (textX + textWidth > renderArea.Right) {
-                textX = Math.Max(renderArea.Left, renderArea.Right - textWidth);
-            }
-
-            context.Canvas.DrawText(text, textX, baselineY, SKTextAlign.Left, _labelFont, _labelPaint);
+            DrawLabelText(context, text, barRect.Right + inset, barRect.MidY, SKTextAlign.Left, sizePx, null, background, background, renderArea);
             return;
         }
 
-        var baselineAbove = barRect.Top - (4f * context.Density);
-        var minBaseline = renderArea.Top + textHeight + textPadding;
-        if (baselineAbove < minBaseline) {
-            baselineAbove = minBaseline;
-        }
-
-        var centerX = barRect.MidX;
-        if (ShowDataLabelBackground) {
-            var bgRect = new SKRect(
-                centerX - (textWidth / 2f) - textPadding,
-                baselineAbove - textHeight - textPadding,
-                centerX + (textWidth / 2f) + textPadding,
-                baselineAbove + textPadding);
-
-            if (bgRect.Left < renderArea.Left) {
-                bgRect.Offset(renderArea.Left - bgRect.Left, 0f);
-            }
-
-            if (bgRect.Right > renderArea.Right) {
-                bgRect.Offset(renderArea.Right - bgRect.Right, 0f);
-            }
-
-            centerX = bgRect.MidX;
-            DrawDataLabelBackground(context, bgRect, accentColor, alphaFactor);
-        }
-        else {
-            centerX = Math.Clamp(centerX, renderArea.Left + (textWidth / 2f), renderArea.Right - (textWidth / 2f));
-        }
-
-        context.Canvas.DrawText(text, centerX, baselineAbove, SKTextAlign.Center, _labelFont, _labelPaint);
-    }
-
-    private void DrawDataLabelBackground(NTRenderContext context, SKRect bgRect, SKColor accentColor, float alphaFactor) {
-        _labelBgPaint ??= new SKPaint {
-            IsAntialias = true,
-            Style = SKPaintStyle.Fill
-        };
-        _labelBgPaint.Color = ApplyAlphaFactor(ResolveTotalLabelBackgroundColor(accentColor), alphaFactor);
-        context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBgPaint);
-
-        _labelBorderPaint ??= new SKPaint {
-            IsAntialias = true,
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = context.Density
-        };
-        _labelBorderPaint.Color = ApplyAlphaFactor(Chart.GetThemeColor(NTColor.OutlineVariant), alphaFactor);
-        context.Canvas.DrawRoundRect(bgRect, 4f * context.Density, 4f * context.Density, _labelBorderPaint);
-    }
-
-    private SKColor ResolveTotalLabelTextColor(SKColor accentColor) {
-        if (DataLabelColor.HasValue) {
-            return Chart.GetThemeColor(DataLabelColor.Value);
-        }
-
-        return ShowDataLabelBackground
-            ? GetContrastTextColor(ResolveTotalLabelBackgroundColor(accentColor))
-            : Chart.GetSeriesTextColor(this);
-    }
-
-    private SKColor ResolveTotalLabelBackgroundColor(SKColor accentColor) {
-        if (DataLabelBackgroundColor.HasValue) {
-            return Chart.GetThemeColor(DataLabelBackgroundColor.Value);
-        }
-
-        return accentColor.WithAlpha(235);
+        var boxHeight = NTRenderContextExtensions.LabelBoxHeight(sizePx, context.Density);
+        DrawLabelText(context, text, barRect.MidX, Math.Max(barRect.Top - inset - (boxHeight / 2f), renderArea.Top + (boxHeight / 2f)), SKTextAlign.Center, sizePx, null, background, background, renderArea);
     }
 
     private SKColor ResolveSegmentColor(TData data, int dataIndex, NTBarSegment segment, int segmentIndex, SKColor fallbackColor) {
@@ -1051,11 +884,6 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         }
 
         return Chart.GetPaletteColor(segmentIndex + 1).WithAlpha(fallbackColor.Alpha);
-    }
-
-    private static SKColor GetContrastTextColor(SKColor color) {
-        var luminance = (0.2126f * color.Red) + (0.7152f * color.Green) + (0.0722f * color.Blue);
-        return luminance > 140f ? SKColors.Black : SKColors.White;
     }
 
     private float GetPointAlphaFactor(int pointIndex) {

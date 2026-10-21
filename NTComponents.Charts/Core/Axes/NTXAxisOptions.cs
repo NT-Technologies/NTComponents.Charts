@@ -30,26 +30,24 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     [Parameter, EditorRequired]
     public Func<TData, TAxisType> ValueSelector { get; set; } = default!;
 
+    // Whether TAxisType is a category type never changes for a closed generic type, so the reflection runs once.
+    private static readonly bool IsCategoricalType = GetIsCategoricalType();
+
+    // Horizontal bar charts flip axis roles: X becomes a value axis.
     /// <inheritdoc />
-    public bool IsCategorical {
-        get {
-            // Horizontal bar charts flip axis roles: X becomes a value axis.
-            if (Chart is NTChart<TData> ntChart &&
-                ntChart.Series.OfType<NTBarSeries<TData>>().Any(s => s.IsEffectivelyVisible && s.Orientation == NTChartOrientation.Horizontal)) {
-                return false;
-            }
+    public bool IsCategorical => IsCategoricalType && !(Chart is NTChart<TData> ntChart && ntChart.HasVisibleHorizontalBars());
 
-            var type = typeof(TAxisType);
-            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>)) {
-                type = Nullable.GetUnderlyingType(type)!;
-            }
-
-            return !(type == typeof(DateTime) ||
-                     type == typeof(DateTimeOffset) ||
-                     type == typeof(DateOnly) ||
-                     type == typeof(TimeOnly) ||
-                     type.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(INumberBase<>)));
+    private static bool GetIsCategoricalType() {
+        var type = typeof(TAxisType);
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>)) {
+            type = Nullable.GetUnderlyingType(type)!;
         }
+
+        return !(type == typeof(DateTime) ||
+                 type == typeof(DateTimeOffset) ||
+                 type == typeof(DateOnly) ||
+                 type == typeof(TimeOnly) ||
+                 type.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(INumberBase<>)));
     }
 
     /// <summary>
@@ -112,7 +110,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
         BuildTicks(context, renderArea);
 
-        var tickHeight = 5 * context.Density;
+        var tickHeight = NTChartTokens.AxisTickLength * context.Density;
         var labelBottomPadding = GetTitleReservedHeight(context.Density);
         var labelBandBottom = renderArea.Bottom - labelBottomPadding;
         var labelBandTop = labelBandBottom - _tickLabelHeight;
@@ -130,7 +128,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         BuildTicks(context, renderArea);
 
         var plotArea = context.PlotArea;
-        var tickHeight = 5 * context.Density;
+        var tickHeight = NTChartTokens.AxisTickLength * context.Density;
         var axisY = plotArea.Bottom;
         var labelBandTop = axisY + tickHeight;
 
@@ -177,11 +175,12 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     private void BuildTicks(NTRenderContext context, SKRect renderArea) {
         var plotArea = renderArea;
         var (min, max) = Chart.GetXRange(this, true);
-        var allXCount = IsCategorical ? Chart.GetAllXValues().Count : 0;
+        // The chart rebuilds this list whenever its data changes, so its identity keys category labels exactly.
+        var categories = IsCategorical ? Chart.GetAllXValues() : null;
         var usesIntegralTicks = !IsCategorical && !Chart.IsXAxisDateTime && UsesIntegralTicks();
         var key = new AxisCacheKey(
             IsCategorical,
-            allXCount,
+            categories,
             Math.Round(min, 6),
             Math.Round(max, 6),
             Math.Round(plotArea.Width, 2),
@@ -234,7 +233,9 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             _cachedTicks.Add(new AxisTick(i, FormatLabel(allX[i], false)));
         }
 
-        if (_cachedTicks.Count == 0 || _cachedTicks[^1].Value != end) {
+        // The last category is always labeled unless that label would overlap the previous one.
+        var pixelsPerCategory = plotArea.Width / Math.Max(1, end - start);
+        if (_cachedTicks.Count == 0 || (_cachedTicks[^1].Value != end && (end - _cachedTicks[^1].Value) * pixelsPerCategory >= maxLabelWidth + (5 * context.Density))) {
             _cachedTicks.Add(new AxisTick(end, FormatLabel(allX[end], false)));
         }
 
@@ -863,11 +864,10 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     [MemberNotNull(nameof(_textPaint), nameof(_textFont), nameof(_titlePaint), nameof(_titleFont), nameof(_linePaint))]
     private void InitializePaints(NTRenderContext context) {
         _textPaint ??= new SKPaint {
-            IsAntialias = true,
-            Color = context.TextColor
+            IsAntialias = true
         };
-        _textPaint.Color = context.TextColor;
-        _textFont ??= new SKFont(context.DefaultFont.Typeface, AxisFontSize * context.Density);
+        _textPaint.Color = NTChartTokens.SecondaryTextColor(Chart);
+        _textFont ??= new SKFont(NTChartTokens.Typeface(NTTypography.BodySmall), AxisFontSize * context.Density);
         _textFont.Size = AxisFontSize * context.Density;
 
         _titlePaint ??= new SKPaint {
@@ -875,16 +875,15 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             Color = context.TextColor
         };
         _titlePaint.Color = context.TextColor;
-        _titleFont ??= new SKFont(context.DefaultFont.Typeface, TitleFontSize * context.Density);
+        _titleFont ??= new SKFont(NTChartTokens.Typeface(NTTypography.TitleSmall), TitleFontSize * context.Density);
         _titleFont.Size = TitleFontSize * context.Density;
 
         _linePaint ??= new SKPaint {
             IsAntialias = true,
-            Color = context.TextColor,
             Style = SKPaintStyle.Stroke,
             StrokeWidth = 1 * context.Density
         };
-        _linePaint.Color = context.TextColor;
+        _linePaint.Color = Chart.GetThemeColor(NTColor.Outline);
         _linePaint.StrokeWidth = context.Density;
     }
 
@@ -893,7 +892,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
     private readonly record struct AxisCacheKey(
         bool IsCategorical,
-        int CategoryCount,
+        List<object>? Categories,
         double Min,
         double Max,
         double PlotWidth,

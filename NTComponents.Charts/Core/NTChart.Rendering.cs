@@ -29,6 +29,7 @@ public partial class NTChart<TData> {
             return;
         }
         if (geometryChanged) {
+            ClearFrameRanges();
             _hitTestDirty = true;
             _axesPictureDirty = true;
             _titlePictureDirty = true;
@@ -117,6 +118,27 @@ public partial class NTChart<TData> {
         }
         RequestDraw(geometryChanged: true);
     });
+
+    /// <summary>Applies the user's reduced-motion preference reported by the browser; animations then snap to their target.</summary>
+    /// <param name="reduced">Whether <c>prefers-reduced-motion: reduce</c> is set.</param>
+    [JSInvokable]
+    public Task OnReducedMotionChanged(bool reduced) => InvokeAsync(() => {
+        if (!DisposalStarted && ReducedMotion != reduced) {
+            ReducedMotion = reduced;
+            RequestDraw();
+        }
+    });
+
+    /// <summary>Gets whether the user prefers reduced motion; series treat it like <c>AnimationEnabled = false</c>.</summary>
+    internal bool ReducedMotion { get; private set; }
+
+    // Native Skia objects reused by NTRenderContextExtensions so custom series do not create them per point or label.
+    private SKPaint? _extensionPaint;
+    private SKFont? _extensionFont;
+
+    internal SKPaint ExtensionPaint => _extensionPaint ??= new SKPaint();
+
+    internal SKFont ExtensionFont => _extensionFont ??= new SKFont();
 
     private NTRenderContext RecordingContext(NTRenderContext context, SKCanvas canvas, SKRect plotArea) => new() {
         Canvas = canvas,

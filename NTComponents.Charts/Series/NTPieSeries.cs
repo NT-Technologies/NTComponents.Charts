@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Components;
 using NTComponents.Charts.Core.Series;
 using NTComponents.Charts.Core;
@@ -42,10 +43,17 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
    private SKPathBuilder? _slicePathBuilder;
    private SKPaint? _labelPaint;
    private SKFont? _labelFont;
+   // Label text per slice position; cleared with the slice geometry and when the format or culture changes.
+   private readonly List<string?> _sliceLabelTexts = [];
+   private string? _sliceLabelFormat;
+   private CultureInfo? _sliceLabelCulture;
+
+   /// <inheritdoc />
+   protected override void OnCircularGeometryInvalidated() => _sliceLabelTexts.Clear();
 
    internal override bool RequiresAnimationFrame => base.RequiresAnimationFrame ||
-      (AnimationEnabled && ExplosionOnEntry && GetAnimationProgress() < 1f) ||
-      (AnimationEnabled && _explosionAnimations.Values.Any(animation =>
+      (ExplosionOnEntry && IsAnimationRunning) ||
+      (AnimationActive && _explosionAnimations.Values.Any(animation =>
          animation.Start != animation.Target && NTChartMotion.Progress(NTChartMotion.ElapsedSince(animation.StartTime), Chart.HoverAnimationDuration) < 1f));
 
    /// <inheritdoc />
@@ -72,7 +80,8 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
 
       _slicePathBuilder ??= new SKPathBuilder();
 
-      foreach (var slice in SliceInfos) {
+      for (var slicePosition = 0; slicePosition < SliceInfos.Count; slicePosition++) {
+         var slice = SliceInfos[slicePosition];
          // Update explosion factor for this slice (hover)
          bool isTargetExploded = ExplodeOnHover && Chart.HoveredSeries == this && Chart.HoveredPointIndex == slice.Index;
          float currentFactor = _explosionFactors.GetValueOrDefault(slice.Index, 0f);
@@ -83,7 +92,7 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
             _explosionAnimations[slice.Index] = animation;
          }
          var hoverProgress = NTChartMotion.Progress(NTChartMotion.ElapsedSince(animation.StartTime), Chart.HoverAnimationDuration);
-         currentFactor = AnimationEnabled
+         currentFactor = AnimationActive
             ? animation.Start + ((animation.Target - animation.Start) * NTChartMotion.Ease(hoverProgress, Chart.HoverAnimationEasing))
             : targetFactor;
          _explosionFactors[slice.Index] = currentFactor;
@@ -124,7 +133,7 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
          if (isOtherSeriesHovered || isOtherPointHovered) {
             if (Chart.HoveredSeries == this && Chart.HoveredPointIndex.HasValue) {
                var otherFactor = _explosionFactors.GetValueOrDefault(Chart.HoveredPointIndex.Value, 0f);
-               dimFactor = 1.0f - (otherFactor * 0.85f);
+               dimFactor = 1.0f - (otherFactor * (1f - NTChartTokens.DeEmphasisOpacity));
             }
             else if (isOtherSeriesHovered) {
                dimFactor = HoverFactor;
@@ -159,27 +168,67 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
          var outerRect = new SKRect(centerX - currentRadius, centerY - currentRadius, centerX + currentRadius, centerY + currentRadius);
          var innerRect = new SKRect(centerX - currentInnerRadius, centerY - currentInnerRadius, centerX + currentInnerRadius, centerY + currentInnerRadius);
 
-         _slicePathBuilder.ArcTo(outerRect, slice.StartAngle, sweep, true);
-         if (currentInnerRadius > 0) {
-            _slicePathBuilder.ArcTo(innerRect, slice.StartAngle + sweep, -sweep, false);
+         if (sweep >= 360f) {
+            // A 360 degree ArcTo is degenerate, so draw the full oval (opposite winding punches the donut hole).
+            _slicePathBuilder.AddOval(outerRect, SKPathDirection.Clockwise);
+            if (currentInnerRadius > 0) {
+               _slicePathBuilder.AddOval(innerRect, SKPathDirection.CounterClockwise);
+            }
          }
          else {
-            _slicePathBuilder.LineTo(centerX, centerY);
+            _slicePathBuilder.ArcTo(outerRect, slice.StartAngle, sweep, true);
+            if (currentInnerRadius > 0) {
+               _slicePathBuilder.ArcTo(innerRect, slice.StartAngle + sweep, -sweep, false);
+            }
+            else {
+               _slicePathBuilder.LineTo(centerX, centerY);
+            }
+            _slicePathBuilder.Close();
          }
-         _slicePathBuilder.Close();
 
          using var slicePath = _slicePathBuilder.Detach();
          context.Canvas.DrawPath(slicePath, _slicePaint);
 
+         var fillColor = _slicePaint.Color;
+         if (Chart.HoveredSeries == this && Chart.HoveredPointIndex == slice.Index && currentFactor > 0f) {
+            var onColor = NTSeriesGeometry.LegibleTextColor(Chart.GetPaletteTextColor(slice.Index), fillColor, Chart.GetThemeColor(Chart.BackgroundColor));
+            context.Canvas.DrawPath(slicePath, GetStateLayerPaint(NTSeriesGeometry.WithFactor(onColor, StateLayerOpacity * currentFactor * myVisibilityFactor)));
+         }
+
          if (ShowDataLabels && progress >= 1.0f) {
-            RenderSliceLabel(context, slice, centerX, centerY, currentRadius, currentInnerRadius, color, args);
+            RenderSliceLabel(context, slicePosition, slice, centerX, centerY, currentRadius, currentInnerRadius, fillColor, myVisibilityFactor, args);
          }
       }
 
       return renderArea;
    }
 
-   private void RenderSliceLabel(NTRenderContext context, PieSliceInfo slice, float centerX, float centerY, float radius, float innerRadius, SKColor color, NTDataPointRenderArgs<TData>? args) {
+   private string GetSliceLabelText(int slicePosition, PieSliceInfo slice) {
+      var culture = CultureInfo.CurrentCulture;
+      if (!ReferenceEquals(_sliceLabelFormat, DataLabelFormat) || !ReferenceEquals(_sliceLabelCulture, culture)) {
+         _sliceLabelTexts.Clear();
+         _sliceLabelFormat = DataLabelFormat;
+         _sliceLabelCulture = culture;
+      }
+
+      while (_sliceLabelTexts.Count <= slicePosition) {
+         _sliceLabelTexts.Add(null);
+      }
+
+      if (_sliceLabelTexts[slicePosition] is not { } text) {
+         try {
+            text = string.Format(DataLabelFormat, slice.Value);
+         }
+         catch {
+            text = slice.Value.ToString("0.##");
+         }
+         _sliceLabelTexts[slicePosition] = text;
+      }
+
+      return text;
+   }
+
+   private void RenderSliceLabel(NTRenderContext context, int slicePosition, PieSliceInfo slice, float centerX, float centerY, float radius, float innerRadius, SKColor fill, float visibility, NTDataPointRenderArgs<TData>? args) {
       if (!float.IsFinite(radius) || radius <= 0f || !float.IsFinite(innerRadius) || innerRadius < 0f) {
          return;
       }
@@ -187,19 +236,14 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
       float midAngle = slice.StartAngle + slice.SweepAngle / 2f;
       float rad = midAngle * (float)Math.PI / 180f;
 
-      string text;
-      try {
-         text = string.Format(DataLabelFormat, slice.Value);
-      }
-      catch {
-         text = slice.Value.ToString("0.##");
-      }
+      var text = GetSliceLabelText(slicePosition, slice);
 
       if (string.IsNullOrWhiteSpace(text)) {
          return;
       }
 
-      var labelColor = args?.DataLabelColor ?? (DataLabelColor.HasValue ? Chart.GetThemeColor(DataLabelColor.Value) : Chart.GetPaletteTextColor(slice.Index));
+      // The label keeps its contrast while the slice is de-emphasized: the text is checked against the dimmed fill and fades with visibility only.
+      var labelColor = args?.DataLabelColor ?? (DataLabelColor.HasValue ? Chart.GetThemeColor(DataLabelColor.Value) : NTSeriesGeometry.LegibleTextColor(Chart.GetPaletteTextColor(slice.Index), fill, Chart.GetThemeColor(Chart.BackgroundColor)));
       var labelSize = (args?.DataLabelSize ?? DataLabelSize) * context.Density;
       if (!float.IsFinite(labelSize) || labelSize <= 0f) {
          return;
@@ -208,9 +252,9 @@ public class NTPieSeries<TData> : NTCircularSeries<TData> where TData : class {
       _labelPaint ??= new SKPaint {
          IsAntialias = true
       };
-      _labelPaint.Color = labelColor;
+      _labelPaint.Color = NTSeriesGeometry.WithFactor(labelColor, visibility);
 
-      _labelFont ??= new SKFont { Typeface = context.DefaultFont.Typeface };
+      _labelFont ??= new SKFont { Typeface = NTChartTokens.Typeface(NTTypography.LabelMedium) };
       _labelFont.Size = labelSize;
 
       // Avoid SKFont.MeasureText/metrics on WASM due intermittent native OOB crashes.

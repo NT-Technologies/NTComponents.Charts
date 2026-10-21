@@ -41,7 +41,7 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
     ///     Gets or sets the font size used for the axis title.
     /// </summary>
     [Parameter]
-    public float TitleFontSize { get; set; } = 16;
+    public float TitleFontSize { get; set; } = 14;
 
     /// <summary>
     ///     Gets or sets whether the axis is visible.
