@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Tests/">
+    <Project Path="Tests/NTComponents.Charts.Benchmarks/NTComponents.Charts.Benchmarks.csproj" />
+  </Folder>
   <Project Path="NTComponents.Charts/NTComponents.Charts.csproj" />
   <Project Path="Tests/NTComponents.Charts.Tests/NTComponents.Charts.Tests.csproj" />
 </Solution>
