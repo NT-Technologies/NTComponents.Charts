@@ -1,6 +1,6 @@
 # NTComponents.Charts
 
-Interactive Blazor charts powered by SkiaSharp for .NET 9, 10, and 11. The library uses NTComponents 2.0.0-preview.71 and its current Material 3 icon buttons and theme runtime.
+Interactive Blazor charts powered by SkiaSharp for .NET 9, 10, and 11. The library uses NTComponents 2.0.0-preview.76 and its current Material 3 icon buttons and theme runtime.
 
 Install `NTComponents.Charts`, register NTComponents services with `builder.Services.AddNTServices()`, and include `NTHeadDependencies` in your application's head. For a WebAssembly host, include the NTComponents and Charts scoped stylesheets in `wwwroot/index.html`.
 

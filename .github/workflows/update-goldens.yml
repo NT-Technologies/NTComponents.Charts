@@ -1,0 +1,62 @@
+name: Update golden images
+
+# Renders the golden images on each operating system and uploads them as artifacts.
+# Each font engine (FreeType, DirectWrite, Core Text) measures text differently, so every OS keeps its own goldens.
+# Review the artifacts, then copy each into Tests/NTComponents.Charts.Tests/Rendering/Golden/<platform>/ and commit.
+
+on:
+  workflow_dispatch:
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  render:
+    name: Render goldens (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-15
+            platform: macos
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+            11.0.100-rc.2.26504.105
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+
+      - name: Compile chart TypeScript
+        run: |
+          npm ci
+          npm run build:ts
+
+      - name: Render goldens
+        env:
+          NTCHARTS_UPDATE_GOLDEN: '1'
+        run: dotnet test --project Tests/NTComponents.Charts.Tests/NTComponents.Charts.Tests.csproj --configuration Release --framework net10.0 -p:UseLocalNTComponentsProject=false --filter-namespace NTComponents.Charts.Tests.Rendering
+
+      - name: Upload goldens
+        uses: actions/upload-artifact@v4
+        with:
+          name: goldens-${{ matrix.platform }}
+          path: Tests/NTComponents.Charts.Tests/Rendering/Golden/${{ matrix.platform }}/*.png
+          if-no-files-found: error

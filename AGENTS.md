@@ -39,6 +39,8 @@ Add chart tests to `Tests/NTComponents.Charts.Tests` and keep them organized by 
 - hit testing and interaction behavior,
 - rendering/data caching invalidation.
 
+Golden images live in `Tests/NTComponents.Charts.Tests/Rendering/Golden/<platform>/` (`linux`, `windows`, `macos`) because each OS font engine measures text differently. Regenerate the current OS's goldens with `NTCHARTS_UPDATE_GOLDEN=1`, or run the manual `Update golden images` workflow to render all three and download them as artifacts. When rendering changes intentionally, update every platform's goldens.
+
 The reusable PR/release gate is `.github/workflows/build-template.yml`. Keep its terminal `build-test-pack` job stable because branch protection and Dependabot auto-merge use it as the required-check sentinel. Stable releases are manual; preview releases are created from successful pushes to `main`.
 
 ## Commit & Pull Request Guidelines

@@ -27,6 +27,15 @@ public class NTLegend_Tests : ChartTestBase {
 
     private static SKRectI? IconBounds(SKBitmap bitmap, SKColor color, SKRectI? region = null) => BoundsOf(bitmap, color, 10, region);
 
+    /// <summary>
+    ///     Width of the pixels at least half covered by the round swatch. Its center lands on a sub-pixel position that depends on
+    ///     platform text metrics, so near-exact color matching drops the anti-aliased edge columns.
+    /// </summary>
+    private static int IconWidth(SKBitmap bitmap, SKColor color, SKRectI region) {
+        var bounds = BoundsOf(bitmap, color, 127, region)!.Value;
+        return bounds.Right - bounds.Left + 1;
+    }
+
     [Fact]
     public async Task Bottom_ReservesOneRowAtTheBottomAndKeepsTheOtherEdges() {
         var plot = await PlotWithLegend(Args(("Position", LegendPosition.Bottom)));
@@ -146,7 +155,7 @@ public class NTLegend_Tests : ChartTestBase {
         blue.Should().NotBeNull();
         red!.Value.Left.Should().BeLessThan(green!.Value.Left);
         green.Value.Left.Should().BeLessThan(blue!.Value.Left);
-        (red.Value.Right - red.Value.Left + 1).Should().BeCloseTo(12, 1, "the icon is IconSize pixels wide");
+        IconWidth(bitmap, Red, band).Should().BeCloseTo(12, 1, "the icon is IconSize pixels wide");
     }
 
     [Fact]
@@ -166,9 +175,7 @@ public class NTLegend_Tests : ChartTestBase {
 
         using var surface = await Paint(chart);
         using var bitmap = Bitmap(surface);
-        var icon = IconBounds(bitmap, Red, new SKRectI(0, 0, Width, 40))!.Value;
-
-        (icon.Right - icon.Left + 1).Should().BeCloseTo(20, 1);
+        IconWidth(bitmap, Red, new SKRectI(0, 0, Width, 40)).Should().BeCloseTo(20, 1);
     }
 
     [Fact]

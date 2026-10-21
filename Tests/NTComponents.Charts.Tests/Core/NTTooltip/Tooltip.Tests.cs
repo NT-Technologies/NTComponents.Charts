@@ -16,10 +16,10 @@ public class NTTooltip_Tests : ChartTestBase {
     private IRenderedComponent<NTChart<Pt>> TooltipChart(IDictionary<string, object>? tooltip = null, IDictionary<string, object>? series = null, Action<ComponentParameterCollectionBuilder<NTChart<Pt>>>? configure = null) =>
         RenderChart(Combine(NoAxes(), Tooltip(tooltip), Recording("a", hit: Hit, extra: series ?? Args(("Title", "Revenue")))), configure);
 
-    private async Task<SKBitmap> HoverAndPaint(IRenderedComponent<NTChart<Pt>> chart, double x, double y) {
-        using var surface = await Paint(chart);
+    private async Task<SKBitmap> HoverAndPaint(IRenderedComponent<NTChart<Pt>> chart, double x, double y, int height = Height) {
+        using var surface = await Paint(chart, height: height);
         await Move(chart, x, y);
-        await Paint(chart, surface: surface);
+        await Paint(chart, height: height, surface: surface);
         return Bitmap(surface);
     }
 
@@ -322,7 +322,8 @@ public class NTTooltip_Tests : ChartTestBase {
         Func<NTSeriesTooltipContext<Pt>, TooltipInfo> selector = _ => custom;
         var chart = TooltipChart(series: Args(("TooltipInfoSelector", selector)));
 
-        using var bitmap = await HoverAndPaint(chart, 400, 280);
+        // The wrapped tooltip is about 260px tall; a 480px canvas keeps it fully above the pointer whatever the platform's text metrics.
+        using var bitmap = await HoverAndPaint(chart, 400, 440, height: 480);
         var bounds = BoundsOf(bitmap, Magenta)!.Value;
 
         (bounds.Right - bounds.Left).Should().BeInRange(250, 321);

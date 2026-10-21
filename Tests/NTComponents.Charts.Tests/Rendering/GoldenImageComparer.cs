@@ -6,7 +6,9 @@ namespace NTComponents.Charts.Tests.Rendering;
 /// <summary>
 ///     Compares rendered rasters against golden PNGs. A pixel counts as different when any channel differs by more than
 ///     <see cref="ChannelTolerance"/>; the image fails when more than <see cref="MaxDifferingPixelFraction"/> of its pixels differ.
-///     Set <c>NTCHARTS_UPDATE_GOLDEN=1</c> to overwrite goldens instead of comparing.
+///     Set <c>NTCHARTS_UPDATE_GOLDEN=1</c> to overwrite goldens instead of comparing. Goldens are kept per operating system because
+///     each font engine (FreeType, DirectWrite, Core Text) measures text differently, and measured text positions the axes and
+///     plot area at different sub-pixel offsets.
 /// </summary>
 public static class GoldenImageComparer {
     /// <summary>Environment variable that switches the suite into golden-update mode.</summary>
@@ -26,8 +28,11 @@ public static class GoldenImageComparer {
 
     private static readonly string? _sourceDirectory = GetSourceDirectory();
 
-    /// <summary>Directory holding the golden PNG files.</summary>
-    public static string GoldenDirectory { get; } = ResolveGoldenDirectory();
+    /// <summary>Golden subfolder for the current operating system.</summary>
+    public static string Platform { get; } = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "macos" : "linux";
+
+    /// <summary>Directory holding the golden PNG files for the current operating system.</summary>
+    public static string GoldenDirectory { get; } = Path.Combine(ResolveGoldenRoot(), Platform);
 
     /// <summary>Where actual and diff images are written when a comparison fails.</summary>
     public static string FailureDirectory { get; } = Path.Combine(AppContext.BaseDirectory, "golden-failures");
@@ -70,7 +75,7 @@ public static class GoldenImageComparer {
         }
 
         if (!File.Exists(path)) {
-            Xunit.Assert.Fail($"Golden image '{path}' does not exist. Review the rendering and generate it with {UpdateVariable}=1.");
+            Xunit.Assert.Fail($"Golden image '{path}' does not exist. Review the rendering and generate it with {UpdateVariable}=1 on {Platform}, or run the 'Update golden images' workflow.");
         }
 
         using var expected = SKBitmap.Decode(path);
@@ -100,7 +105,7 @@ public static class GoldenImageComparer {
 
     private static string? GetSourceDirectory([CallerFilePath] string path = "") => string.IsNullOrEmpty(path) ? null : Path.GetDirectoryName(path);
 
-    private static string ResolveGoldenDirectory() {
+    private static string ResolveGoldenRoot() {
         // CallerFilePath is rewritten by deterministic/CI source path mapping, so fall back to walking up from the binaries.
         if (_sourceDirectory is not null && Directory.Exists(_sourceDirectory)) {
             return Path.Combine(_sourceDirectory, "Golden");

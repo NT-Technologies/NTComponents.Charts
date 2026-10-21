@@ -10,7 +10,8 @@
 		<TestTfmsInParallel>true</TestTfmsInParallel>
 		<WarningLevel>8</WarningLevel>
 		<TreatWarningsAsErrors>True</TreatWarningsAsErrors>
-		<NoWarn>$(NoWarn);CS0618</NoWarn>
+		<!-- Tests construct components directly to exercise engine logic, so setting parameters outside a render is intentional. -->
+		<NoWarn>$(NoWarn);CS0618;BL0005</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>
