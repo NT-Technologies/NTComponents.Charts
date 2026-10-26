@@ -62,12 +62,12 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(UseLocalNTComponentsProject)' != 'true'">
-		<PackageReference Include="NTComponents" Version="2.0.0-preview.76" />
+		<PackageReference Include="NTComponents" Version="2.0.0-preview.77" />
 	</ItemGroup>
 
 	<!-- Published dependency floors: the lowest ASP.NET Core patch consumers need. Raise them only for security fixes. -->
 	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.0" />
+		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.0" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
