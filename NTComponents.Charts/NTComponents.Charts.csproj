@@ -53,7 +53,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="AspNetCore.SassCompiler" Version="1.105.1" PrivateAssets="all" />
+		<PackageReference Include="AspNetCore.SassCompiler" Version="1.106.0" PrivateAssets="all" />
 		<PackageReference Include="SkiaSharp.Views.Blazor" Version="4.153.1" />
 	</ItemGroup>
 
