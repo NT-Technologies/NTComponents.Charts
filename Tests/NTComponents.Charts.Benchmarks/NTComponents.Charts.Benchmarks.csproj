@@ -16,7 +16,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
-		<PackageReference Include="bunit" Version="2.12.5" />
+		<PackageReference Include="bunit" Version="2.13.3" />
 		<PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.1" />
 		<PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="4.153.1" />
 	</ItemGroup>
