@@ -4,6 +4,9 @@ const ON_THEME_CHANGED = 'OnThemeChanged';
 const ON_NATIVE_WHEEL = 'OnNativeWheel';
 const ON_REDUCED_MOTION_CHANGED = 'OnReducedMotionChanged';
 
+/** [left, top, right, bottom] in CSS pixels relative to the chart element. */
+type ScrollRegion = readonly [number, number, number, number];
+
 export function getDevicePixelRatio(): number {
     return window.devicePixelRatio || 1;
 }
@@ -15,7 +18,7 @@ export function getThemeColors(colorNames: readonly string[]): Record<string, st
     ]));
 }
 
-export function initializeChart(element: HTMLElement | null, dotNetHelper: ChartDotNetReference, preventDefault: boolean): { dispose(): void; updateInteractions(preventDefault: boolean): void } {
+export function initializeChart(element: HTMLElement | null, dotNetHelper: ChartDotNetReference, preventDefault: boolean): { dispose(): void; updateInteractions(preventDefault: boolean): void; setScrollRegion(region: ScrollRegion | null): void } {
     const controller = new AbortController();
     let disposed = false;
     let moveFrame = 0;
@@ -170,9 +173,14 @@ export function initializeChart(element: HTMLElement | null, dotNetHelper: Chart
         refreshWhenThemeApplies();
     }
 
+    // A legend that scrolls: wheel events over it must not scroll the page.
+    let scrollRegion: ScrollRegion | null = null;
     element?.addEventListener('wheel', async event => {
         flushMove();
-        if (preventDefault) {
+        const inScrollRegion = scrollRegion !== null
+            && event.offsetX >= scrollRegion[0] && event.offsetY >= scrollRegion[1]
+            && event.offsetX <= scrollRegion[2] && event.offsetY <= scrollRegion[3];
+        if (preventDefault || inScrollRegion) {
             event.preventDefault();
         }
         try {
@@ -193,6 +201,7 @@ export function initializeChart(element: HTMLElement | null, dotNetHelper: Chart
 
     return {
         updateInteractions: value => { preventDefault = value; },
+        setScrollRegion: region => { scrollRegion = region; },
         dispose: () => {
             disposed = true;
             controller.abort();

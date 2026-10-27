@@ -76,6 +76,9 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     private NTDateGroupingLevel _activeDateGroupingLevel = NTDateGroupingLevel.None;
     private readonly Dictionary<DateTickCacheKey, List<AxisTick>> _groupedDateTickCache = [];
     private const float RotatedLabelDegrees = -45f;
+    // Labels that overflow their slot wrap onto two lines when the slot is at least this wide (dp); narrower slots rotate.
+    private const float MinWrapWidth = 64f;
+    private const int MaxWrapLines = 2;
 
     /// <inheritdoc />
     public override void Dispose() {
@@ -134,6 +137,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
         context.Canvas.DrawLine(plotArea.Left, axisY, plotArea.Right, axisY, _linePaint);
 
+        TruncatedLabels.Clear();
         foreach (var tick in _cachedTicks) {
             var x = Chart.ScaleX(tick.Value, plotArea);
             if (x < plotArea.Left - context.Density || x > plotArea.Right + context.Density) {
@@ -142,19 +146,25 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
             context.Canvas.DrawLine(x, axisY, x, axisY + tickHeight, _linePaint);
 
-            var labelLayout = GetTickLabelLayout(tick.Label);
+            var labelLayout = GetTickLabelLayout(tick);
             var labelBounds = labelLayout.Bounds;
             var textBaseline = labelBandTop - labelBounds.Top;
             var textX = ClampLabelAnchorX(x, labelBounds, context.TotalArea, context.Density);
             if (labelLayout.RotationDegrees == 0f) {
-                context.Canvas.DrawText(tick.Label, textX, textBaseline, labelLayout.TextAlign, _textFont, _textPaint);
+                for (var i = 0; i < labelLayout.Lines.Length; i++) {
+                    context.Canvas.DrawText(labelLayout.Lines[i], textX, textBaseline + (i * _textFont.Spacing), labelLayout.TextAlign, _textFont, _textPaint);
+                }
             }
             else {
                 context.Canvas.Save();
                 context.Canvas.Translate(textX, textBaseline);
                 context.Canvas.RotateDegrees(labelLayout.RotationDegrees);
-                context.Canvas.DrawText(tick.Label, 0, 0, labelLayout.TextAlign, _textFont, _textPaint);
+                context.Canvas.DrawText(labelLayout.Lines[0], 0, 0, labelLayout.TextAlign, _textFont, _textPaint);
                 context.Canvas.Restore();
+            }
+
+            if (tick.Truncated) {
+                TruncatedLabels.Add((new SKPoint(textX, textBaseline), labelLayout.RotationDegrees, labelLayout.LocalBounds, tick.Label));
             }
         }
 
@@ -191,7 +201,8 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             TitleFontSize,
             usesIntegralTicks,
             EnableAutoDateGrouping,
-            DateGroupingThreshold);
+            DateGroupingThreshold,
+            MaxLabelWidth);
 
         if (_cacheKey.HasValue && _cacheKey.Value.Equals(key)) {
             return;
@@ -225,8 +236,10 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
         var visibleCount = end - start + 1;
         var (maxLabelWidth, _) = MeasureSampleLabels(context, start, end, idx => FormatLabel(allX[idx], false));
+        // Space ticks for labels as they are drawn: a rotated label never takes more than MaxLabelWidth.
+        var spacedLabelWidth = Math.Min(maxLabelWidth, (MaxLabelWidth ?? float.PositiveInfinity) * context.Density);
 
-        var targetTicks = EstimateTargetTicks(plotArea.Width, maxLabelWidth, context.Density, preferDensity: true);
+        var targetTicks = EstimateTargetTicks(plotArea.Width, spacedLabelWidth, context.Density, preferDensity: true);
         var step = Math.Max(1, (int)Math.Floor(visibleCount / (double)targetTicks));
 
         for (var i = start; i <= end; i += step) {
@@ -235,16 +248,36 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
         // The last category is always labeled unless that label would overlap the previous one.
         var pixelsPerCategory = plotArea.Width / Math.Max(1, end - start);
-        if (_cachedTicks.Count == 0 || (_cachedTicks[^1].Value != end && (end - _cachedTicks[^1].Value) * pixelsPerCategory >= maxLabelWidth + (5 * context.Density))) {
+        if (_cachedTicks.Count == 0 || (_cachedTicks[^1].Value != end && (end - _cachedTicks[^1].Value) * pixelsPerCategory >= spacedLabelWidth + (5 * context.Density))) {
             _cachedTicks.Add(new AxisTick(end, FormatLabel(allX[end], false)));
         }
 
         var labelSlotWidth = plotArea.Width / Math.Max(1, _cachedTicks.Count - 1);
-        if (maxLabelWidth + (5 * context.Density) > labelSlotWidth) {
-            _rotation = RotatedLabelDegrees;
+        var wrapWidth = labelSlotWidth - (5 * context.Density);
+        if (maxLabelWidth > wrapWidth) {
+            if (wrapWidth >= MinWrapWidth * context.Density) {
+                FitTickLabels(wrapWidth, context.Density);
+            }
+            else {
+                _rotation = RotatedLabelDegrees;
+                FitTickLabels(null, context.Density);
+            }
         }
 
         UpdateTickLabelHeight(context);
+    }
+
+    // Wraps every tick label into wrapWidth, or, when null (rotated labels), shortens each to MaxLabelWidth.
+    private void FitTickLabels(float? wrapWidth, float density) {
+        var maxWidth = (MaxLabelWidth ?? float.PositiveInfinity) * density;
+        for (var i = 0; i < _cachedTicks.Count; i++) {
+            var tick = _cachedTicks[i];
+            string[] lines = wrapWidth is { } width
+                ? NTLabelText.Wrap(_textFont, tick.Label, width, MaxWrapLines)
+                : [NTLabelText.Ellipsize(_textFont, tick.Label, maxWidth)];
+            var truncated = lines[^1].EndsWith(NTLabelText.Ellipsis, StringComparison.Ordinal) && !tick.Label.EndsWith(NTLabelText.Ellipsis, StringComparison.Ordinal);
+            _cachedTicks[i] = tick with { Lines = lines, Truncated = truncated };
+        }
     }
 
     private void BuildContinuousTicks(NTRenderContext context, double min, double max, float plotWidth, bool usesIntegralTicks) {
@@ -415,6 +448,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         var labelSlotWidth = plotWidth / Math.Max(1, _cachedTicks.Count - 1);
         if (maxLabelWidth + (5f * context.Density) > labelSlotWidth) {
             _rotation = RotatedLabelDegrees;
+            FitTickLabels(null, context.Density);
         }
         else {
             _rotation = 0f;
@@ -601,22 +635,30 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
 
         var maxLabelHeight = 0f;
         for (var i = 0; i < _cachedTicks.Count; i++) {
-            var layout = GetTickLabelLayout(_cachedTicks[i].Label);
+            var layout = GetTickLabelLayout(_cachedTicks[i]);
             maxLabelHeight = Math.Max(maxLabelHeight, layout.Bounds.Height);
         }
 
         _tickLabelHeight = maxLabelHeight;
     }
 
-    private TickLabelLayout GetTickLabelLayout(string label) {
-        _textFont.MeasureText(label, out var bounds);
-        if (_rotation == 0f) {
-            var centeredOffset = (bounds.Left + bounds.Right) / 2f;
-            return new TickLabelLayout(OffsetBounds(bounds, -centeredOffset), SKTextAlign.Center, 0f);
+    private TickLabelLayout GetTickLabelLayout(AxisTick tick) {
+        var lines = tick.Lines ?? [tick.Label];
+        if (_rotation != 0f) {
+            _textFont.MeasureText(lines[0], out var rotatedBounds);
+            var rightAlignedBounds = OffsetBounds(rotatedBounds, -rotatedBounds.Right);
+            return new TickLabelLayout(lines, RotateBounds(rightAlignedBounds, RotatedLabelDegrees), rightAlignedBounds, SKTextAlign.Right, RotatedLabelDegrees);
         }
 
-        var rightAlignedBounds = OffsetBounds(bounds, -bounds.Right);
-        return new TickLabelLayout(RotateBounds(rightAlignedBounds, RotatedLabelDegrees), SKTextAlign.Right, RotatedLabelDegrees);
+        // Each line is centered on the tick and sits one line spacing below the previous one.
+        var bounds = SKRect.Empty;
+        for (var i = 0; i < lines.Length; i++) {
+            _textFont.MeasureText(lines[i], out var lineBounds);
+            lineBounds = OffsetBounds(lineBounds, -(lineBounds.Left + lineBounds.Right) / 2f);
+            lineBounds.Offset(0, i * _textFont.Spacing);
+            bounds = i == 0 ? lineBounds : SKRect.Union(bounds, lineBounds);
+        }
+        return new TickLabelLayout(lines, bounds, bounds, SKTextAlign.Center, 0f);
     }
 
     private static SKRect OffsetBounds(SKRect bounds, float deltaX) => new(bounds.Left + deltaX, bounds.Top, bounds.Right + deltaX, bounds.Bottom);
@@ -887,8 +929,11 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         _linePaint.StrokeWidth = context.Density;
     }
 
-    private readonly record struct AxisTick(double Value, string Label);
-    private readonly record struct TickLabelLayout(SKRect Bounds, SKTextAlign TextAlign, float RotationDegrees);
+    // Lines holds the drawn text once it was wrapped or shortened; Truncated marks text cut off by an ellipsis.
+    private readonly record struct AxisTick(double Value, string Label, string[]? Lines = null, bool Truncated = false);
+
+    // Bounds is relative to the text anchor after rotation; LocalBounds is the same box before rotation.
+    private readonly record struct TickLabelLayout(string[] Lines, SKRect Bounds, SKRect LocalBounds, SKTextAlign TextAlign, float RotationDegrees);
 
     private readonly record struct AxisCacheKey(
         bool IsCategorical,
@@ -903,7 +948,8 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         float TitleFontSize,
         bool UsesIntegralTicks,
         bool EnableAutoDateGrouping,
-        int DateGroupingThreshold);
+        int DateGroupingThreshold,
+        float? MaxLabelWidth);
 
     private readonly record struct DateTickCacheKey(
         NTDateGroupingLevel Level,

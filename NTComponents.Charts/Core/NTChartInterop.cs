@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
+using SkiaSharp;
 
 namespace NTComponents.Charts.Core;
 
@@ -31,6 +32,19 @@ internal sealed class NTChartInterop(IJSRuntime _jsRuntime) : IAsyncDisposable {
             if (_listeners is not null && _preventDefault != preventDefault) {
                 await _listeners.InvokeVoidAsync("updateInteractions", preventDefault);
                 _preventDefault = preventDefault;
+            }
+        }
+        catch (JSDisconnectedException) {
+            // The circuit has already released its listeners.
+        }
+    }
+
+    /// <summary>Tells the browser where wheel events scroll the legend (device pixels); an empty region scrolls the page.</summary>
+    public async Task SetScrollRegionAsync(SKRect region, float density) {
+        try {
+            if (_listeners is not null) {
+                float[]? cssRegion = region.IsEmpty ? null : [region.Left / density, region.Top / density, region.Right / density, region.Bottom / density];
+                await _listeners.InvokeVoidAsync("setScrollRegion", cssRegion);
             }
         }
         catch (JSDisconnectedException) {

@@ -140,6 +140,57 @@ public partial class NTChart<TData> {
 
     internal SKFont ExtensionFont => _extensionFont ??= new SKFont();
 
+    private SKPaint? _labelTooltipPaint;
+    private SKFont? _labelTooltipFont;
+
+    // An M3 plain tooltip above the pointer with the full text of the shortened axis label under it.
+    private void RenderLabelTooltip(NTRenderContext context) {
+        if (_hoveredAxisLabel is null || LastMousePosition is not { } pointer) {
+            return;
+        }
+
+        var density = context.Density;
+        var font = _labelTooltipFont ??= new SKFont { Typeface = NTChartTokens.Typeface(NTTypography.BodySmall) };
+        font.Size = 12 * density;
+        var paint = _labelTooltipPaint ??= new SKPaint { IsAntialias = true };
+
+        var lines = NTLabelText.Wrap(font, _hoveredAxisLabel, 240 * density, 8);
+        var textWidth = 0f;
+        foreach (var line in lines) {
+            textWidth = Math.Max(textWidth, font.MeasureText(line));
+        }
+
+        var padding = 8 * density;
+        var width = textWidth + (2 * padding);
+        var height = Math.Max(24 * density, (lines.Length * font.Spacing) + padding);
+        var left = Math.Clamp(pointer.X - (width / 2), 0, Math.Max(0, context.TotalArea.Right - width));
+        var top = pointer.Y - height - (12 * density);
+        if (top < 0) {
+            top = pointer.Y + (20 * density);
+        }
+
+        var corner = 4 * density;
+        paint.Color = GetThemeColor(NTColor.InverseSurface);
+        context.Canvas.DrawRoundRect(new SKRect(left, top, left + width, top + height), corner, corner, paint);
+
+        paint.Color = GetThemeColor(NTColor.InverseOnSurface);
+        var baseline = top + ((height - (lines.Length * font.Spacing)) / 2) - font.Metrics.Ascent;
+        for (var i = 0; i < lines.Length; i++) {
+            context.Canvas.DrawText(lines[i], left + padding, baseline + (i * font.Spacing), SKTextAlign.Left, font, paint);
+        }
+    }
+
+    // The browser cancels page scrolling only for wheel events inside this region, so it learns of every change.
+    private void SyncLegendScrollRegion() {
+        var region = Legend?.ScrollRegion ?? SKRect.Empty;
+        if (_chartInterop is null || region == _sentLegendScrollRegion) {
+            return;
+        }
+
+        _sentLegendScrollRegion = region;
+        _ = _chartInterop.SetScrollRegionAsync(region, Density);
+    }
+
     private NTRenderContext RecordingContext(NTRenderContext context, SKCanvas canvas, SKRect plotArea) => new() {
         Canvas = canvas,
         DefaultFont = context.DefaultFont,

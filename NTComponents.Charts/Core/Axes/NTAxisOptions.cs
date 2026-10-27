@@ -50,6 +50,44 @@ public abstract class NTAxisOptions<TData> : ComponentBase, INTAxis<TData> where
     public bool Visible { get; set; } = true;
 
     /// <summary>
+    ///     Gets or sets the widest a rotated X tick label or a Y tick label may be, in device-independent pixels. Longer
+    ///     labels end in an ellipsis and show their full text in a tooltip on hover. X labels that do not fit side by side
+    ///     wrap onto two lines before they rotate. <see langword="null"/> never shortens labels.
+    /// </summary>
+    [Parameter]
+    public float? MaxLabelWidth { get; set; } = 120f;
+
+    /// <summary>
+    ///     Gets the full text of the shortened tick label drawn at <paramref name="point"/>, or <see langword="null"/> when
+    ///     no shortened label is there.
+    /// </summary>
+    /// <param name="point">A canvas point in device pixels.</param>
+    public string? GetTruncatedLabelAt(SKPoint point) {
+        if (!Visible) {
+            return null;
+        }
+
+        foreach (var label in TruncatedLabels) {
+            // Undo the label's rotation about its anchor so the test runs against its unrotated bounds.
+            var radians = -label.RotationDegrees * (MathF.PI / 180f);
+            var dx = point.X - label.Anchor.X;
+            var dy = point.Y - label.Anchor.Y;
+            var local = new SKPoint((dx * MathF.Cos(radians)) - (dy * MathF.Sin(radians)), (dx * MathF.Sin(radians)) + (dy * MathF.Cos(radians)));
+            if (label.Bounds.Contains(local)) {
+                return label.Text;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     The shortened labels drawn by the last render: the anchor the label was drawn at, its rotation in degrees, its
+    ///     unrotated bounds relative to the anchor, and its full text.
+    /// </summary>
+    protected List<(SKPoint Anchor, float RotationDegrees, SKRect Bounds, string Text)> TruncatedLabels { get; } = [];
+
+    /// <summary>
     ///     Gets or sets the parent chart that owns this axis.
     /// </summary>
     [CascadingParameter]

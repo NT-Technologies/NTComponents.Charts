@@ -411,6 +411,10 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     private bool _hasDraggedLegend;
     private bool _isDraggingLegend;
     private bool _isHoveringLegend;
+    // The full text of the shortened axis label under the pointer, shown in a plain tooltip.
+    private string? _hoveredAxisLabel;
+    // The legend scroll region last sent to the browser, which needs it to stop page scrolling over the legend.
+    private SKRect _sentLegendScrollRegion;
     // The canvas cursor style written by the last render (assigned in NTChart.razor).
     private string? _renderedCanvasStyle;
     private NTBaseSeries<TData>? _lastHoverNotifiedSeries;
@@ -1182,6 +1186,8 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         _annotationDashEffect?.Dispose();
         _extensionPaint?.Dispose();
         _extensionFont?.Dispose();
+        _labelTooltipPaint?.Dispose();
+        _labelTooltipFont?.Dispose();
         base.Dispose(disposing);
     }
 
@@ -1255,7 +1261,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         var point = new SKPoint((float)e.OffsetX * Density, (float)e.OffsetY * Density);
 
         if (Legend != null && Legend.Visible && Legend.Position != LegendPosition.None) {
-            var clickedItem = Legend.GetItemAtPoint(point, LastPlotArea, Legend.LastDrawArea, Density);
+            var clickedItem = Legend.GetItemAtPoint(point);
 
             if (clickedItem != null) {
                 if (clickedItem.InteractsWithChart && clickedItem.Series != null) {
@@ -1407,6 +1413,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         HoveredDataPoint = null;
         HoveredLegendItem = null;
         _isHoveringLegend = false;
+        _hoveredAxisLabel = null;
         _hoverMissStreak = 0;
         RequestUiRefresh(force: true);
     }
@@ -1573,6 +1580,9 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             _useFrameRangeCache = false;
         }
 
+        RenderLabelTooltip(context);
+        SyncLegendScrollRegion();
+
         if (settleLegend && LastPlotArea.Width > 0) {
             OnPaintSurface(canvas, info);
             return;
@@ -1624,6 +1634,11 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
         _hitTestDirty = false;
         _lastHitTestPoint = mousePoint;
         _lastHitTestArea = plotArea;
+        _hoveredAxisLabel = _chartCoordSystem == ChartCoordinateSystem.Cartesian
+            ? (XAxis as NTAxisOptions<TData>)?.GetTruncatedLabelAt(mousePoint)
+                ?? (YAxis as NTAxisOptions<TData>)?.GetTruncatedLabelAt(mousePoint)
+                ?? (SecondaryYAxis as NTAxisOptions<TData>)?.GetTruncatedLabelAt(mousePoint)
+            : null;
         var wasHoveringLegend = _isHoveringLegend;
         _isHoveringLegend = Legend is { Visible: true } && Legend.Position != LegendPosition.None && Legend.LastDrawArea.Contains(mousePoint);
         if (wasHoveringLegend != _isHoveringLegend) {
@@ -1632,7 +1647,7 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
 
         // Check legend items for hover (if legend is present)
         if (Legend != null && Legend.Visible && Legend.Position != LegendPosition.None) {
-            var hoveredLegendItem = Legend.GetItemAtPoint(mousePoint, plotArea, Legend.LastDrawArea, Density);
+            var hoveredLegendItem = Legend.GetItemAtPoint(mousePoint);
             if (hoveredLegendItem?.Series is not null && hoveredLegendItem.InteractsWithChart) {
                 if (!hoveredLegendItem.IsVisible) {
                     // A hidden item emphasizes nothing; it only keeps its own legend hover state layer.
@@ -2083,6 +2098,13 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
     /// </summary>
     /// <param name="e">The wheel event arguments.</param>
     protected virtual void OnWheel(WheelEventArgs e) {
+        // A wheel over a legend that overflows scrolls its items instead of zooming.
+        if (Legend?.ScrollBy(new SKPoint((float)e.OffsetX * Density, (float)e.OffsetY * Density), (float)e.DeltaX * Density, (float)e.DeltaY * Density) == true) {
+            _hitTestDirty = true;
+            RequestDraw();
+            return;
+        }
+
         DispatchToVisibleSeries(e, ChartInteractions.XZoom | ChartInteractions.YZoom, static (series, e) => series.HandleMouseWheel(e));
         _lastInteractionTimestamp = Stopwatch.GetTimestamp();
         RequestUiRefresh();

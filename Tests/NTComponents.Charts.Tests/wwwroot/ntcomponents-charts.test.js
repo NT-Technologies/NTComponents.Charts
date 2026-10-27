@@ -257,6 +257,26 @@ test('wheel prevention follows updated interaction flags', async () => {
     listener.dispose();
 });
 
+test('wheel inside the legend scroll region stops page scrolling even without zoom', async () => {
+    const element = new EventTarget();
+    const listener = initializeChart(element, { invokeMethodAsync: async () => {} }, false);
+    const wheelAt = (offsetX, offsetY) => {
+        const event = Object.assign(new Event('wheel', { cancelable: true }), { offsetX, offsetY });
+        element.dispatchEvent(event);
+        return event.defaultPrevented;
+    };
+
+    listener.setScrollRegion([100, 200, 300, 250]);
+    assert.equal(wheelAt(150, 220), true);
+    assert.equal(wheelAt(100, 250), true, 'the region edges are inside');
+    assert.equal(wheelAt(150, 100), false);
+    assert.equal(wheelAt(350, 220), false);
+
+    listener.setScrollRegion(null);
+    assert.equal(wheelAt(150, 220), false);
+    listener.dispose();
+});
+
 test('reduced motion is reported at start only when set and again whenever the preference changes', async () => {
     const quiet = [];
     initializeChart(new EventTarget(), { invokeMethodAsync: async (...args) => quiet.push(args) }, false).dispose();

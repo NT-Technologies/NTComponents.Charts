@@ -137,6 +137,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
 
         canvas.DrawLine(xLine, plotArea.Top, xLine, plotArea.Bottom, _linePaint);
 
+        TruncatedLabels.Clear();
         foreach (var tick in _cachedTicks) {
             var y = ScaleYForAxis(tick.Value, yMin, yMax, plotArea);
             if (y < plotArea.Top - context.Density || y > plotArea.Bottom + context.Density) {
@@ -147,13 +148,20 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
                 canvas.DrawLine(plotArea.Left, y, plotArea.Right, y, _gridLinePaint);
             }
 
+            var anchor = new SKPoint(xLine + ((isSecondary ? 8 : -8) * context.Density), y + (4 * context.Density));
             if (isSecondary) {
                 canvas.DrawLine(xLine, y, xLine + (NTChartTokens.AxisTickLength * context.Density), y, _linePaint);
-                canvas.DrawText(tick.Label, xLine + (8 * context.Density), y + (4 * context.Density), SKTextAlign.Left, _textFont, _textPaint);
+                canvas.DrawText(tick.Shown, anchor.X, anchor.Y, SKTextAlign.Left, _textFont, _textPaint);
             }
             else {
                 canvas.DrawLine(xLine - (NTChartTokens.AxisTickLength * context.Density), y, xLine, y, _linePaint);
-                canvas.DrawText(tick.Label, xLine - (8 * context.Density), y + (4 * context.Density), SKTextAlign.Right, _textFont, _textPaint);
+                canvas.DrawText(tick.Shown, anchor.X, anchor.Y, SKTextAlign.Right, _textFont, _textPaint);
+            }
+
+            if (tick.Shown != tick.Label) {
+                var width = _textFont!.MeasureText(tick.Shown, out var bounds);
+                var left = isSecondary ? 0f : -width;
+                TruncatedLabels.Add((anchor, 0f, new SKRect(left, bounds.Top, left + width, bounds.Bottom), tick.Label));
             }
         }
 
@@ -189,7 +197,8 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             LabelFormat,
             Title,
             TitleFontSize,
-            IsSecondary(Chart));
+            IsSecondary(Chart),
+            MaxLabelWidth);
 
         if (_cacheKey.HasValue && _cacheKey.Value.Equals(key)) {
             return;
@@ -210,8 +219,11 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             BuildLinearTicks(min, max, plotHeight, context.Density);
         }
 
-        foreach (var tick in _cachedTicks) {
-            _textFont!.MeasureText(tick.Label, out var bounds);
+        var maxLabelWidth = (MaxLabelWidth ?? float.PositiveInfinity) * context.Density;
+        for (var i = 0; i < _cachedTicks.Count; i++) {
+            var shown = NTLabelText.Ellipsize(_textFont!, _cachedTicks[i].Label, maxLabelWidth);
+            _cachedTicks[i] = _cachedTicks[i] with { Shown = shown };
+            _textFont!.MeasureText(shown, out var bounds);
             _measuredLabelWidth = Math.Max(_measuredLabelWidth, bounds.Width);
         }
     }
@@ -506,7 +518,10 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         _titleFont.Size = TitleFontSize * context.Density;
     }
 
-    private readonly record struct AxisTick(decimal Value, string Label);
+    // Shown is the drawn text: Label, or Label shortened to MaxLabelWidth.
+    private readonly record struct AxisTick(decimal Value, string Label) {
+        public string Shown { get; init; } = Label;
+    }
 
     private readonly record struct AxisCacheKey(
         double Min,
@@ -518,5 +533,6 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         string? LabelFormat,
         string? Title,
         float TitleFontSize,
-        bool IsSecondary);
+        bool IsSecondary,
+        float? MaxLabelWidth);
 }
