@@ -1781,7 +1781,8 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
                     break;
                 }
 
-                hit = series.HitTest(point, plotArea);
+                // Hit-test where the series is drawn: a pie beside a side legend is centered on the canvas, not the plot area.
+                hit = series.HitTest(point, GetSeriesRenderArea(series, plotArea, new SKRect(0, 0, _lastWidth, _lastHeight)));
             }
 
             if (hit is not null) {

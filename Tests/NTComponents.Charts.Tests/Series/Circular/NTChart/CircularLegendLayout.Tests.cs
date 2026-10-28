@@ -118,6 +118,25 @@ public class CircularLegendLayout_Tests : CircularChartTestBase {
         }
     }
 
+    [Theory]
+    [InlineData(LegendPosition.Right)]
+    [InlineData(LegendPosition.Left)]
+    public async Task SideLegend_HoversSlicesOnlyWhereThePieIsDrawn(LegendPosition position) {
+        var cut = RenderPieWithLegend(Items(1, 1, 2), position);
+        using var surface = NewSurface();
+        await PaintAsync(cut, surface);
+        var radius = HorizontalRun(surface, 200, 150, 1);
+
+        foreach (var x in new[] { 200 - radius - 6, 200 + radius + 6 }) {
+            await HoverAsync(cut, surface, x, 150);
+            cut.Instance.HoveredSeries.Should().BeNull($"x={x} is outside the drawn pie");
+        }
+        foreach (var x in new[] { 200 - radius + 6, 200 + radius - 6 }) {
+            await HoverAsync(cut, surface, x, 150);
+            cut.Instance.HoveredSeries.Should().NotBeNull($"x={x} is inside the drawn pie");
+        }
+    }
+
     [Fact]
     public async Task PointerOverLegendEntry_HoversThatSliceIndex() {
         var cut = RenderPieWithLegend(Items(1, 1, 2), LegendPosition.Bottom);
