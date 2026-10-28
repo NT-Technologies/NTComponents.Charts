@@ -10,14 +10,16 @@ const browser = await chromium.launch({ executablePath, headless: true });
 try {
     const page = await browser.newPage();
     page.on('pageerror', error => failures.push(`Page error: ${error.message}`));
+    page.on('requestfailed', request => failures.push(`Request failed: ${request.url()} (${request.failure()?.errorText})`));
     page.on('console', message => {
         if (message.type() === 'error' || failurePattern.test(message.text())) {
             failures.push(`Console ${message.type()}: ${message.text()}`);
         }
     });
 
-    await page.goto(url);
-    await page.waitForSelector('[data-aot-smoke-ready="true"]', { timeout: 60000 });
+    // Wait for Blazor's own ready marker rather than the load event; slower runners need well over 30 seconds for the native .wasm.
+    await page.goto(url, { waitUntil: 'commit', timeout: 60000 });
+    await page.waitForSelector('[data-aot-smoke-ready="true"]', { timeout: 120000 });
     await page.waitForLoadState('networkidle');
 
     if (failurePattern.test(await page.content())) {
