@@ -8,6 +8,7 @@
     "test": "node --test Tests/NTComponents.Charts.Tests/wwwroot/*.test.js"
   },
   "devDependencies": {
+    "playwright-core": "1.60.0",
     "typescript": "7.0.2"
   }
 }

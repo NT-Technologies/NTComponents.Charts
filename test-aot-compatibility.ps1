@@ -79,7 +79,6 @@ foreach ($framework in $Frameworks) {
         if (-not $python) { throw 'Python is required to host the AOT smoke app.' }
 
         $port = Get-Random -Minimum 18000 -Maximum 28000
-        $browserProfile = Join-Path ([IO.Path]::GetTempPath()) "ntcomponents-charts-browser-$([Guid]::NewGuid().ToString('N'))"
         $serverArguments = @{
             FilePath = $python.Source
             ArgumentList = @('-m', 'http.server', $port, '--bind', '127.0.0.1', '--directory', $wwwroot)
@@ -89,17 +88,11 @@ foreach ($framework in $Frameworks) {
         $server = Start-Process @serverArguments
         try {
             Start-Sleep -Seconds 2
-            $dom = & $browser --headless --disable-extensions --disable-gpu --no-sandbox --user-data-dir=$browserProfile --virtual-time-budget=30000 --dump-dom "http://127.0.0.1:$port/" 2>&1 | Out-String
-            if ($dom -notmatch 'data-aot-smoke-ready="true"') {
-                throw "The $framework browser smoke app did not reach its ready marker."
-            }
-            if ($dom -match 'Unhandled exception rendering component|crit: Microsoft\.AspNetCore\.Components\.WebAssembly|TypeInitialization_Type|DllNotFound|EntryPointNotFound') {
-                throw "The $framework browser smoke app reported an unhandled Blazor rendering exception."
-            }
+            node (Join-Path $PSScriptRoot 'Tests/AotCompatibility.TestApp/browser-smoke.mjs') "http://127.0.0.1:$port/" $browser
+            if ($LASTEXITCODE -ne 0) { throw "The $framework browser smoke app failed to render." }
         }
         finally {
             Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
-            Remove-Item $browserProfile -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
