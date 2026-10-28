@@ -40,6 +40,20 @@ public class NTAxisOptions_LongLabels_Tests : ChartTestBase {
         return null;
     }
 
+    // Every shortened X tick label that reports its full text somewhere below the plot.
+    private static HashSet<string> ShortenedXLabels(IRenderedComponent<NTChart<Pt>> chart) {
+        var axis = (NTAxisOptions<Pt>)chart.Instance.XAxis;
+        var labels = new HashSet<string>();
+        for (var y = (int)PlotArea(chart).Bottom; y < Height; y += 2) {
+            for (var x = 0; x < Width; x++) {
+                if (axis.GetTruncatedLabelAt(new SKPoint(x, y)) is { } text) {
+                    labels.Add(text);
+                }
+            }
+        }
+        return labels;
+    }
+
     [Fact]
     public async Task LongLabelsInWideSlots_WrapOntoASecondLineInsteadOfRotating() {
         var shortLabels = await PlotOf(CategoryChart(Categories(4, 10)));
@@ -56,6 +70,43 @@ public class NTAxisOptions_LongLabels_Tests : ChartTestBase {
 
         long160.Bottom.Should().BeApproximately(long80.Bottom, 2, "both label sets are shortened to the same width");
         long160.Height.Should().BeGreaterThan(Height / 2f);
+    }
+
+    [Fact]
+    public async Task ManyLongLabels_RotateAndLabelEveryCategoryThatFitsAcrossTheSlant() {
+        var data = Categories(30, 80);
+        var chart = RenderChart(CategoryChart(data));
+        using var surface = await Paint(chart);
+
+        ShortenedXLabels(chart).Should().BeEquivalentTo(data.Select(p => p.Name), "rotated labels need only one text height between them");
+    }
+
+    [Fact]
+    public async Task ZoomingIntoHundredsOfCategories_LabelsEveryVisibleCategory() {
+        var data = Categories(300, 80);
+        var chart = RenderChart(CategoryChart(data));
+        using var surface = await Paint(chart);
+
+        await chart.InvokeAsync(() => chart.Instance.SetViewXRange(100, 129));
+        await Paint(chart, surface: surface);
+
+        ShortenedXLabels(chart).Should().BeEquivalentTo(data[100..130].Select(p => p.Name));
+    }
+
+    [Fact]
+    public async Task PanningAcrossCategories_KeepsEachLabelOnItsCategory() {
+        var data = Categories(300, 80);
+        var chart = RenderChart(CategoryChart(data));
+        using var surface = await Paint(chart);
+        await chart.InvokeAsync(() => chart.Instance.SetViewXRange(100, 159));
+        await Paint(chart, surface: surface);
+        var before = ShortenedXLabels(chart);
+
+        await chart.InvokeAsync(() => chart.Instance.SetViewXRange(101, 160));
+        await Paint(chart, surface: surface);
+
+        before.Should().HaveCountLessThan(60, "not every category fits at this zoom");
+        ShortenedXLabels(chart).Should().Contain(before.Where(label => label != data[100].Name));
     }
 
     [Fact]

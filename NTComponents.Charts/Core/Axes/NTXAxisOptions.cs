@@ -147,6 +147,14 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             context.Canvas.DrawLine(x, axisY, x, axisY + tickHeight, _linePaint);
 
             var labelLayout = GetTickLabelLayout(tick);
+            var truncated = tick.Truncated;
+            if (labelLayout.RotationDegrees != 0f && x + labelLayout.Bounds.Left < context.TotalArea.Left) {
+                // A rotated label that runs off the left edge is shortened to fit rather than slid into its neighbors.
+                var room = ((x - context.TotalArea.Left - (2 * context.Density)) / MathF.Cos(-RotatedLabelDegrees * MathF.PI / 180f)) - _textFont.Size;
+                var fitted = NTLabelText.Ellipsize(_textFont, labelLayout.Lines[0], room);
+                truncated |= fitted != labelLayout.Lines[0];
+                labelLayout = GetTickLabelLayout(tick with { Lines = [fitted] });
+            }
             var labelBounds = labelLayout.Bounds;
             var textBaseline = labelBandTop - labelBounds.Top;
             var textX = ClampLabelAnchorX(x, labelBounds, context.TotalArea, context.Density);
@@ -163,7 +171,7 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
                 context.Canvas.Restore();
             }
 
-            if (tick.Truncated) {
+            if (truncated) {
                 TruncatedLabels.Add((new SKPoint(textX, textBaseline), labelLayout.RotationDegrees, labelLayout.LocalBounds, tick.Label));
             }
         }
@@ -234,34 +242,32 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             return;
         }
 
-        var visibleCount = end - start + 1;
         var (maxLabelWidth, _) = MeasureSampleLabels(context, start, end, idx => FormatLabel(allX[idx], false));
-        // Space ticks for labels as they are drawn: a rotated label never takes more than MaxLabelWidth.
-        var spacedLabelWidth = Math.Min(maxLabelWidth, (MaxLabelWidth ?? float.PositiveInfinity) * context.Density);
+        var gap = 5 * context.Density;
+        var pixelsPerCategory = plotArea.Width / Math.Max(1, end - start);
+        // Every category is labeled when the labels fit side by side or wrapped onto two lines. Otherwise they rotate,
+        // and rotated labels only need one text height between them across the slant, so far more of them fit.
+        var fits = maxLabelWidth + gap <= pixelsPerCategory;
+        var wraps = !fits && pixelsPerCategory - gap >= MinWrapWidth * context.Density;
+        var rotatedSpacing = _textFont.Size / MathF.Sin(-RotatedLabelDegrees * MathF.PI / 180f);
+        var step = fits || wraps ? 1 : (int)Math.Min(end - start + 1, Math.Ceiling(rotatedSpacing / pixelsPerCategory));
 
-        var targetTicks = EstimateTargetTicks(plotArea.Width, spacedLabelWidth, context.Density, preferDensity: true);
-        var step = Math.Max(1, (int)Math.Floor(visibleCount / (double)targetTicks));
-
-        for (var i = start; i <= end; i += step) {
+        // Label every step-th category counted from the first, so panning keeps each label on its category.
+        for (var i = start + ((step - (start % step)) % step); i <= end; i += step) {
             _cachedTicks.Add(new AxisTick(i, FormatLabel(allX[i], false)));
         }
 
         // The last category is always labeled unless that label would overlap the previous one.
-        var pixelsPerCategory = plotArea.Width / Math.Max(1, end - start);
-        if (_cachedTicks.Count == 0 || (_cachedTicks[^1].Value != end && (end - _cachedTicks[^1].Value) * pixelsPerCategory >= spacedLabelWidth + (5 * context.Density))) {
+        if (_cachedTicks.Count == 0 || (_cachedTicks[^1].Value != end && (end - _cachedTicks[^1].Value) * pixelsPerCategory >= rotatedSpacing)) {
             _cachedTicks.Add(new AxisTick(end, FormatLabel(allX[end], false)));
         }
 
-        var labelSlotWidth = plotArea.Width / Math.Max(1, _cachedTicks.Count - 1);
-        var wrapWidth = labelSlotWidth - (5 * context.Density);
-        if (maxLabelWidth > wrapWidth) {
-            if (wrapWidth >= MinWrapWidth * context.Density) {
-                FitTickLabels(wrapWidth, context.Density);
-            }
-            else {
-                _rotation = RotatedLabelDegrees;
-                FitTickLabels(null, context.Density);
-            }
+        if (wraps) {
+            FitTickLabels(pixelsPerCategory - gap, context.Density);
+        }
+        else if (!fits) {
+            _rotation = RotatedLabelDegrees;
+            FitTickLabels(null, context.Density);
         }
 
         UpdateTickLabelHeight(context);
