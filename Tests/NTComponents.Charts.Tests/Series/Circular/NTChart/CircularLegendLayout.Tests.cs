@@ -77,6 +77,17 @@ public class CircularLegendLayout_Tests : CircularChartTestBase {
     }
 
     [Fact]
+    public void SideLegendPastTheCanvasCenter_CentersThePieInThePlotAreaInsteadOfShrinkingIt() {
+        var cut = RenderPieWithLegend(Items(1, 1, 2), LegendPosition.Right);
+        var plotArea = new SKRect(4, 4, 180, 296);
+
+        var area = (SKRect)typeof(NTChart<Item>).GetMethod("GetSeriesRenderArea", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(cut.Instance, [cut.FindComponent<NTPieSeries<Item>>().Instance, plotArea, new SKRect(0, 0, CanvasWidth, CanvasHeight)])!;
+
+        area.Should().Be(plotArea, "a canvas-centered pie would only reach from x=200 back to the plot area's right edge");
+    }
+
+    [Fact]
     public async Task BottomLegend_ShrinksThePieVerticallyAboveTheLegend() {
         var withoutLegend = RenderChart<NTPieSeries<Item>>(Items(1, 1, 2), new() { ["ShowDataLabels"] = false });
         using var plainSurface = NewSurface();

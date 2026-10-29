@@ -2190,6 +2190,12 @@ public partial class NTChart<TData> : NTDisposableComponentBase, IChart<TData> w
             var dx = Math.Min(centerX - plotArea.Left, plotArea.Right - centerX);
             var dy = Math.Min(centerY - plotArea.Top, plotArea.Bottom - centerY);
 
+            // A wide legend reaches toward or past the canvas center, which would shrink or hide a canvas-centered pie,
+            // so the pie centers in the plot area once that keeps less than half the radius the plot area allows.
+            if (Math.Min(dx, dy) < Math.Min(plotArea.Width, plotArea.Height) / 4f) {
+                return plotArea;
+            }
+
             return new SKRect(centerX - dx, centerY - dy, centerX + dx, centerY + dy);
         }
         return plotArea;
