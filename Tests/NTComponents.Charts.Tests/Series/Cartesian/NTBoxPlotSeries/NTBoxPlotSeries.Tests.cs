@@ -250,6 +250,25 @@ public class NTBoxPlotSeries_Tests : CartesianChartTestBase {
     }
 
     [Fact]
+    public void HitTest_OnAnOutlier_ReturnsThatBox() {
+        var cut = BoxPlot(Three, new BoxPlotValues(10, 20, 30, 40, 50, [80m]));
+        var series = SeriesOf<NTBoxPlotSeries<Pt>>(cut);
+        using var surface = Draw(cut, series);
+
+        series.HitTest(At(cut, 2, 80m, dx: 2f), Area)!.Value.Index.Should().Be(1);
+    }
+
+    [Fact]
+    public void HitTest_JustOffACollapsedBox_ReturnsThatBox() {
+        var cut = BoxPlot(Three, new BoxPlotValues(30, 30, 30, 30, 30));
+        var series = SeriesOf<NTBoxPlotSeries<Pt>>(cut);
+        using var surface = Draw(cut, series);
+        var line = At(cut, 2, 30m);
+
+        series.HitTest(new SKPoint(line.X, line.Y - 3f), Area)!.Value.Index.Should().Be(1, "a box whose five values are equal is a single line");
+    }
+
+    [Fact]
     public void HitTest_AwayFromAnyBox_ReturnsNull() {
         var cut = BoxPlot(Three, Values);
         var series = SeriesOf<NTBoxPlotSeries<Pt>>(cut);

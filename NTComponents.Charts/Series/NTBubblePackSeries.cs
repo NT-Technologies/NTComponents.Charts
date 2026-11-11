@@ -82,13 +82,14 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     public bool ShowValuesInLabels { get; set; } = false;
 
     /// <summary>
-    ///     Gets or sets the minimum font size (in points) used when scaling labels to fit inside a bubble.
+    ///     Gets or sets the smallest label font size. Labels grow to fill their bubble; text that does not fit at this size is
+    ///     truncated with an ellipsis, and a label too tall for its bubble is hidden.
     /// </summary>
     [Parameter]
     public float MinLabelFontSize { get; set; } = 8f;
 
     /// <summary>
-    ///     Gets or sets the maximum font size (in points) used when scaling labels to fit inside a bubble.
+    ///     Gets or sets the largest label font size at normal zoom. Zooming in raises it by the zoom factor.
     /// </summary>
     [Parameter]
     public float MaxLabelFontSize { get; set; } = 26f;
@@ -124,7 +125,7 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
     public float CanvasPadding { get; set; } = 10f;
 
     /// <summary>
-    ///     Adds inner padding between labels and bubble edges.
+    ///     Adds inner padding between labels and bubble edges, at most a fifth of the bubble radius.
     /// </summary>
     [Parameter]
     public float LabelPadding { get; set; } = 12f;
@@ -1467,77 +1468,76 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         context.Canvas.DrawText(">", indicatorRect.MidX, baseline, SKTextAlign.Center, _drillIndicatorFont, _drillIndicatorTextPaint);
     }
 
-    private void RenderBubbleLabel(
-        NTRenderContext context,
-        TreeNode node,
-        SKPoint center,
-        float radius,
-        SKColor bubbleColor,
-        SKColor? labelColorOverride,
-        NTBubblePackSeries<TData> styleSeries) {
-        var minSide = radius * 2f;
-        if (minSide < (16f * context.Density)) {
-            return;
-        }
-
-        var maxFont = styleSeries.MaxLabelFontSize * context.Density;
-        var configuredMinFont = styleSeries.MinLabelFontSize * context.Density;
-        var labelPadding = Math.Max(0f, styleSeries.LabelPadding * context.Density);
-        var interiorDiameter = (radius * 2f) - (labelPadding * 2f);
-        if (interiorDiameter <= (6f * context.Density)) {
-            return;
-        }
-
-        var adaptiveMinFont = Math.Max(
-            4f * context.Density,
-            Math.Min(configuredMinFont, interiorDiameter * (styleSeries.ShowValuesInLabels ? 0.14f : 0.18f)));
-        var preferredPrimary = interiorDiameter * (styleSeries.ShowValuesInLabels ? 0.20f : 0.26f);
-        var primaryMaxByInterior = interiorDiameter * (styleSeries.ShowValuesInLabels ? 0.32f : 0.44f);
-        var primaryMaxFont = Math.Min(maxFont, primaryMaxByInterior);
-        var primaryFont = Math.Clamp(preferredPrimary, Math.Min(adaptiveMinFont, primaryMaxFont), primaryMaxFont);
-        if (primaryFont < (4f * context.Density)) {
-            return;
-        }
-
-        // bubbleColor is the fill as drawn (dimmed when another bubble is hovered); the label stays readable on it.
-        var textColor = labelColorOverride ?? NTSeriesGeometry.LegibleTextColor(NTChartTokens.ContrastingTextColor(bubbleColor.WithAlpha(255)), bubbleColor, Chart.GetThemeColor(Chart.BackgroundColor));
-        _labelFont!.Typeface = NTChartTokens.Typeface(NTTypography.LabelLarge);
-        _labelPaint!.Color = textColor.WithAlpha((byte)(255f * VisibilityFactor));
-        _labelFont.Size = primaryFont;
-
+    private void RenderBubbleLabel(NTRenderContext context, TreeNode node, SKPoint center, float radius, SKColor bubbleColor, SKColor? labelColorOverride, NTBubblePackSeries<TData> styleSeries) {
         var label = node.DisplayLabel;
         if (string.IsNullOrWhiteSpace(label)) {
             return;
         }
 
-        var maxWidth = interiorDiameter;
-        if (maxWidth <= 0f) {
+        // Padding never takes more than a fifth of the radius, so small bubbles keep room for text.
+        var inner = radius - Math.Clamp(styleSeries.LabelPadding * context.Density, 0f, radius * 0.2f);
+        var minFont = styleSeries.MinLabelFontSize * context.Density;
+        // Zooming in raises the ceiling with the bubbles, so text keeps filling them.
+        var maxFont = Math.Max(minFont, styleSeries.MaxLabelFontSize * context.Density * Math.Max(1f, GetRadiusZoomScale()));
+        var valueText = styleSeries.ShowValuesInLabels ? FormatValue(node.Value, styleSeries.DataLabelFormat) : null;
+        var labelTypeface = NTChartTokens.Typeface(NTTypography.LabelLarge);
+        var valueTypeface = NTChartTokens.Typeface(NTTypography.BodyMedium);
+
+        // Widths and heights per pixel of font size. The text block is a rectangle inscribed in the bubble:
+        // (width / 2)^2 + (height / 2)^2 <= inner^2, so the largest font that fits is 2 * inner / |(width, height)|.
+        // It is sized to 95% of that so measuring rounding never truncates text that fits.
+        var labelUnitWidth = MeasureUnitWidth(label, labelTypeface);
+        var valueUnitWidth = valueText is null ? 0f : MeasureUnitWidth(valueText, valueTypeface) * ValueFontRatio;
+        var unitHeight = BlockUnitHeight(valueText is not null);
+        var size = Math.Min(maxFont, 1.9f * inner / MathF.Sqrt(MathF.Pow(Math.Max(labelUnitWidth, valueUnitWidth), 2) + (unitHeight * unitHeight)));
+        if (size < minFont) {
+            // Too long to fit whole: keep the minimum size and truncate; drop the value line when two lines are too tall.
+            size = minFont;
+            if (valueText is not null && BlockUnitHeight(true) * size > 2f * inner) {
+                valueText = null;
+                unitHeight = BlockUnitHeight(false);
+            }
+
+            if (unitHeight * size > 2f * inner) {
+                return;
+            }
+        }
+
+        var halfHeight = unitHeight * size / 2f;
+        var maxWidth = 2f * MathF.Sqrt(Math.Max(0f, (inner * inner) - (halfHeight * halfHeight)));
+
+        // bubbleColor is the fill as drawn (dimmed when another bubble is hovered); the label stays readable on it.
+        var textColor = labelColorOverride ?? NTSeriesGeometry.LegibleTextColor(NTChartTokens.ContrastingTextColor(bubbleColor.WithAlpha(255)), bubbleColor, Chart.GetThemeColor(Chart.BackgroundColor));
+        _labelPaint!.Color = textColor.WithAlpha((byte)(255f * VisibilityFactor));
+        _labelFont!.Typeface = labelTypeface;
+        _labelFont.Size = size;
+        // A lone label centers its capitals on the bubble; with a value line under it the whole block is centered.
+        var labelBaseline = valueText is null ? center.Y + (CapHeightRatio * size / 2f) : center.Y - halfHeight + (CapHeightRatio * size);
+
+        context.Canvas.DrawText(NTLabelText.Ellipsize(_labelFont, label, maxWidth), center.X, labelBaseline, SKTextAlign.Center, _labelFont, _labelPaint);
+        if (valueText is null) {
             return;
         }
 
-        var estimatedWidth = EstimateTextWidth(label, _labelFont.Size);
-        if (estimatedWidth > maxWidth) {
-            _labelFont.Size = Math.Max(adaptiveMinFont, _labelFont.Size * (maxWidth / Math.Max(1f, estimatedWidth)));
-        }
+        _labelFont.Typeface = valueTypeface;
+        _labelFont.Size = size * ValueFontRatio;
+        var valueBaseline = labelBaseline + (LineGapRatio * size) + (CapHeightRatio * _labelFont.Size);
+        context.Canvas.DrawText(NTLabelText.Ellipsize(_labelFont, valueText, maxWidth), center.X, valueBaseline, SKTextAlign.Center, _labelFont, _labelPaint);
+    }
 
-        var baseline = center.Y + (_labelFont.Size * (styleSeries.ShowValuesInLabels ? -0.10f : 0.30f));
-        context.Canvas.DrawText(label, center.X, baseline, SKTextAlign.Center, _labelFont, _labelPaint);
+    // Value text size relative to the label, the visible height of capitals and the gap between the two lines (relative to font size).
+    private const float ValueFontRatio = 0.85f;
+    private const float CapHeightRatio = 0.72f;
+    private const float LineGapRatio = 0.3f;
 
-        if (!styleSeries.ShowValuesInLabels || interiorDiameter < (28f * context.Density)) {
-            return;
-        }
+    // Height of the text block per pixel of label font size: cap height plus room for descenders, and the value line under it.
+    private static float BlockUnitHeight(bool withValue) => withValue ? CapHeightRatio + LineGapRatio + (ValueFontRatio * (CapHeightRatio + 0.25f)) : CapHeightRatio + 0.25f;
 
-        var valueText = FormatValue(node.Value, styleSeries.DataLabelFormat);
-        _labelFont.Typeface = NTChartTokens.Typeface(NTTypography.BodyMedium);
-        var valueFontSize = Math.Max(4f * context.Density, Math.Min(_labelFont.Size * 0.52f, interiorDiameter * 0.22f));
-        _labelFont.Size = valueFontSize;
-        var valueWidth = EstimateTextWidth(valueText, valueFontSize);
-        if (valueWidth > maxWidth) {
-            _labelFont.Size = Math.Max(3.5f * context.Density, valueFontSize * (maxWidth / Math.Max(1f, valueWidth)));
-        }
-
-        var valueBaseline = center.Y + (_labelFont.Size * 1.05f);
-        context.Canvas.DrawText(valueText, center.X, valueBaseline, SKTextAlign.Center, _labelFont, _labelPaint);
+    private float MeasureUnitWidth(string text, SKTypeface typeface) {
+        const float referenceSize = 100f;
+        _labelFont!.Typeface = typeface;
+        _labelFont.Size = referenceSize;
+        return _labelFont.MeasureText(text) / referenceSize;
     }
 
     private RenderedBubble? FindBubbleAtPoint(SKPoint point, bool interactiveOnly) {
@@ -1659,14 +1659,6 @@ public class NTBubblePackSeries<TData> : NTBaseSeries<TData>, ITreeMapDrillableS
         catch {
             return value.ToString("N0");
         }
-    }
-
-    private static float EstimateTextWidth(string text, float size) {
-        if (string.IsNullOrEmpty(text)) {
-            return 0f;
-        }
-
-        return text.Length * (size * 0.57f);
     }
 
     private float GetRadiusZoomScale() {

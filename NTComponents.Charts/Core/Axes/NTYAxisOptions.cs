@@ -16,6 +16,13 @@ public interface INTYAxis<TData> : INTAxis<TData> where TData : class {
     /// </summary>
     decimal? AbsoluteMinimum { get; }
 
+    /// <summary>
+    ///     Formats a Y value the way the axis labels its ticks.
+    /// </summary>
+    /// <param name="value">The Y value to format.</param>
+    /// <returns>The formatted label text.</returns>
+    string FormatValue(decimal value);
+
     /// <summary>Gets the default Y axis configuration for the chart.</summary>
     static abstract INTYAxis<TData> Default { get; }
 }
@@ -72,6 +79,13 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
     /// </summary>
     [Parameter]
     public NTColor GridLineColor { get; set; } = NTColor.OutlineVariant;
+
+    /// <summary>
+    ///     Gets or sets a function that turns a tick value into its label, for example a row number into a month name. Takes
+    ///     precedence over <see cref="NTAxisOptions{TData}.LabelFormat"/>. Heat map rows and tooltips use it too.
+    /// </summary>
+    [Parameter]
+    public Func<TAxisValue, string>? LabelFormatter { get; set; }
 
     /// <inheritdoc />
     public override void Dispose() {
@@ -198,7 +212,10 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             Title,
             TitleFontSize,
             IsSecondary(Chart),
-            MaxLabelWidth);
+            MaxLabelWidth,
+            LabelFormatter,
+            // The chart rebuilds this list whenever its data changes, so its identity tracks the heat map rows.
+            HasHeatMapForCurrentAxis() ? Chart.GetAllYValues() : null);
 
         if (_cacheKey.HasValue && _cacheKey.Value.Equals(key)) {
             return;
@@ -211,6 +228,9 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         var horizontalCategoryLabels = GetHorizontalCategoryLabels();
         if (horizontalCategoryLabels is { Count: > 0 }) {
             BuildHorizontalCategoryTicks(horizontalCategoryLabels);
+        }
+        else if (GetHeatMapRows() is { Count: > 0 } rows) {
+            BuildRowTicks(rows, min, max, plotHeight, context.Density);
         }
         else if (Scale == NTAxisScale.Logarithmic) {
             BuildLogTicks(min, max);
@@ -254,6 +274,32 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         return labels.Count > 0 ? labels : null;
     }
 
+    private bool HasHeatMapForCurrentAxis() => Chart is NTChart<TData> ntChart && ntChart.Series.Any(s => s is NTHeatMapSeries<TData> { IsEffectivelyVisible: true } heatMap && heatMap.UseSecondaryYAxis == IsSecondary(Chart));
+
+    private List<decimal>? GetHeatMapRows() {
+        if (Chart is not NTChart<TData> ntChart) {
+            return null;
+        }
+
+        var useSecondaryAxis = IsSecondary(Chart);
+        var rows = new SortedSet<decimal>();
+        foreach (var heatMap in ntChart.Series.OfType<NTHeatMapSeries<TData>>().Where(s => s.IsEffectivelyVisible && s.UseSecondaryYAxis == useSecondaryAxis)) {
+            rows.UnionWith(heatMap.RowValues);
+        }
+
+        return rows.Count > 0 ? [.. rows] : null;
+    }
+
+    // One tick per heat map row; rows closer together than a label line are labeled every step-th row.
+    private void BuildRowTicks(List<decimal> rows, decimal min, decimal max, float plotHeight, float density) {
+        var range = max - min;
+        var rowSpacing = range <= 0 ? plotHeight : (float)(NTSeriesGeometry.MinGap(rows) / range) * plotHeight;
+        var step = Math.Max(1, (int)Math.Ceiling((_textFont!.Size + (4 * density)) / Math.Max(1f, rowSpacing)));
+        for (var i = 0; i < rows.Count; i += step) {
+            _cachedTicks.Add(new AxisTick(rows[i], FormatLabel(rows[i])));
+        }
+    }
+
     private bool HasGridlessSeriesForCurrentAxis() {
         if (Chart is not NTChart<TData> ntChart) {
             return false;
@@ -270,15 +316,6 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
     private void BuildHorizontalCategoryTicks(List<string> labels) {
         for (var i = 0; i < labels.Count; i++) {
             _cachedTicks.Add(new AxisTick(i, labels[i]));
-        }
-    }
-
-    private void BuildLinearOrLogTicks(decimal min, decimal max, float plotHeight, float density) {
-        if (Scale == NTAxisScale.Logarithmic) {
-            BuildLogTicks(min, max);
-        }
-        else {
-            BuildLinearTicks(min, max, plotHeight, density);
         }
     }
 
@@ -435,7 +472,14 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
             : (topPadding, defaultBottomPadding);
     }
 
+    /// <inheritdoc />
+    public string FormatValue(decimal value) => FormatLabel(value);
+
     private string FormatLabel(decimal value) {
+        if (LabelFormatter is { } formatter) {
+            return formatter(TAxisValue.CreateSaturating(value));
+        }
+
         if (!string.IsNullOrEmpty(LabelFormat)) {
             try {
                 if (LabelFormat.Contains("{0")) {
@@ -534,5 +578,7 @@ public class NTYAxisOptions<TData, TAxisValue> : NTAxisOptions<TData>, INTYAxis<
         string? Title,
         float TitleFontSize,
         bool IsSecondary,
-        float? MaxLabelWidth);
+        float? MaxLabelWidth,
+        Func<TAxisValue, string>? LabelFormatter,
+        List<object>? HeatMapRowsSource);
 }

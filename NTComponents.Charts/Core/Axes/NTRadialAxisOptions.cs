@@ -105,7 +105,7 @@ public class NTRadialAxisOptions<TData> : NTAxisOptions<TData> where TData : cla
       textPaint.Color = NTChartTokens.SecondaryTextColor(Chart);
 
       var textFont = _textFont ??= new SKFont { Typeface = NTChartTokens.Typeface(NTTypography.BodySmall) };
-      textFont.Size = NTChartTokens.Size(NTTypography.BodySmall) * context.Density;
+      textFont.Size = AxisFontSize * context.Density;
 
       // Draw concentric rings
       for (int i = 1; i <= Levels; i++) {

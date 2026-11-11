@@ -1410,15 +1410,48 @@ public class NTLineSeries<TData> : NTCartesianSeries<TData> where TData : class 
         return pathBuilder.Detach();
     }
 
+    // The points as drawn in renderArea with the current axes; hit testing and the tooltip's overlap check share them.
+    private List<RenderPointInfo> GetCurrentRenderPoints(SKRect renderArea, out RenderCacheKey key) {
+        var yAxis = (UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis) as NTAxisOptions<TData>;
+        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis as NTAxisOptions<TData>, true);
+        return GetRenderPoints(renderArea, xMin, xMax, yAxis, Chart.Density, out key);
+    }
+
+    /// <summary>Gets where the point for <paramref name="data" /> is drawn, or <see langword="null" /> when it is not drawn.</summary>
+    internal SKPoint? GetDrawnPoint(TData data, SKRect renderArea) {
+        foreach (var point in GetCurrentRenderPoints(renderArea, out _)) {
+            if (!point.IsSynthetic && ReferenceEquals(point.Data, data)) {
+                return point.Point;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Gets the item whose drawn point is nearest <paramref name="target" /> and at most <paramref name="maxDistance" /> pixels from it.</summary>
+    internal TData? GetDrawnItemNear(SKPoint target, float maxDistance, SKRect renderArea) {
+        TData? nearest = null;
+        var nearestSq = maxDistance * maxDistance;
+        foreach (var point in GetCurrentRenderPoints(renderArea, out _)) {
+            var dx = point.Point.X - target.X;
+            var dy = point.Point.Y - target.Y;
+            var distanceSq = (dx * dx) + (dy * dy);
+            if (!point.IsSynthetic && distanceSq <= nearestSq) {
+                nearestSq = distanceSq;
+                nearest = point.Data;
+            }
+        }
+
+        return nearest;
+    }
+
     /// <inheritdoc />
     public override (int Index, TData? Data)? HitTest(SKPoint point, SKRect renderArea) {
         if (Data == null || !Data.Any()) {
             return null;
         }
 
-        var yAxis = (UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis) as NTAxisOptions<TData>;
-        var (xMin, xMax) = Chart.GetXRange(Chart.XAxis as NTAxisOptions<TData>, true);
-        var points = GetRenderPoints(renderArea, xMin, xMax, yAxis, Chart.Density, out var renderKey);
+        var points = GetCurrentRenderPoints(renderArea, out var renderKey);
 
         for (var i = 0; i < points.Count; i++) {
             var p = points[i].Point;

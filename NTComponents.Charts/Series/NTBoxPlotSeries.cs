@@ -11,7 +11,8 @@ namespace NTComponents.Charts;
 /// </summary>
 /// <remarks>
 ///     The box width is a fraction of the smallest gap between distinct X positions (one category on a categorical axis). The Y range
-///     covers the whiskers and any outliers. The hover and click area of an item is its box width from the upper to the lower whisker.
+///     covers the whiskers and any outliers. The hover and click area of an item is its box width from the upper to the lower whisker,
+///     plus each outlier dot, both widened by a few pixels so whisker caps, a collapsed box and outliers are easy to hit.
 /// </remarks>
 /// <typeparam name="TData">The type of the data.</typeparam>
 public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : class {
@@ -59,6 +60,10 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
    /// </summary>
    [Parameter]
    public float WhiskerWidthRatio { get; set; } = 0.5f;
+
+   // Outlier dot radius and the extra hover reach around every mark, in dp.
+   private const float OutlierRadius = 3f;
+   private const float HitSlop = 4f;
 
    private SKPaint? _strokePaint;
    private SKPaint? _fillPaint;
@@ -188,7 +193,7 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
          canvas.DrawLine(box.X - box.HalfCap, box.Min, box.X + box.HalfCap, box.Min, _strokePaint);
          _strokePaint.Color = NTSeriesGeometry.WithFactor(color, alpha * grow);
          for (var o = box.OutlierStart; o < box.OutlierStart + box.OutlierCount; o++) {
-            canvas.DrawCircle(box.X, _outliers[o], 3f * density, _strokePaint);
+            canvas.DrawCircle(box.X, _outliers[o], OutlierRadius * density, _strokePaint);
          }
       }
 
@@ -272,10 +277,21 @@ public class NTBoxPlotSeries<TData> : NTCartesianSeries<TData> where TData : cla
          return null;
       }
 
+      // A slop around the drawn marks keeps thin targets hoverable: whisker caps, a box collapsed to one line, and outlier dots.
+      var slop = HitSlop * Chart.Density;
+      var outlierReach = (OutlierRadius * Chart.Density) + slop;
       for (var i = _boxes.Count - 1; i >= 0; i--) {
          var box = _boxes[i];
-         if (Math.Abs(point.X - box.X) <= box.HalfBox && point.Y >= box.Max && point.Y <= box.Min) {
+         var dx = Math.Abs(point.X - box.X);
+         if (dx <= box.HalfBox && point.Y >= box.Max - slop && point.Y <= box.Min + slop) {
             return (i, _snapshot[i]);
+         }
+
+         for (var o = box.OutlierStart; o < box.OutlierStart + box.OutlierCount; o++) {
+            var dy = point.Y - _outliers[o];
+            if ((dx * dx) + (dy * dy) <= outlierReach * outlierReach) {
+               return (i, _snapshot[i]);
+            }
          }
       }
 

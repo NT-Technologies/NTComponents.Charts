@@ -322,13 +322,9 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
             return hasValues ? (min, max) : null;
         }
 
-        // Horizontal: Y axis is categorical, so use index positions.
-        var count = Data.Count();
-        if (count <= 0) {
-            return (0, 1);
-        }
-
-        return (0, Math.Max(1, count - 1));
+        // Horizontal: Y axis is categorical, so use index positions. A lone category spans (0, 0) so the chart's half-category
+        // padding centers it; (0, 1) would leave it on the bottom edge, half its bar clipped off the plot.
+        return (0, dataList.Count - 1);
     }
 
 
@@ -426,9 +422,15 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
 
         var isPositive = value >= 0;
         var background = GetLabelBackground(barColor);
-        var anchorX = isPositive ? barRect.Right + inset : barRect.Left - inset;
-        DrawLabelText(context, text, anchorX, barRect.MidY, isPositive ? SKTextAlign.Left : SKTextAlign.Right, sizePx, labelColor, background, background, renderArea);
+        var anchorX = isPositive ? barRect.Right + GetOutsideLabelOffset(context.Density) : barRect.Left - GetOutsideLabelOffset(context.Density);
+        DrawLabelText(context, text, anchorX, barRect.MidY, isPositive ? SKTextAlign.Left : SKTextAlign.Right, sizePx, labelColor, background, background, GetOutsideLabelBounds(renderArea, context.Density));
     }
+
+    // The text anchor sits one inline padding inside its background, so offsetting by both keeps the whole label box clear of the bar end.
+    private static float GetOutsideLabelOffset(float density) => (LabelInset + NTChartTokens.DataLabelPaddingInline) * density;
+
+    // A label pushed back into the plot stops an inset short of its edges, so it never covers the Y axis line.
+    private static SKRect GetOutsideLabelBounds(SKRect renderArea, float density) => SKRect.Inflate(renderArea, -LabelInset * density, 0f);
 
     private List<SKRect> GetBarRects(IReadOnlyList<TData> dataList, SKRect renderArea, double xMin, double xMax, decimal yMin, decimal yMax, decimal yBase, double xBase, NTAxisScale yScale, float animationFactor) {
         if (dataList.Count == 0) {
@@ -855,7 +857,7 @@ public class NTBarSeries<TData> : NTCartesianSeries<TData> where TData : class {
         var background = GetLabelBackground(accentColor);
 
         if (isHorizontal) {
-            DrawLabelText(context, text, barRect.Right + inset, barRect.MidY, SKTextAlign.Left, sizePx, null, background, background, renderArea);
+            DrawLabelText(context, text, barRect.Right + GetOutsideLabelOffset(context.Density), barRect.MidY, SKTextAlign.Left, sizePx, null, background, background, GetOutsideLabelBounds(renderArea, context.Density));
             return;
         }
 

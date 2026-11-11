@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using SkiaSharp;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Numerics;
 using NTComponents.Charts;
 using NTComponents.Charts.Core.Series;
@@ -29,6 +30,14 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
     /// </summary>
     [Parameter, EditorRequired]
     public Func<TData, TAxisType> ValueSelector { get; set; } = default!;
+
+    /// <summary>
+    ///     Gets or sets a function that turns an axis value into its tick label and tooltip header, for example a date into
+    ///     "MMM yyyy". Takes precedence over <see cref="NTAxisOptions{TData}.LabelFormat"/>. Numeric ticks are converted to
+    ///     <typeparamref name="TAxisType"/> first.
+    /// </summary>
+    [Parameter]
+    public Func<TAxisType, string>? LabelFormatter { get; set; }
 
     // Whether TAxisType is a category type never changes for a closed generic type, so the reflection runs once.
     private static readonly bool IsCategoricalType = GetIsCategoricalType();
@@ -210,10 +219,16 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             usesIntegralTicks,
             EnableAutoDateGrouping,
             DateGroupingThreshold,
-            MaxLabelWidth);
+            MaxLabelWidth,
+            LabelFormatter);
 
         if (_cacheKey.HasValue && _cacheKey.Value.Equals(key)) {
             return;
+        }
+
+        // Grouped date ticks cache their label text, so a new format or formatter must rebuild them.
+        if (_cacheKey is { } previous && (previous.LabelFormat != LabelFormat || !ReferenceEquals(previous.LabelFormatter, LabelFormatter))) {
+            _groupedDateTickCache.Clear();
         }
 
         _cacheKey = key;
@@ -748,6 +763,10 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
             return string.Empty;
         }
 
+        if (LabelFormatter is { } formatter && TryGetAxisValue(value, out var axisValue)) {
+            return formatter(axisValue);
+        }
+
         if (!string.IsNullOrEmpty(LabelFormat)) {
             try {
                 return string.Format(LabelFormat, value);
@@ -771,6 +790,23 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         }
 
         return value.ToString() ?? string.Empty;
+    }
+
+    // Categories and dates reach the formatter as they are; numeric ticks are doubles converted to the axis's numeric type.
+    private static bool TryGetAxisValue(object value, out TAxisType axisValue) {
+        if (value is TAxisType typed) {
+            axisValue = typed;
+            return true;
+        }
+
+        var target = Nullable.GetUnderlyingType(typeof(TAxisType)) ?? typeof(TAxisType);
+        if (value is double number && !target.IsEnum && Type.GetTypeCode(target) is >= TypeCode.SByte and <= TypeCode.Decimal) {
+            axisValue = (TAxisType)Convert.ChangeType(number, target, CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        axisValue = default!;
+        return false;
     }
 
     private NTDateGroupingLevel ResolveDateGroupingLevelFromCurrentView() {
@@ -955,7 +991,8 @@ public class NTXAxisOptions<TData, TAxisType> : NTAxisOptions<TData>, INTXAxis<T
         bool UsesIntegralTicks,
         bool EnableAutoDateGrouping,
         int DateGroupingThreshold,
-        float? MaxLabelWidth);
+        float? MaxLabelWidth,
+        Func<TAxisType, string>? LabelFormatter);
 
     private readonly record struct DateTickCacheKey(
         NTDateGroupingLevel Level,

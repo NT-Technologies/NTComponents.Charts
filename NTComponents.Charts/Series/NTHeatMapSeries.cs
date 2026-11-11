@@ -130,6 +130,9 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
       return _snapshot.Count > 0;
    }
 
+   /// <summary>Gets the row values in ascending order; the Y axis puts one tick on each row.</summary>
+   internal IEnumerable<decimal> RowValues => EnsureStats() ? _ys : [];
+
    /// <inheritdoc />
    public override (double Min, double Max)? GetXRange() => EnsureStats() ? (_xMin - (_xGap / 2), _xMax + (_xGap / 2)) : null;
 
@@ -239,11 +242,14 @@ public class NTHeatMapSeries<TData> : NTCartesianSeries<TData> where TData : cla
    /// <inheritdoc />
    internal override TooltipInfo GetTooltipInfo(TData data) {
       var color = Chart.GetSeriesColor(this);
+      var y = YValueSelector(data);
+      // The row reads as the Y axis labels it, just as the header reads as the X axis labels the column.
+      var yText = (UseSecondaryYAxis ? Chart.SecondaryYAxis : Chart.YAxis) is INTYAxis<TData> yAxis ? yAxis.FormatValue(y) : string.Format(DataLabelFormat, y);
       var defaultInfo = new TooltipInfo {
          Header = Chart.XAxis.FormatValue(XValue(data), forTooltip: true),
          Lines = [
             new TooltipLine { Label = Title ?? "Series", Value = string.Format(DataLabelFormat, WeightSelector(data)), Color = color },
-            new TooltipLine { Label = "Y", Value = string.Format(DataLabelFormat, YValueSelector(data)), Color = color }
+            new TooltipLine { Label = "Y", Value = yText, Color = color }
          ]
       };
 

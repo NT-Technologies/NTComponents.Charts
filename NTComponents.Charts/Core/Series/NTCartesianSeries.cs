@@ -51,7 +51,19 @@ public abstract class NTCartesianSeries<TData> : NTBaseSeries<TData>, ICartesian
             ]
         };
 
-        return ResolveTooltipInfo(data, defaultInfo, Chart.HoveredPointIndex);
+        // A series that joins another's tooltip is not the hovered one, so it has no hovered point index.
+        return ResolveTooltipInfo(data, defaultInfo, ReferenceEquals(Chart.HoveredSeries, this) ? Chart.HoveredPointIndex : null);
+    }
+
+    /// <summary>Gets the first item whose scaled X is exactly <paramref name="x" />, or <see langword="null" /> when there is none.</summary>
+    internal TData? GetItemAtX(double x) {
+        foreach (var point in GetVisibleSpan(x, x, overscan: 0)) {
+            if (point.X == x) {
+                return point.Data;
+            }
+        }
+
+        return null;
     }
 
     /// <inheritdoc />

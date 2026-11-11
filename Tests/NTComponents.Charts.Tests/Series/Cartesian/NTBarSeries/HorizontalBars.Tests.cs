@@ -57,6 +57,31 @@ public class NTBarSeriesHorizontalBars_Tests : BarTestBase {
     }
 
     [Fact]
+    public void Render_ALoneCategoryIsCenteredAndNotClipped() {
+        var cut = RenderChart(XAxisKind.Default, SeriesFragment<NTBarSeries<Pt>>(Categories(10m), Primary, Horizontal), SeriesFragment<NTBarSeries<Pt>>(Categories(20m), Secondary, Horizontal));
+        var first = SeriesOf<NTBarSeries<Pt>>(cut);
+        using var surface = Draw(cut, first, SeriesOf<NTBarSeries<Pt>>(cut, 1));
+        var column = (int)ExpectedPoint(cut.Instance, 5d, 0m).X;
+
+        first.GetYRange().Should().Be((0m, 0m));
+        IsWhite(PixelAt(surface, column, 0)).Should().BeTrue("the bars stop short of the top edge");
+        IsWhite(PixelAt(surface, column, SurfaceHeight - 1)).Should().BeTrue("the bars stop short of the bottom edge");
+        (ColumnCount(surface, column, Red) + ColumnCount(surface, column, Blue)).Should().BeGreaterThan(SurfaceHeight / 2);
+    }
+
+    [Fact]
+    public void Render_ALabelBesideAShortBarStaysClearOfTheAxisAndTheBar() {
+        var cut = RenderChart(XAxisKind.Default, SeriesFragment<NTBarSeries<Pt>>(Categories(0m, 100m), Primary, Horizontal, ("ShowDataLabels", true), ("DataLabelFormat", "{0:N2} units")));
+        var series = SeriesOf<NTBarSeries<Pt>>(cut);
+        using var surface = Draw(cut, series);
+        var zeroBar = HorizontalBar(cut.Instance, 0, 2, 0m);
+
+        // The label background is the series color, so no red may appear between the plot edge and an inset past the bar end.
+        Enumerable.Range(0, (int)zeroBar.Right + 4).Should().OnlyContain(x => !IsClose(PixelAt(surface, x, (int)zeroBar.MidY), Red));
+        Enumerable.Range((int)zeroBar.Right + 4, 40).Should().Contain(x => IsClose(PixelAt(surface, x, (int)zeroBar.MidY), Red), "the label sits beside the bar");
+    }
+
+    [Fact]
     public void ChartXRange_StartsAtZeroForPositiveValuesAndOnlyPadsTheRight() {
         var cut = RenderChart(XAxisKind.Default, SeriesFragment<NTBarSeries<Pt>>(Categories(10m, 20m, 40m), Primary, Horizontal));
 

@@ -214,13 +214,13 @@ public class NTHeatMapSeries_Tests : CartesianChartTestBase {
     }
 
     [Fact]
-    public void Tooltip_ShowsTheWeightAndTheRow() {
+    public void Tooltip_ShowsTheWeightAndTheRowAsTheYAxisLabelsIt() {
         var data = new Pt(2, 7m, 10m);
         var cut = HeatMap([data]);
 
         var info = Tooltip(SeriesOf<NTHeatMapSeries<Pt>>(cut), data);
 
-        info.Lines.Select(l => l.Value).Should().Equal("10", "7");
+        info.Lines.Select(l => l.Value).Should().Equal("10", "7.00");
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using NTComponents.Charts.Core.Series;
 using SkiaSharp;
 using System.ComponentModel;
 
@@ -38,6 +39,21 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
     /// </summary>
     [Parameter]
     public bool ShowSeriesLabels { get; set; } = true;
+
+    /// <summary>
+    ///     Gets or sets whether hovering a line, area or point series lists every line, area and point series that has a value at
+    ///     the same X. When <see langword="false"/>, only series with a point within <see cref="OverlapDistance"/> of the hovered
+    ///     point are added, so overlapping points always show together.
+    /// </summary>
+    [Parameter]
+    public bool ShowAllSeriesAtX { get; set; }
+
+    /// <summary>
+    ///     Gets or sets how close, in dp, another line, area or point series' point must be drawn to the hovered point to count as
+    ///     overlapping it and join the tooltip. Measured between point centers; 0 only merges points drawn at the identical spot.
+    /// </summary>
+    [Parameter]
+    public float OverlapDistance { get; set; } = 8f;
 
     /// <inheritdoc />
     [EditorBrowsable(EditorBrowsableState.Never)]
@@ -110,14 +126,14 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
             return renderArea;
         }
 
-        var tooltipInfo = Chart.HoveredSeries.GetTooltipInfo(Chart.HoveredDataPoint);
+        var mousePoint = Chart.LastMousePosition.Value;
+        var tooltipInfo = GetTooltipInfo(Chart.HoveredSeries, Chart.HoveredDataPoint);
         if (tooltipInfo.Lines.Count == 0) {
             return renderArea;
         }
 
         var canvas = context.Canvas;
         var density = context.Density;
-        var mousePoint = Chart.LastMousePosition.Value;
 
         EnsureResources(density);
         if (!IsCurrent(tooltipInfo, density)) {
@@ -165,6 +181,37 @@ public class NTTooltip<TData> : ComponentBase, IRenderable, IDisposable where TD
         }
 
         return renderArea;
+    }
+
+    // Other line, area and point series join the hovered point's tooltip, in chart order: those with a point drawn within
+    // OverlapDistance of the hovered point, or with ShowAllSeriesAtX every one that has a value at the hovered X.
+    internal TooltipInfo GetTooltipInfo(NTBaseSeries<TData> hovered, TData data) {
+        var info = hovered.GetTooltipInfo(data);
+        if (hovered is not NTLineSeries<TData> hoveredLine || Chart is not NTChart<TData> chart || chart.HoveredLegendItem is not null) {
+            return info;
+        }
+
+        var x = chart.GetScaledXValue(hoveredLine.XValue(data));
+        var hoveredPoint = hoveredLine.GetDrawnPoint(data, chart.LastPlotArea);
+        var margin = Math.Max(0f, OverlapDistance) * chart.Density;
+        var lines = new List<TooltipLine>(info.Lines.Count);
+        foreach (var series in chart.Series) {
+            if (ReferenceEquals(series, hovered)) {
+                lines.AddRange(info.Lines);
+                continue;
+            }
+
+            if (series is not NTLineSeries<TData> { IsEffectivelyVisible: true } line) {
+                continue;
+            }
+
+            var match = ShowAllSeriesAtX ? line.GetItemAtX(x) : hoveredPoint is { } point ? line.GetDrawnItemNear(point, margin, chart.LastPlotArea) : null;
+            if (match is not null) {
+                lines.AddRange(line.GetTooltipInfo(match).Lines);
+            }
+        }
+
+        return lines.Count == info.Lines.Count ? info : new TooltipInfo { Header = info.Header, Lines = lines };
     }
 
     private void EnsureResources(float density) {
