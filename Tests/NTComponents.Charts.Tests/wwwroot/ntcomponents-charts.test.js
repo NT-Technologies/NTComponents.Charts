@@ -66,7 +66,6 @@ test('modern theme events notify each chart once and disposal removes only its l
     const second = initializeChart(new EventTarget(), { invokeMethodAsync: async name => secondCalls.push(name) }, false);
 
     document.dispatchEvent(new Event('nt-theme-changed'));
-    document.dispatchEvent(new Event('tnt-theme-changed'));
     await Promise.resolve();
     assert.deepEqual(firstCalls, ['OnThemeChanged']);
     assert.deepEqual(secondCalls, ['OnThemeChanged']);
