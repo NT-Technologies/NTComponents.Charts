@@ -24,9 +24,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
-            9.0.x
             10.0.x
-            11.0.100-rc.2.26504.105
+            11.0.x
 
       - name: Restore dependencies
         run: dotnet restore NTComponents.Charts.slnx -p:UseLocalNTComponentsProject=false
@@ -60,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        framework: [net9.0, net10.0, net11.0]
+        framework: [net10.0, net11.0]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -69,9 +68,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
-            9.0.x
             10.0.x
-            11.0.100-rc.2.26504.105
+            11.0.x
 
       - name: Download CI package
         uses: actions/download-artifact@v8
@@ -89,7 +87,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        framework: [net9.0, net10.0, net11.0]
+        framework: [net10.0, net11.0]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -98,9 +96,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
-            9.0.x
             10.0.x
-            11.0.100-rc.2.26504.105
+            11.0.x
 
       - name: Setup Node
         uses: actions/setup-node@v7

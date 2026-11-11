@@ -39,7 +39,7 @@ jobs:
     runs-on: ${{ matrix.runner.os }}
     timeout-minutes: 30
     env:
-      DOTNET_VERSION: ${{ matrix.tfm == 'net11.0' && '11.0.100-rc.2.26504.105' || '10.0.x' }}
+      DOTNET_VERSION: ${{ matrix.tfm == 'net11.0' && '11.0.x' || '10.0.x' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -48,9 +48,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
-            9.0.x
             10.0.x
-            11.0.100-rc.2.26504.105
+            11.0.x
 
       - name: Cache NuGet packages
         uses: actions/cache@v4

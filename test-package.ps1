@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string] $PackagePath,
-    [string[]] $Frameworks = @('net9.0', 'net10.0', 'net11.0')
+    [string[]] $Frameworks = @('net10.0', 'net11.0')
 )
 
 $ErrorActionPreference = 'Stop'

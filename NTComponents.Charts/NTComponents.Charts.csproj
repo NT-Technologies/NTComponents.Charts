@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
 
 	<PropertyGroup>
-		<TargetFrameworks>net9.0;net10.0;net11.0</TargetFrameworks>
+		<TargetFrameworks>net10.0;net11.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<LangVersion>latest</LangVersion>
@@ -66,16 +66,12 @@
 	</ItemGroup>
 
 	<!-- Published dependency floors: the lowest ASP.NET Core patch consumers need. Raise them only for security fixes. -->
-	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.0" />
-	</ItemGroup>
-
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
 		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.0" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net11.0'">
-		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="11.0.0-rc.2.26504.105" />
+		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="11.0.0" />
 	</ItemGroup>
 
 </Project>
