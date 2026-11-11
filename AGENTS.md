@@ -18,7 +18,7 @@ This repository contains a single .NET Razor class library solution: `NTComponen
 - `dotnet build NTComponents.Charts/NTComponents.Charts.csproj -c Debug`: fast local iteration on the library.
 - `dotnet test --project Tests/NTComponents.Charts.Tests/NTComponents.Charts.Tests.csproj -c Release`: run chart tests for net10/net11.
 - `dotnet pack NTComponents.Charts/NTComponents.Charts.csproj -c Release -o artifacts/nuget -p:UseLocalNTComponentsProject=false`: create the standalone NuGet package.
-- `./test-package.ps1 -PackagePath artifacts/nuget/<package>.nupkg`: validate package structure and compile net9/net10/net11 consumers.
+- `./test-package.ps1 -PackagePath artifacts/nuget/<package>.nupkg`: validate package structure and compile net10/net11 consumers.
 - `./test-aot-compatibility.ps1`: publish and browser-smoke the net10 native-AOT and net11 trimmed WebAssembly consumers.
 
 CI runs the dedicated test project on net10 and net11 in addition to package-consumer and WebAssembly compatibility smoke projects.
