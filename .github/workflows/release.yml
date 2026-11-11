@@ -17,6 +17,11 @@ jobs:
   publish-release:
     needs: validate
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write # NuGet trusted publishing (OIDC)
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -58,11 +63,11 @@ jobs:
         if: steps.check-tags.outputs.is_tagged == 'false'
         run: npm install --no-save semantic-release@25 @semantic-release/commit-analyzer@13 @semantic-release/release-notes-generator@14 @semantic-release/github@12 conventional-changelog-conventionalcommits@9
 
-      - name: Validate NuGet API key
+      - name: Validate NuGet user secret
         if: steps.check-tags.outputs.is_tagged == 'false'
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: test -n "$NUGET_API_KEY" || (echo "NUGET_API_KEY secret is missing." && exit 1)
+          NUGET_USER: ${{ secrets.NUGET_USER }}
+        run: test -n "$NUGET_USER" || (echo "NUGET_USER secret is missing." && exit 1)
 
       - name: Publish stable release
         if: steps.check-tags.outputs.is_tagged == 'false'
@@ -85,17 +90,24 @@ jobs:
           dotnet pack NTComponents.Charts/NTComponents.Charts.csproj --no-build --configuration Release --output artifacts/nuget -p:PackageVersion=${{ steps.release-version.outputs.version }} -p:UseLocalNTComponentsProject=false
           pwsh ./test-package.ps1 -PackagePath "artifacts/nuget/NTComponents.Charts.${{ steps.release-version.outputs.version }}.nupkg"
 
+      - name: NuGet login (OIDC)
+        id: nuget-login
+        if: steps.check-tags.outputs.is_tagged == 'false'
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       - name: Publish NuGet package
         id: publish-package
         if: steps.check-tags.outputs.is_tagged == 'false'
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: dotnet nuget push artifacts/nuget/*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: Unlist older prerelease packages
         if: steps.publish-package.outcome == 'success'
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           RELEASE_VERSION: ${{ steps.release-version.outputs.version }}
         run: |
           python3 - "$RELEASE_VERSION" <<'PY' > prerelease-versions-to-unlist.txt
